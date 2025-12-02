@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>LC Helper - Icon Generator</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 50px auto;
+            padding: 20px;
+            background: #0f0f13;
+            color: #fff;
+        }
+        .container {
+            background: #1a1a23;
+            padding: 30px;
+            border-radius: 12px;
+        }
+        h1 { color: #6366f1; }
+        button {
+            background: #6366f1;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 16px;
+            margin: 10px 5px;
+        }
+        button:hover { background: #818cf8; }
+        .preview {
+            display: flex;
+            gap: 20px;
+            margin: 20px 0;
+            align-items: center;
+        }
+        canvas {
+            border: 2px solid #333;
+            border-radius: 8px;
+        }
+        .success {
+            color: #10b981;
+            margin-top: 20px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>⚡ LC Helper - Icon Generator</h1>
+        <p>Click the buttons below to generate and download extension icons.</p>
+        
+        <div class="preview">
+            <div>
+                <h3>16x16</h3>
+                <canvas id="icon16" width="16" height="16"></canvas>
+            </div>
+            <div>
+                <h3>48x48</h3>
+                <canvas id="icon48" width="48" height="48"></canvas>
+            </div>
+            <div>
+                <h3>128x128</h3>
+                <canvas id="icon128" width="128" height="128"></canvas>
+            </div>
+        </div>
+
+        <button onclick="generateIcons()">Generate Icons</button>
+        <button onclick="downloadAll()">Download All</button>
+        
+        <div id="status"></div>
+
+        <div style="margin-top: 30px; padding: 20px; background: #252532; border-radius: 8px;">
+            <h3>📋 Instructions:</h3>
+            <ol>
+                <li>Click "Generate Icons" to create the icon images</li>
+                <li>Click "Download All" to save them to your computer</li>
+                <li>Move the downloaded PNG files to the <code>assets/</code> folder</li>
+                <li>Reload your extension in Chrome</li>
+            </ol>
+        </div>
+    </div>
+
+    <script>
+        function drawIcon(canvas, size) {
+            const ctx = canvas.getContext('2d');
+            
+            // Background gradient
+            const gradient = ctx.createLinearGradient(0, 0, size, size);
+            gradient.addColorStop(0, '#6366f1');
+            gradient.addColorStop(1, '#8b5cf6');
+            
+            // Draw rounded rectangle background
+            const radius = size * 0.2;
+            ctx.fillStyle = gradient;
+            ctx.beginPath();
+            ctx.roundRect(0, 0, size, size, radius);
+            ctx.fill();
+            
+            // Draw lightning bolt / question mark
+            ctx.fillStyle = 'white';
+            ctx.font = `bold ${size * 0.6}px Arial`;
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText('?', size / 2, size / 2 + size * 0.05);
+            
+            // Add subtle shine
+            const shine = ctx.createLinearGradient(0, 0, 0, size / 2);
+            shine.addColorStop(0, 'rgba(255, 255, 255, 0.3)');
+            shine.addColorStop(1, 'rgba(255, 255, 255, 0)');
+            ctx.fillStyle = shine;
+            ctx.beginPath();
+            ctx.roundRect(0, 0, size, size / 2, [radius, radius, 0, 0]);
+            ctx.fill();
+        }
+
+        function generateIcons() {
+            drawIcon(document.getElementById('icon16'), 16);
+            drawIcon(document.getElementById('icon48'), 48);
+            drawIcon(document.getElementById('icon128'), 128);
+            
+            document.getElementById('status').innerHTML = 
+                '<div class="success">✅ Icons generated! Click "Download All" to save them.</div>';
+        }
+
+        function downloadCanvas(canvas, filename) {
+            canvas.toBlob(blob => {
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = filename;
+                a.click();
+                URL.revokeObjectURL(url);
+            });
+        }
+
+        function downloadAll() {
+            downloadCanvas(document.getElementById('icon16'), 'icon16.png');
+            setTimeout(() => {
+                downloadCanvas(document.getElementById('icon48'), 'icon48.png');
+            }, 200);
+            setTimeout(() => {
+                downloadCanvas(document.getElementById('icon128'), 'icon128.png');
+            }, 400);
+            
+            document.getElementById('status').innerHTML = 
+                '<div class="success">✅ Downloading icons... Check your Downloads folder!</div>';
+        }
+
+        // Auto-generate on load
+        window.onload = generateIcons;
+    </script>
+</body>
+</html>
+

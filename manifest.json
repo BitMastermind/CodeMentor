@@ -1,0 +1,57 @@
+{
+  "manifest_version": 3,
+  "name": "LC Helper - Competitive Programming Assistant",
+  "version": "1.0.0",
+  "description": "Smart hints, topic classification, and contest tracking for LeetCode, Codeforces & CodeChef",
+  "permissions": [
+    "storage",
+    "alarms",
+    "notifications",
+    "activeTab"
+  ],
+  "host_permissions": [
+    "https://leetcode.com/*",
+    "https://codeforces.com/*",
+    "https://www.codechef.com/*",
+    "https://codechef.com/*",
+    "https://kontests.net/*",
+    "https://clist.by/*",
+    "https://api.openai.com/*",
+    "https://generativelanguage.googleapis.com/*"
+  ],
+  "background": {
+    "service_worker": "background/service-worker.js",
+    "type": "module"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://leetcode.com/problems/*"],
+      "js": ["content/leetcode.js"],
+      "css": ["styles/hints-panel.css"]
+    },
+    {
+      "matches": ["https://codeforces.com/problemset/problem/*", "https://codeforces.com/contest/*/problem/*"],
+      "js": ["content/codeforces.js"],
+      "css": ["styles/hints-panel.css"]
+    },
+    {
+      "matches": ["https://www.codechef.com/problems/*", "https://www.codechef.com/*/problems/*"],
+      "js": ["content/codechef.js"],
+      "css": ["styles/hints-panel.css"]
+    }
+  ],
+  "action": {
+    "default_popup": "popup/popup.html",
+    "default_icon": {
+      "16": "assets/icon16.png",
+      "48": "assets/icon48.png",
+      "128": "assets/icon128.png"
+    }
+  },
+  "icons": {
+    "16": "assets/icon16.png",
+    "48": "assets/icon48.png",
+    "128": "assets/icon128.png"
+  }
+}
+

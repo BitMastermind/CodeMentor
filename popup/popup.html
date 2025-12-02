@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>LC Helper</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="container">
+    <!-- Header -->
+    <header class="header">
+      <div class="logo">
+        <span class="logo-icon">⚡</span>
+        <span class="logo-text">LC Helper</span>
+      </div>
+      <button class="settings-btn" id="settingsBtn" title="Settings">
+        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="3"></circle>
+          <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+        </svg>
+      </button>
+    </header>
+
+    <!-- Tab Navigation -->
+    <nav class="tabs">
+      <button class="tab active" data-tab="contests">
+        <span class="tab-icon">📅</span>
+        Contests
+      </button>
+      <button class="tab" data-tab="settings">
+        <span class="tab-icon">⚙️</span>
+        Settings
+      </button>
+    </nav>
+
+    <!-- Contests Tab -->
+    <section class="tab-content active" id="contests-tab">
+      <div class="section-header">
+        <h2>Upcoming Contests</h2>
+        <button class="refresh-btn" id="refreshContests" title="Refresh">
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="23 4 23 10 17 10"></polyline>
+            <polyline points="1 20 1 14 7 14"></polyline>
+            <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
+          </svg>
+        </button>
+      </div>
+
+      <!-- Platform Filters -->
+      <div class="filters">
+        <button class="filter-btn active" data-platform="all">All</button>
+        <button class="filter-btn" data-platform="leetcode">
+          <span class="platform-dot leetcode"></span>
+          LeetCode
+        </button>
+        <button class="filter-btn" data-platform="codeforces">
+          <span class="platform-dot codeforces"></span>
+          Codeforces
+        </button>
+        <button class="filter-btn" data-platform="codechef">
+          <span class="platform-dot codechef"></span>
+          CodeChef
+        </button>
+      </div>
+
+      <!-- Contest List -->
+      <div class="contest-list" id="contestList">
+        <div class="loading">
+          <div class="spinner"></div>
+          <span>Loading contests...</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- Settings Tab -->
+    <section class="tab-content" id="settings-tab">
+      <div class="settings-group">
+        <h3>🔑 API Configuration</h3>
+        <p class="settings-desc">Choose your AI provider and enter the API key to enable smart hints.</p>
+        <div class="input-group">
+          <label for="apiProvider">AI Provider</label>
+          <select id="apiProvider">
+            <option value="openai">OpenAI (GPT-4o-mini)</option>
+            <option value="gemini">Google Gemini (Gemini 2.0 Flash)</option>
+          </select>
+        </div>
+        <div class="input-group">
+          <label for="apiKey">API Key</label>
+          <div class="input-wrapper">
+            <input type="password" id="apiKey" placeholder="Enter your API key..." autocomplete="off">
+            <button class="toggle-visibility" id="toggleApiKey">
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="eye-icon">
+                <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                <circle cx="12" cy="12" r="3"></circle>
+              </svg>
+            </button>
+          </div>
+          <a href="#" target="_blank" class="help-link" id="apiKeyLink">Get your API key →</a>
+        </div>
+      </div>
+
+      <div class="settings-group">
+        <h3>🔔 Notifications</h3>
+        <div class="toggle-group">
+          <label class="toggle-label">
+            <span>Contest Reminders</span>
+            <input type="checkbox" id="notifyContests" checked>
+            <span class="toggle-switch"></span>
+          </label>
+          <p class="toggle-desc">Get notified before contests start</p>
+        </div>
+        <div class="input-group">
+          <label for="reminderTime">Remind me before</label>
+          <select id="reminderTime">
+            <option value="15">15 minutes</option>
+            <option value="30" selected>30 minutes</option>
+            <option value="60">1 hour</option>
+            <option value="120">2 hours</option>
+            <option value="1440">1 day</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="settings-group">
+        <h3>🎨 Preferences</h3>
+        <div class="toggle-group">
+          <label class="toggle-label">
+            <span>Auto-show Hints Panel</span>
+            <input type="checkbox" id="autoShowPanel">
+            <span class="toggle-switch"></span>
+          </label>
+          <p class="toggle-desc">Automatically open hints panel on problem pages</p>
+        </div>
+      </div>
+
+      <button class="save-btn" id="saveSettings">
+        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <polyline points="20 6 9 17 4 12"></polyline>
+        </svg>
+        Save Settings
+      </button>
+    </section>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>
+
