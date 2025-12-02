@@ -434,58 +434,52 @@ function generateCacheKey(input) {
 
 async function generateHintsGemini(problem, apiKey) {
   try {
-    const prompt = `You are a world-class competitive programming coach with deep expertise in algorithms, data structures, and optimization techniques. Your goal is to provide HIGH-PERFORMANCE, contest-winning insights.
+    // Enhanced context extraction
+    const difficulty = problem.difficulty || 'Unknown';
+    const existingTags = problem.tags || '';
+    
+    const prompt = `You are a competitive programming expert providing contest-ready hints.
 
-PROBLEM ANALYSIS:
+EXAMPLE OF PERFECT HINTS:
+
+Problem: Two Sum
+Difficulty: Easy
+Topic: Hash Table - O(n) time, O(n) space
+
+Hint 1: For each number x, you need to find if (target - x) exists. Checking all pairs takes O(n²). What data structure provides O(1) lookup to reduce this to O(n)?
+
+Hint 2: Use a hash table (unordered_map in C++, dict in Python) to achieve O(n) time. Store each number with its index as you iterate. Before storing, check if (target - current) exists in the table. This single-pass approach is O(n) vs O(n²) nested loops.
+
+Hint 3: Implementation: 1) Create empty hash table number→index. 2) For each nums[i]: compute complement = target - nums[i]. 3) If complement in table, return [table[complement], i]. 4) Otherwise, insert nums[i]→i into table. Edge cases: duplicate values, negative numbers, ensure i ≠ j.
+
+---
+
+NOW ANALYZE THIS ${difficulty.toUpperCase()} PROBLEM:
+
 Title: ${problem.title}
-Description: ${problem.description}
+${existingTags ? `Platform Tags: ${existingTags}` : ''}
 Constraints: ${problem.constraints || 'Not specified'}
+Description: ${problem.description}
 
-YOUR TASK:
-Analyze this problem with a focus on PERFORMANCE and OPTIMAL solutions. Provide:
-
-1. EXACT TOPIC CLASSIFICATION
-   - Be hyper-specific (e.g., "DP on Trees with Re-rooting", "Binary Search on Answer with Greedy Validation", "Two Pointers with Monotonic Stack", "Dijkstra on Implicit Graph with State Compression")
-   - Mention TIME COMPLEXITY of the optimal approach
-   - If multiple approaches exist, mention the FASTEST one
-
-2. THREE PROGRESSIVE HINTS (Focus on PERFORMANCE & OPTIMIZATION)
-
-   HINT 1 - Key Observation (Gentle Push):
-   - Identify the critical insight or pattern recognition needed
-   - Point out what makes this problem special or what constraint is exploitable
-   - Ask a guiding question about time/space complexity
-   - Example: "Notice that if we process elements in sorted order, we can maintain an invariant that..."
-
-   HINT 2 - Algorithmic Direction (Stronger Nudge):
-   - Suggest the specific algorithm, data structure, or technique
-   - Explain WHY it's efficient for this problem
-   - Mention the expected time/space complexity
-   - Example: "Use a monotonic stack to maintain decreasing elements in O(n) time because..."
-
-   HINT 3 - Implementation Strategy (Almost There):
-   - Outline the high-level algorithm steps
-   - Mention key optimizations or edge cases
-   - Provide complexity analysis
-   - Stop just before actual code implementation
-   - Example: "1) Precompute prefix sums in O(n). 2) For each query, binary search the answer in O(log n)..."
-
-CRITICAL REQUIREMENTS:
-- Focus on OPTIMAL, CONTEST-READY solutions
-- Emphasize TIME and SPACE efficiency
-- Mention specific data structures (Fenwick Tree, Segment Tree, Trie, etc.)
-- Consider competitive programming constraints (time limits, memory limits)
-- Think about edge cases and optimizations
-
-Format your response as JSON:
+OUTPUT FORMAT (JSON only):
 {
-  "topic": "Exact Topic (with Time Complexity)",
+  "topic": "<Algorithm/DS> - O() time, O() space",
   "hints": [
-    "Hint 1: Key observation focusing on what pattern/property to exploit...",
-    "Hint 2: Specific algorithm/data structure with WHY it's optimal and complexity...",
-    "Hint 3: Step-by-step approach with optimizations and complexity analysis..."
+    "<Hint 1: Key observation>",
+    "<Hint 2: Specific algorithm with why>",
+    "<Hint 3: Implementation steps>"
   ]
-}`;
+}
+
+REQUIREMENTS:
+1. Topic MUST include time complexity (e.g., "DP on Trees - O(n)")
+2. Hint 1: State key insight, ask guiding question, NO algorithms yet
+3. Hint 2: Name EXACT algorithm/data structure (e.g., "segment tree", "unordered_map"), explain WHY optimal, compare complexities
+4. Hint 3: List 3-5 numbered steps, mention edge cases, NO actual code
+5. Use specific terminology: "unordered_map in C++", "bisect_left in Python", "lower_bound in C++"
+6. Compare complexities: O(n log n) vs O(n²), explain trade-offs
+
+Be specific, concise, and competition-focused.`;
 
     const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`, {
       method: 'POST',
@@ -499,9 +493,9 @@ Format your response as JSON:
           }]
         }],
         generationConfig: {
-          temperature: 0.7,
+          temperature: 0.5,  // Lowered from 0.7 for more consistent hints
           maxOutputTokens: 2048,
-          topP: 0.95,
+          topP: 0.9,
           topK: 40
         }
       })

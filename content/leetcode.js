@@ -132,6 +132,26 @@
                           document.querySelector('[class*="question-content"]') ||
                           document.querySelector('[class*="description"]');
 
+    // Extract difficulty
+    let difficulty = 'Unknown';
+    const difficultyEl = document.querySelector('[diff]') ||
+                         document.querySelector('.text-difficulty-easy, .text-difficulty-medium, .text-difficulty-hard') ||
+                         document.querySelector('[class*="difficulty"]');
+    if (difficultyEl) {
+      difficulty = difficultyEl.textContent.trim();
+    }
+    
+    // Extract existing tags
+    let tags = '';
+    const tagElements = document.querySelectorAll('[class*="topic-tag"], .tag, a[href*="/tag/"]');
+    if (tagElements.length > 0) {
+      tags = Array.from(tagElements)
+        .map(el => el.textContent.trim())
+        .filter(t => t.length > 0 && t.length < 30)
+        .slice(0, 5) // Limit to 5 tags
+        .join(', ');
+    }
+
     // Try to get constraints
     let constraints = '';
     const constraintsHeader = Array.from(document.querySelectorAll('strong, b'))
@@ -148,6 +168,8 @@
       title: titleEl?.textContent?.trim() || '',
       description: descriptionEl?.textContent?.trim().slice(0, 2000) || '', // Limit description length
       constraints: constraints,
+      difficulty: difficulty,
+      tags: tags,
       url: window.location.href
     };
   }
@@ -229,6 +251,13 @@
           </div>
         `).join('')}
       </div>
+      <div class="lch-feedback-section" id="feedbackSection">
+        <span class="lch-feedback-label">Were these hints helpful?</span>
+        <div class="lch-feedback-buttons">
+          <button class="lch-feedback-btn positive" data-rating="up" title="Helpful">👍</button>
+          <button class="lch-feedback-btn negative" data-rating="down" title="Not helpful">👎</button>
+        </div>
+      </div>
     `;
 
     // Add reveal handlers
@@ -249,6 +278,48 @@
       refreshBtn.addEventListener('click', (e) => {
         e.stopPropagation();
         loadHints(true); // Force refresh
+      });
+    }
+    
+    // Add feedback handlers
+    body.querySelectorAll('.lch-feedback-btn').forEach(btn => {
+      btn.addEventListener('click', () => handleFeedback(btn.dataset.rating, data));
+    });
+  }
+  
+  function handleFeedback(rating, hintData) {
+    const feedbackSection = panel.querySelector('#feedbackSection');
+    
+    if (rating === 'up') {
+      // Positive feedback
+      feedbackSection.innerHTML = `
+        <div class="lch-feedback-thanks">
+          <div class="lch-feedback-thanks-text">
+            ✨ Thanks for your feedback!
+          </div>
+        </div>
+      `;
+      
+      // Log feedback (could be sent to analytics)
+      console.log('Positive feedback for hints:', hintData.topic);
+      
+    } else {
+      // Negative feedback - offer to regenerate
+      feedbackSection.innerHTML = `
+        <div class="lch-feedback-thanks">
+          <div class="lch-feedback-improve">
+            <div class="lch-feedback-improve-text">Sorry the hints weren't helpful.</div>
+            <button class="lch-feedback-regenerate-btn">🔄 Try Different Hints</button>
+          </div>
+        </div>
+      `;
+      
+      // Log feedback
+      console.log('Negative feedback for hints:', hintData.topic);
+      
+      // Add regenerate handler
+      feedbackSection.querySelector('.lch-feedback-regenerate-btn').addEventListener('click', () => {
+        loadHints(true); // Force refresh with new hints
       });
     }
   }

@@ -101,10 +101,30 @@
     const descEl = document.querySelector('.problem-statement') || 
                    document.querySelector('[class*="problem"]');
     
+    // Extract difficulty
+    let difficulty = 'Unknown';
+    const difficultyEl = document.querySelector('.difficulty, [class*="difficulty"]');
+    if (difficultyEl) {
+      difficulty = difficultyEl.textContent.trim();
+    }
+    
+    // Extract tags
+    let tags = '';
+    const tagElements = document.querySelectorAll('.tags a, [class*="tag"]');
+    if (tagElements.length > 0) {
+      tags = Array.from(tagElements)
+        .map(el => el.textContent.trim())
+        .filter(t => t.length > 0 && t.length < 30)
+        .slice(0, 5)
+        .join(', ');
+    }
+    
     return {
       title: titleEl?.textContent?.trim() || '',
       description: descEl?.textContent?.trim().slice(0, 2000) || '',
       constraints: '',
+      difficulty: difficulty,
+      tags: tags,
       url: window.location.href
     };
   }
@@ -169,6 +189,13 @@
             <div class="lch-hint-content" data-hint="${i}">${escapeHtml(hint)}</div>
           </div>
         `).join('')}
+      </div>
+      <div class="lch-feedback-section" id="feedbackSection">
+        <span class="lch-feedback-label">Were these hints helpful?</span>
+        <div class="lch-feedback-buttons">
+          <button class="lch-feedback-btn positive" data-rating="up" title="Helpful">👍</button>
+          <button class="lch-feedback-btn negative" data-rating="down" title="Not helpful">👎</button>
+        </div>
       </div>`;
 
     body.querySelectorAll('.lch-hint-header').forEach(header => {
@@ -185,6 +212,37 @@
     if (refreshBtn) {
       refreshBtn.addEventListener('click', (e) => {
         e.stopPropagation();
+        loadHints(true);
+      });
+    }
+    
+    body.querySelectorAll('.lch-feedback-btn').forEach(btn => {
+      btn.addEventListener('click', () => handleFeedback(btn.dataset.rating, data));
+    });
+  }
+  
+  function handleFeedback(rating, hintData) {
+    const feedbackSection = panel.querySelector('#feedbackSection');
+    
+    if (rating === 'up') {
+      feedbackSection.innerHTML = `
+        <div class="lch-feedback-thanks">
+          <div class="lch-feedback-thanks-text">✨ Thanks for your feedback!</div>
+        </div>
+      `;
+      console.log('Positive feedback:', hintData.topic);
+    } else {
+      feedbackSection.innerHTML = `
+        <div class="lch-feedback-thanks">
+          <div class="lch-feedback-improve">
+            <div class="lch-feedback-improve-text">Sorry the hints weren't helpful.</div>
+            <button class="lch-feedback-regenerate-btn">🔄 Try Different Hints</button>
+          </div>
+        </div>
+      `;
+      console.log('Negative feedback:', hintData.topic);
+      
+      feedbackSection.querySelector('.lch-feedback-regenerate-btn').addEventListener('click', () => {
         loadHints(true);
       });
     }

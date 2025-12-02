@@ -411,3 +411,102 @@
   box-shadow: 0 8px 24px var(--lch-accent-glow);
 }
 
+/* Feedback Section */
+.lch-feedback-section {
+  padding: 16px 24px;
+  border-top: 1px solid var(--lch-border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.lch-feedback-label {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--lch-text-secondary);
+}
+
+.lch-feedback-buttons {
+  display: flex;
+  gap: 8px;
+}
+
+.lch-feedback-btn {
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  background: var(--lch-bg-tertiary);
+  border: 1px solid var(--lch-border);
+  font-size: 16px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.lch-feedback-btn:hover {
+  transform: scale(1.1);
+  border-color: var(--lch-accent);
+}
+
+.lch-feedback-btn.active {
+  background: var(--lch-accent);
+  border-color: var(--lch-accent);
+}
+
+.lch-feedback-btn.positive:hover,
+.lch-feedback-btn.positive.active {
+  background: var(--lch-success);
+  border-color: var(--lch-success);
+}
+
+.lch-feedback-btn.negative:hover,
+.lch-feedback-btn.negative.active {
+  background: var(--lch-danger);
+  border-color: var(--lch-danger);
+}
+
+.lch-feedback-thanks {
+  padding: 16px 24px;
+  border-top: 1px solid var(--lch-border);
+  text-align: center;
+}
+
+.lch-feedback-thanks-text {
+  font-size: 13px;
+  color: var(--lch-success);
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+
+.lch-feedback-improve {
+  margin-top: 12px;
+}
+
+.lch-feedback-improve-text {
+  font-size: 12px;
+  color: var(--lch-text-muted);
+  margin-bottom: 8px;
+}
+
+.lch-feedback-regenerate-btn {
+  padding: 8px 16px;
+  background: var(--lch-accent);
+  border: none;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  color: white;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.lch-feedback-regenerate-btn:hover {
+  background: var(--lch-accent-hover);
+  transform: translateY(-1px);
+}
+
