@@ -510,3 +510,323 @@
   transform: translateY(-1px);
 }
 
+/* Solved Button Section - Super Attractive */
+.lch-solved-section {
+  padding: 20px 24px;
+  border-bottom: 1px solid var(--lch-border);
+  display: flex;
+  justify-content: center;
+  background: linear-gradient(180deg, rgba(16, 185, 129, 0.05) 0%, transparent 100%);
+}
+
+.lch-mark-solved-btn {
+  padding: 16px 32px;
+  background: linear-gradient(135deg, #10b981 0%, #059669 50%, #047857 100%);
+  background-size: 200% 200%;
+  border: none;
+  border-radius: 14px;
+  font-size: 16px;
+  font-weight: 700;
+  color: white;
+  cursor: pointer;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  font-family: var(--lch-font-main);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  box-shadow: 
+    0 4px 16px rgba(16, 185, 129, 0.3),
+    0 0 0 1px rgba(255, 255, 255, 0.1) inset,
+    0 1px 0 rgba(255, 255, 255, 0.3) inset;
+  position: relative;
+  overflow: hidden;
+  letter-spacing: 0.5px;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+  animation: buttonPulse 2s ease-in-out infinite;
+}
+
+@keyframes buttonPulse {
+  0%, 100% {
+    box-shadow: 
+      0 4px 16px rgba(16, 185, 129, 0.3),
+      0 0 0 1px rgba(255, 255, 255, 0.1) inset;
+  }
+  50% {
+    box-shadow: 
+      0 4px 24px rgba(16, 185, 129, 0.5),
+      0 0 20px rgba(16, 185, 129, 0.3),
+      0 0 0 1px rgba(255, 255, 255, 0.2) inset;
+  }
+}
+
+.lch-mark-solved-btn::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(90deg, 
+    transparent, 
+    rgba(255, 255, 255, 0.3), 
+    transparent);
+  transition: left 0.5s ease;
+}
+
+.lch-mark-solved-btn:hover {
+  transform: translateY(-3px) scale(1.02);
+  background-position: 100% 50%;
+  box-shadow: 
+    0 8px 32px rgba(16, 185, 129, 0.5),
+    0 0 40px rgba(16, 185, 129, 0.3),
+    0 0 0 2px rgba(255, 255, 255, 0.2) inset;
+  animation: none;
+}
+
+.lch-mark-solved-btn:hover::before {
+  left: 100%;
+}
+
+.lch-mark-solved-btn:active {
+  transform: translateY(-1px) scale(0.98);
+}
+
+.lch-mark-solved-btn.solved {
+  background: linear-gradient(135deg, #475569 0%, #334155 100%);
+  cursor: not-allowed;
+  opacity: 0.8;
+  animation: none;
+  box-shadow: 
+    0 2px 8px rgba(71, 85, 105, 0.3),
+    0 0 0 1px rgba(255, 255, 255, 0.05) inset;
+}
+
+.lch-mark-solved-btn.solved:hover {
+  transform: none;
+  box-shadow: 
+    0 2px 8px rgba(71, 85, 105, 0.3),
+    0 0 0 1px rgba(255, 255, 255, 0.05) inset;
+}
+
+.lch-mark-solved-btn.solved::before {
+  display: none;
+}
+
+/* Epic Streak Celebration */
+.lch-celebration {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 100000;
+  animation: celebrationPop 3s ease forwards;
+}
+
+/* Animated background rays */
+.lch-celebration::before {
+  content: '';
+  position: absolute;
+  inset: -100px;
+  background: conic-gradient(
+    from 0deg,
+    transparent 0deg,
+    rgba(251, 191, 36, 0.3) 45deg,
+    transparent 90deg,
+    rgba(239, 68, 68, 0.3) 135deg,
+    transparent 180deg,
+    rgba(139, 92, 246, 0.3) 225deg,
+    transparent 270deg,
+    rgba(99, 102, 241, 0.3) 315deg,
+    transparent 360deg
+  );
+  animation: rotateRays 4s linear infinite;
+  z-index: -1;
+}
+
+@keyframes rotateRays {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.lch-celebration-content {
+  background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 50%, #ec4899 100%);
+  background-size: 200% 200%;
+  animation: gradientShift 3s ease infinite;
+  padding: 40px 56px;
+  border-radius: 24px;
+  box-shadow: 
+    0 0 60px rgba(99, 102, 241, 0.8),
+    0 0 120px rgba(139, 92, 246, 0.6),
+    0 20px 80px rgba(0, 0, 0, 0.5),
+    inset 0 -2px 20px rgba(255, 255, 255, 0.2),
+    inset 0 2px 20px rgba(0, 0, 0, 0.2);
+  text-align: center;
+  border: 2px solid rgba(255, 255, 255, 0.2);
+  position: relative;
+  overflow: hidden;
+}
+
+/* Sparkle effect */
+.lch-celebration-content::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image: 
+    radial-gradient(circle at 20% 30%, rgba(255, 255, 255, 0.8) 1px, transparent 1px),
+    radial-gradient(circle at 80% 70%, rgba(255, 255, 255, 0.8) 1px, transparent 1px),
+    radial-gradient(circle at 50% 50%, rgba(255, 255, 255, 0.8) 1px, transparent 1px),
+    radial-gradient(circle at 30% 80%, rgba(255, 255, 255, 0.8) 1px, transparent 1px),
+    radial-gradient(circle at 70% 20%, rgba(255, 255, 255, 0.8) 1px, transparent 1px);
+  background-size: 100% 100%;
+  animation: sparkle 1.5s ease-in-out infinite;
+}
+
+@keyframes sparkle {
+  0%, 100% { opacity: 0; }
+  50% { opacity: 1; }
+}
+
+@keyframes gradientShift {
+  0%, 100% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+}
+
+.lch-celebration-icon {
+  font-size: 80px;
+  margin-bottom: 16px;
+  animation: 
+    bounce 0.8s ease-in-out infinite,
+    rotate360 2s ease-in-out infinite;
+  filter: drop-shadow(0 0 20px rgba(255, 255, 255, 0.5));
+}
+
+.lch-celebration-title {
+  font-size: 32px;
+  font-weight: 900;
+  color: white;
+  margin-bottom: 12px;
+  text-shadow: 
+    0 2px 4px rgba(0, 0, 0, 0.3),
+    0 0 20px rgba(255, 255, 255, 0.4);
+  letter-spacing: -0.5px;
+  animation: titlePulse 2s ease-in-out infinite;
+}
+
+@keyframes titlePulse {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.05); }
+}
+
+.lch-celebration-streak {
+  font-size: 28px;
+  font-weight: 800;
+  background: linear-gradient(135deg, #fef3c7 0%, #fde68a 50%, #fbbf24 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  font-family: var(--lch-font-mono);
+  text-shadow: 0 0 30px rgba(251, 191, 36, 0.6);
+  letter-spacing: 1px;
+  padding: 8px 16px;
+  background-color: rgba(0, 0, 0, 0.2);
+  border-radius: 12px;
+  display: inline-block;
+  animation: streakGlow 1.5s ease-in-out infinite;
+}
+
+@keyframes streakGlow {
+  0%, 100% { 
+    box-shadow: 
+      0 0 20px rgba(251, 191, 36, 0.4),
+      inset 0 0 20px rgba(251, 191, 36, 0.2);
+  }
+  50% { 
+    box-shadow: 
+      0 0 40px rgba(251, 191, 36, 0.6),
+      inset 0 0 30px rgba(251, 191, 36, 0.3);
+  }
+}
+
+.lch-celebration-subtitle {
+  font-size: 16px;
+  color: rgba(255, 255, 255, 0.95);
+  margin-top: 12px;
+  font-weight: 600;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+  animation: subtitleFade 2s ease-in-out infinite;
+}
+
+@keyframes subtitleFade {
+  0%, 100% { opacity: 0.9; }
+  50% { opacity: 1; }
+}
+
+@keyframes bounce {
+  0%, 100% { transform: translateY(0) rotate(0deg); }
+  25% { transform: translateY(-15px) rotate(-5deg); }
+  50% { transform: translateY(0) rotate(0deg); }
+  75% { transform: translateY(-8px) rotate(5deg); }
+}
+
+@keyframes rotate360 {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+@keyframes celebrationPop {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(0.3) rotate(-10deg);
+  }
+  5% {
+    opacity: 1;
+  }
+  10% {
+    transform: translate(-50%, -50%) scale(1.15) rotate(5deg);
+  }
+  15% {
+    transform: translate(-50%, -50%) scale(0.95) rotate(-2deg);
+  }
+  20% {
+    transform: translate(-50%, -50%) scale(1.02) rotate(0deg);
+  }
+  25% {
+    transform: translate(-50%, -50%) scale(1) rotate(0deg);
+  }
+  85% {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1) rotate(0deg);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(0.7) rotate(10deg);
+  }
+}
+
+/* Quick Notification (for right-click mark as solved) */
+.lch-quick-notification {
+  position: fixed;
+  top: 24px;
+  right: 24px;
+  padding: 16px 24px;
+  background: linear-gradient(135deg, var(--lch-success) 0%, #059669 100%);
+  border-radius: 12px;
+  font-size: 14px;
+  font-weight: 600;
+  color: white;
+  box-shadow: 
+    0 8px 32px rgba(16, 185, 129, 0.4),
+    0 0 0 1px rgba(255, 255, 255, 0.2) inset;
+  z-index: 100000;
+  font-family: var(--lch-font-main);
+  opacity: 0;
+  transform: translateX(400px);
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.lch-quick-notification.show {
+  opacity: 1;
+  transform: translateX(0);
+}
+

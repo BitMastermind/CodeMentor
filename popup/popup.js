@@ -5,6 +5,7 @@ document.addEventListener('DOMContentLoaded', () => {
   initSettings();
   loadContests();
   initFilters();
+  loadStreakData();
 });
 
 // Tab Navigation
@@ -37,7 +38,7 @@ function initTabs() {
 // Settings Management
 function initSettings() {
   // Load saved settings
-  chrome.storage.sync.get(['apiKey', 'apiProvider', 'notifyContests', 'reminderTime', 'autoShowPanel'], (result) => {
+  chrome.storage.sync.get(['apiKey', 'apiProvider', 'notifyContests', 'reminderTime', 'autoShowPanel', 'autoDetectSolved'], (result) => {
     if (result.apiKey) {
       document.getElementById('apiKey').value = result.apiKey;
     }
@@ -48,6 +49,8 @@ function initSettings() {
     document.getElementById('notifyContests').checked = result.notifyContests !== false;
     document.getElementById('reminderTime').value = result.reminderTime || '30';
     document.getElementById('autoShowPanel').checked = result.autoShowPanel || false;
+    // Auto-detect solved is ON by default
+    document.getElementById('autoDetectSolved').checked = result.autoDetectSolved !== false;
   });
   
   // Update link when provider changes
@@ -72,7 +75,8 @@ function initSettings() {
       apiProvider: document.getElementById('apiProvider').value,
       notifyContests: document.getElementById('notifyContests').checked,
       reminderTime: document.getElementById('reminderTime').value,
-      autoShowPanel: document.getElementById('autoShowPanel').checked
+      autoShowPanel: document.getElementById('autoShowPanel').checked,
+      autoDetectSolved: document.getElementById('autoDetectSolved').checked
     };
 
     await chrome.storage.sync.set(settings);
@@ -328,5 +332,104 @@ function updateApiKeyLink(provider) {
     link.href = 'https://aistudio.google.com/app/apikey';
     link.textContent = 'Get Gemini API key →';
   }
+}
+
+// Streak Data Management with Motivational Messages
+async function loadStreakData() {
+  try {
+    const response = await chrome.runtime.sendMessage({ type: 'GET_STREAK_DATA' });
+    const streakData = response.streakData;
+    
+    if (!streakData) return;
+    
+    // Ensure streak is a valid number
+    const currentStreak = Number(streakData.currentStreak) || 0;
+    const longestStreak = Number(streakData.longestStreak) || 0;
+    const totalDays = Number(streakData.totalDaysSolved) || 0;
+    const freezeTokens = Number(streakData.freezeTokens) || 1;
+    
+    // Update current streak
+    document.getElementById('currentStreak').textContent = currentStreak;
+    
+    // Update flame emoji based on streak
+    const flameEl = document.querySelector('.streak-flame');
+    if (flameEl) {
+      if (currentStreak === 0) {
+        flameEl.textContent = '❄️'; // Freezing cold for 0 days
+        flameEl.classList.add('cold');
+        flameEl.classList.remove('hot');
+      } else {
+        flameEl.textContent = '🔥'; // Fire emoji
+        flameEl.classList.remove('cold');
+        flameEl.classList.add('hot');
+      }
+    }
+    
+    // Update status with motivational messages
+    const statusEl = document.getElementById('streakStatus');
+    const statusDot = statusEl.querySelector('.status-dot');
+    const statusText = statusEl.querySelector('.status-text');
+    
+    if (streakData.solvedToday) {
+      statusDot.classList.add('active');
+      statusText.textContent = getMotivationalMessage(currentStreak, true);
+    } else {
+      statusDot.classList.remove('active');
+      statusText.textContent = getMotivationalMessage(currentStreak, false);
+    }
+    
+    // Update progress to next milestone
+    const milestones = [7, 30, 50, 100, 365];
+    const nextMilestone = milestones.find(m => m > currentStreak) || 365;
+    const progress = (currentStreak / nextMilestone) * 100;
+    
+    document.getElementById('streakProgress').style.width = `${Math.min(progress, 100)}%`;
+    
+    // Get milestone name
+    const milestoneName = getMilestoneName(nextMilestone);
+    document.getElementById('progressLabel').textContent = 
+      `${currentStreak}/${nextMilestone} to ${milestoneName}`;
+    
+    // Update stats
+    document.getElementById('longestStreak').textContent = longestStreak;
+    document.getElementById('totalDays').textContent = totalDays;
+    document.getElementById('freezeTokens').textContent = freezeTokens;
+    
+  } catch (error) {
+    console.error('Error loading streak data:', error);
+  }
+}
+
+function getMotivationalMessage(streak, solvedToday) {
+  // Ensure streak is a number
+  const streakNum = Number(streak) || 0;
+  
+  if (solvedToday) {
+    if (streakNum === 0) return "🌟 Great start! Come back tomorrow!";
+    if (streakNum === 1) return "🌟 Great start! Come back tomorrow!";
+    if (streakNum < 7) return `✨ ${streakNum} days! You're building momentum!`;
+    if (streakNum < 30) return `🔥 On fire! ${streakNum} days strong!`;
+    if (streakNum < 50) return `💪 Unstoppable! ${streakNum} days!`;
+    if (streakNum < 100) return `🏆 Legendary! ${streakNum} days!`;
+    return `👑 Master! ${streakNum} days of dedication!`;
+  } else {
+    if (streakNum === 0) return "🚀 Start your journey today!";
+    if (streakNum === 1) return "💪 Keep your new streak alive!";
+    if (streakNum < 7) return `🔥 Don't break your ${streakNum}-day streak!`;
+    if (streakNum < 30) return `⚡ Keep the fire burning! ${streakNum} days!`;
+    if (streakNum < 100) return `💎 Your ${streakNum}-day streak is precious!`;
+    return `👑 Protect your legendary ${streakNum}-day streak!`;
+  }
+}
+
+function getMilestoneName(milestone) {
+  const names = {
+    7: "Week Warrior 🏅",
+    30: "Month Master 🏆",
+    50: "Elite Solver 💎",
+    100: "Century Club 👑",
+    365: "Legend Status 🌟"
+  };
+  return names[Number(milestone)] || "Next Level";
 }
 

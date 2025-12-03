@@ -22,6 +22,45 @@
       </button>
     </header>
 
+    <!-- Streak Dashboard Section -->
+    <section id="streak-section" class="streak-dashboard">
+      <div class="streak-header">
+        <div class="streak-main">
+          <div class="streak-flame">🔥</div>
+          <div class="streak-info">
+            <div class="streak-number" id="currentStreak">0</div>
+            <div class="streak-label">Day Streak</div>
+          </div>
+        </div>
+        <div class="streak-status" id="streakStatus">
+          <span class="status-dot"></span>
+          <span class="status-text">Not solved today</span>
+        </div>
+      </div>
+      
+      <div class="streak-progress">
+        <div class="progress-bar">
+          <div class="progress-fill" id="streakProgress"></div>
+        </div>
+        <div class="progress-label" id="progressLabel">Keep going!</div>
+      </div>
+      
+      <div class="streak-stats">
+        <div class="stat-item">
+          <div class="stat-value" id="longestStreak">0</div>
+          <div class="stat-label">Longest</div>
+        </div>
+        <div class="stat-item">
+          <div class="stat-value" id="totalDays">0</div>
+          <div class="stat-label">Total Days</div>
+        </div>
+        <div class="stat-item">
+          <div class="stat-value" id="freezeTokens">1</div>
+          <div class="stat-label">Freezes</div>
+        </div>
+      </div>
+    </section>
+
     <!-- Tab Navigation -->
     <nav class="tabs">
       <button class="tab active" data-tab="contests">
@@ -131,6 +170,14 @@
             <span class="toggle-switch"></span>
           </label>
           <p class="toggle-desc">Automatically open hints panel on problem pages</p>
+        </div>
+        <div class="toggle-group">
+          <label class="toggle-label">
+            <span>Auto-detect Solved Problems</span>
+            <input type="checkbox" id="autoDetectSolved" checked>
+            <span class="toggle-switch"></span>
+          </label>
+          <p class="toggle-desc">Automatically track when you solve a problem (detects "Accepted" submissions)</p>
         </div>
       </div>
 

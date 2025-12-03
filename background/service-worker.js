@@ -1,13 +1,67 @@
 // LC Helper - Background Service Worker
 
-// Initialize on install
-chrome.runtime.onInstalled.addListener(() => {
-  console.log('LC Helper installed');
+// Initialize on install or update
+chrome.runtime.onInstalled.addListener(async (details) => {
+  console.log('LC Helper installed/updated:', details.reason);
   fetchAndCacheContests();
   
   // Set up periodic contest refresh (every 6 hours)
   chrome.alarms.create('refreshContests', { periodInMinutes: 360 });
+  
+  // Always initialize streak system on install/update
+  await initializeStreakSystem();
 });
+
+// ============================================
+// LEETCODE SUBMISSION API LISTENER
+// ============================================
+
+// Listen for LeetCode submission API responses
+// This detects when a user submits code and the result comes back
+chrome.webRequest.onCompleted.addListener(
+  (details) => {
+    // Check for submission check endpoint (this returns the actual result)
+    // LeetCode uses endpoints like: /submissions/detail/{id}/check/
+    if (details.url.includes('/submissions/detail/') && 
+        details.url.includes('/check/') && 
+        details.statusCode === 200) {
+      
+      console.log('LC Helper: Detected submission check API call:', details.url);
+      
+      // Notify the content script that a submission result is available
+      // The content script will verify if it's "Accepted" by checking the DOM or re-fetching
+      chrome.tabs.sendMessage(details.tabId, {
+        event: 'submissionCheckCompleted',
+        url: details.url
+      }).catch(err => {
+        // Tab might not have content script loaded
+        console.log('LC Helper: Could not send message to tab:', err.message);
+      });
+    }
+    
+    // Also listen for the initial submission endpoint
+    if (details.url.includes('/problems/') && 
+        details.url.includes('/submit/') && 
+        details.statusCode === 200) {
+      
+      console.log('LC Helper: Detected submission API call:', details.url);
+      
+      chrome.tabs.sendMessage(details.tabId, {
+        event: 'submissionStarted',
+        url: details.url
+      }).catch(err => {
+        console.log('LC Helper: Could not send message to tab:', err.message);
+      });
+    }
+  },
+  { urls: ["*://leetcode.com/*"] }
+);
+
+// Also initialize on service worker startup (in case it was sleeping)
+(async () => {
+  console.log('Service worker starting...');
+  await ensureStreakDataExists();
+})();
 
 // Handle alarms
 chrome.alarms.onAlarm.addListener(async (alarm) => {
@@ -89,6 +143,16 @@ async function handleMessage(message, sender, sendResponse) {
     case 'GET_API_KEY':
       const { apiKey } = await chrome.storage.sync.get('apiKey');
       sendResponse({ apiKey });
+      break;
+      
+    case 'MARK_SOLVED':
+      const result = await markProblemSolved(message.problemData);
+      sendResponse(result);
+      break;
+      
+    case 'GET_STREAK_DATA':
+      const { streakData } = await chrome.storage.local.get('streakData');
+      sendResponse({ streakData: streakData || {} });
       break;
       
     default:
@@ -585,5 +649,260 @@ Format as JSON:
     console.error('Error generating hints with OpenAI:', error);
     return { error: error.message };
   }
+}
+
+// ============================================
+// DAILY STREAK TRACKER SYSTEM
+// ============================================
+
+// Ensure streak data exists (called on every service worker start)
+async function ensureStreakDataExists() {
+  const { streakData } = await chrome.storage.local.get('streakData');
+  
+  if (!streakData) {
+    console.log('Streak data not found, initializing...');
+    await chrome.storage.local.set({
+      streakData: {
+        currentStreak: 0,
+        longestStreak: 0,
+        lastSolveDate: null,
+        totalDaysSolved: 0,
+        solvedToday: false,
+        streakHistory: [],
+        freezeTokens: 1,
+        lastCheckedDate: getTodayDateString()
+      }
+    });
+    console.log('Streak data initialized');
+  } else {
+    console.log('Streak data exists:', streakData);
+  }
+}
+
+async function initializeStreakSystem() {
+  await ensureStreakDataExists();
+  
+  // Set up daily streak check alarm (checks at midnight)
+  chrome.alarms.create('dailyStreakCheck', {
+    when: getNextMidnight(),
+    periodInMinutes: 1440 // Daily
+  });
+  
+  // Set up daily reminder alarm (8 PM)
+  chrome.alarms.create('dailyStreakReminder', {
+    when: getDailyReminderTime(),
+    periodInMinutes: 1440
+  });
+  
+  console.log('Streak system fully initialized with alarms');
+}
+
+// Update alarm listener to handle streak alarms
+const originalAlarmListener = chrome.alarms.onAlarm.hasListener;
+chrome.alarms.onAlarm.addListener(async (alarm) => {
+  if (alarm.name === 'dailyStreakCheck') {
+    await checkDailyStreak();
+  } else if (alarm.name === 'dailyStreakReminder') {
+    await sendStreakReminder();
+  }
+});
+
+// Check if streak should be reset
+async function checkDailyStreak() {
+  const { streakData } = await chrome.storage.local.get('streakData');
+  if (!streakData) return;
+  
+  const today = getTodayDateString();
+  
+  if (streakData.lastCheckedDate !== today) {
+    // New day started
+    if (!streakData.solvedToday && streakData.currentStreak > 0) {
+      // User didn't solve yesterday - streak may break
+      const yesterday = getYesterdayDateString();
+      if (streakData.lastSolveDate !== yesterday) {
+        // Streak broken!
+        await handleStreakBroken(streakData);
+      }
+    }
+    
+    // Reset daily flag
+    streakData.solvedToday = false;
+    streakData.lastCheckedDate = today;
+    await chrome.storage.local.set({ streakData });
+  }
+}
+
+async function handleStreakBroken(streakData) {
+  // Update longest streak if needed
+  if (streakData.currentStreak > streakData.longestStreak) {
+    streakData.longestStreak = streakData.currentStreak;
+  }
+  
+  // Send notification about broken streak
+  chrome.notifications.create('streakBroken', {
+    type: 'basic',
+    iconUrl: 'assets/icon128.png',
+    title: '💔 Streak Broken',
+    message: `Your ${streakData.currentStreak}-day streak has ended. Start a new one today!`,
+    priority: 1
+  });
+  
+  // Reset streak
+  streakData.currentStreak = 0;
+  await chrome.storage.local.set({ streakData });
+}
+
+// Send daily reminder notification
+async function sendStreakReminder() {
+  const { streakData, notifyDaily } = await chrome.storage.local.get(['streakData', 'notifyDaily']);
+  
+  // Check if user has enabled daily reminders (default true)
+  if (notifyDaily === false) return;
+  if (!streakData) return;
+  
+  if (!streakData.solvedToday) {
+    let message;
+    if (streakData.currentStreak > 0) {
+      message = `🔥 Keep your ${streakData.currentStreak}-day streak alive! Solve 1 problem today.`;
+    } else {
+      message = `🌟 Start a new streak today! Solve your first problem.`;
+    }
+    
+    chrome.notifications.create('dailyReminder', {
+      type: 'basic',
+      iconUrl: 'assets/icon128.png',
+      title: '⏰ Daily Coding Reminder',
+      message: message,
+      priority: 2,
+      requireInteraction: false
+    });
+  }
+}
+
+// Mark problem as solved (call this when user solves a problem)
+async function markProblemSolved(problemData) {
+  console.log('markProblemSolved called with:', problemData);
+  
+  let { streakData } = await chrome.storage.local.get('streakData');
+  
+  if (!streakData) {
+    console.log('No streak data found, initializing...');
+    await ensureStreakDataExists();
+    const result = await chrome.storage.local.get('streakData');
+    streakData = result.streakData;
+  }
+  
+  console.log('Current streak data:', streakData);
+  
+  const today = getTodayDateString();
+  console.log('Today:', today);
+  
+  // Check if this is first solve today
+  if (!streakData.solvedToday) {
+    console.log('First solve today! Updating streak...');
+    streakData.solvedToday = true;
+    
+    // Check if streak should continue
+    const yesterday = getYesterdayDateString();
+    console.log('Yesterday:', yesterday, 'Last solve date:', streakData.lastSolveDate);
+    
+    if (streakData.lastSolveDate === yesterday || streakData.currentStreak === 0) {
+      // Continue or start streak
+      streakData.currentStreak++;
+      console.log('Streak continued/started! New streak:', streakData.currentStreak);
+      
+      // Update longest streak if current streak is now the longest
+      if (streakData.currentStreak > streakData.longestStreak) {
+        streakData.longestStreak = streakData.currentStreak;
+        console.log('New longest streak!', streakData.longestStreak);
+      }
+      
+      // Show celebration for milestones
+      if ([7, 30, 50, 100, 365].includes(streakData.currentStreak)) {
+        showStreakMilestone(streakData.currentStreak);
+      }
+    } else if (streakData.lastSolveDate !== today) {
+      // Gap in streak - reset
+      console.log('Gap detected! Resetting streak...');
+      if (streakData.currentStreak > streakData.longestStreak) {
+        streakData.longestStreak = streakData.currentStreak;
+      }
+      streakData.currentStreak = 1;
+    }
+    
+    streakData.lastSolveDate = today;
+    streakData.totalDaysSolved++;
+    
+    // Add to history for heatmap
+    if (!streakData.streakHistory) {
+      streakData.streakHistory = [];
+    }
+    if (!streakData.streakHistory.includes(today)) {
+      streakData.streakHistory.push(today);
+    }
+    
+    await chrome.storage.local.set({ streakData });
+    console.log('Streak data saved:', streakData);
+    
+    // Return updated data for UI
+    return { success: true, streakData };
+  }
+  
+  return { success: true, alreadySolvedToday: true, streakData };
+}
+
+function showStreakMilestone(days) {
+  const milestones = {
+    7: { title: '🔥 Week Warrior!', message: 'You hit a 7-day streak!' },
+    30: { title: '🔥🔥 Month Master!', message: '30 days strong!' },
+    50: { title: '🏆 Unstoppable!', message: '50-day streak achieved!' },
+    100: { title: '👑 Century Champion!', message: '100 days of dedication!' },
+    365: { title: '🌟 LEGEND STATUS!', message: 'You solved problems for a FULL YEAR!' }
+  };
+  
+  const milestone = milestones[days];
+  if (milestone) {
+    chrome.notifications.create(`milestone_${days}`, {
+      type: 'basic',
+      iconUrl: 'assets/icon128.png',
+      title: milestone.title,
+      message: milestone.message,
+      priority: 2,
+      requireInteraction: true
+    });
+  }
+}
+
+// Helper functions for dates
+function getTodayDateString() {
+  const date = new Date();
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+}
+
+function getYesterdayDateString() {
+  const date = new Date();
+  date.setDate(date.getDate() - 1);
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+}
+
+function getNextMidnight() {
+  const now = new Date();
+  const midnight = new Date(now);
+  midnight.setHours(24, 0, 0, 0);
+  return midnight.getTime();
+}
+
+function getDailyReminderTime() {
+  // Default: 8 PM (20:00)
+  const now = new Date();
+  const reminder = new Date(now);
+  reminder.setHours(20, 0, 0, 0);
+  
+  if (reminder <= now) {
+    // If already past 8 PM today, schedule for tomorrow
+    reminder.setDate(reminder.getDate() + 1);
+  }
+  
+  return reminder.getTime();
 }
 

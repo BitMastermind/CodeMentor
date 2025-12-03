@@ -219,6 +219,8 @@
     body.querySelectorAll('.lch-feedback-btn').forEach(btn => {
       btn.addEventListener('click', () => handleFeedback(btn.dataset.rating, data));
     });
+    
+    addSolvedButton();
   }
   
   function handleFeedback(rating, hintData) {
@@ -252,6 +254,175 @@
     const div = document.createElement('div');
     div.textContent = text;
     return div.innerHTML;
+  }
+
+  function addSolvedButton() {
+    const body = panel.querySelector('.lch-panel-body');
+    const problemKey = generateCacheKey(window.location.href);
+    
+    chrome.storage.local.get(`solved_${problemKey}`, (result) => {
+      const isSolved = result[`solved_${problemKey}`];
+      
+      if (!body.querySelector('.lch-solved-section')) {
+        const solvedSection = document.createElement('div');
+        solvedSection.className = 'lch-solved-section';
+        solvedSection.innerHTML = `
+          <button class="lch-mark-solved-btn ${isSolved ? 'solved' : ''}">
+            ${isSolved ? '✓ Solved' : '✓ Mark as Solved'}
+          </button>
+        `;
+        
+        const feedbackSection = body.querySelector('.lch-feedback-section');
+        if (feedbackSection) {
+          body.insertBefore(solvedSection, feedbackSection);
+        } else {
+          body.appendChild(solvedSection);
+        }
+        
+        const solvedBtn = solvedSection.querySelector('.lch-mark-solved-btn');
+        if (!isSolved) {
+          solvedBtn.addEventListener('click', async () => {
+            await markProblemAsSolved(solvedBtn);
+          });
+        } else {
+          solvedBtn.disabled = true;
+        }
+      }
+    });
+  }
+
+  async function markProblemAsSolved(button) {
+    console.log('Mark as Solved button clicked!');
+    
+    try {
+      const problemData = extractProblemData();
+      const problemKey = generateCacheKey(window.location.href);
+      
+      const saveData = {
+        title: problemData.title,
+        url: window.location.href,
+        difficulty: problemData.difficulty,
+        tags: problemData.tags,
+        solvedAt: Date.now(),
+        platform: 'codechef'
+      };
+      
+      await chrome.storage.local.set({ [`solved_${problemKey}`]: saveData });
+      console.log('Problem saved to local storage');
+      
+      console.log('Sending MARK_SOLVED message to background...');
+      const response = await chrome.runtime.sendMessage({
+        type: 'MARK_SOLVED',
+        problemData: saveData
+      });
+      
+      console.log('Response from background:', response);
+      
+      if (response && response.success) {
+        button.textContent = '✓ Solved';
+        button.classList.add('solved');
+        button.disabled = true;
+        showStreakCelebration(response.streakData);
+      } else {
+        console.error('Failed to update streak:', response);
+        button.textContent = '✓ Solved';
+        button.classList.add('solved');
+        button.disabled = true;
+      }
+    } catch (error) {
+      console.error('Error marking problem as solved:', error);
+      button.textContent = '✓ Solved';
+      button.classList.add('solved');
+      button.disabled = true;
+    }
+  }
+
+  function generateCacheKey(url) {
+    return url
+      .replace(/^https?:\/\//, '')
+      .replace(/[^a-zA-Z0-9]/g, '_')
+      .slice(0, 100);
+  }
+
+  function showStreakCelebration(streakData) {
+    const currentStreak = streakData?.currentStreak || 1;
+    
+    const celebration = document.createElement('div');
+    celebration.className = 'lch-celebration';
+    
+    const { icon, title, subtitle } = getCelebrationContent(currentStreak);
+    
+    celebration.innerHTML = `
+      <div class="lch-celebration-content">
+        <div class="lch-celebration-icon">${icon}</div>
+        <div class="lch-celebration-title">${title}</div>
+        <div class="lch-celebration-streak">
+          🔥 ${currentStreak} Day Streak
+        </div>
+        <div class="lch-celebration-subtitle">${subtitle}</div>
+      </div>
+    `;
+    document.body.appendChild(celebration);
+    
+    setTimeout(() => celebration.remove(), 3000);
+  }
+
+  function getCelebrationContent(streak) {
+    if (streak === 1) {
+      return {
+        icon: '🎉',
+        title: 'Awesome Start!',
+        subtitle: 'First step to greatness! Come back tomorrow!'
+      };
+    } else if (streak === 7) {
+      return {
+        icon: '🏅',
+        title: 'Week Warrior!',
+        subtitle: 'You\'ve built an amazing 7-day habit!'
+      };
+    } else if (streak === 30) {
+      return {
+        icon: '🏆',
+        title: 'Month Master!',
+        subtitle: '30 days of dedication! You\'re unstoppable!'
+      };
+    } else if (streak === 50) {
+      return {
+        icon: '💎',
+        title: 'Elite Status!',
+        subtitle: '50 days! You\'re in the top 1%!'
+      };
+    } else if (streak === 100) {
+      return {
+        icon: '👑',
+        title: 'CENTURY LEGEND!',
+        subtitle: '100 days! You\'re absolutely incredible!'
+      };
+    } else if (streak < 7) {
+      return {
+        icon: '🌟',
+        title: 'Problem Solved!',
+        subtitle: `${streak} days and counting! Keep going!`
+      };
+    } else if (streak < 30) {
+      return {
+        icon: '🔥',
+        title: 'On Fire!',
+        subtitle: `${streak} days! You\'re building something special!`
+      };
+    } else if (streak < 100) {
+      return {
+        icon: '⚡',
+        title: 'Crushing It!',
+        subtitle: `${streak} days of pure dedication!`
+      };
+    } else {
+      return {
+        icon: '🚀',
+        title: 'LEGENDARY!',
+        subtitle: `${streak} days! You\'re a coding machine!`
+      };
+    }
   }
 })();
 
