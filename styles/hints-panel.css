@@ -64,7 +64,7 @@
   bottom: 92px;
   right: 24px;
   width: 380px;
-  max-height: 520px;
+  max-height: 600px;
   background: var(--lch-bg-primary);
   border-radius: 20px;
   border: 1px solid var(--lch-border);
@@ -78,6 +78,33 @@
   visibility: hidden;
   transform: translateY(16px) scale(0.95);
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  display: flex;
+  flex-direction: column;
+}
+
+/* Panel Body - Scrollable */
+.lch-panel-body {
+  overflow-y: auto;
+  overflow-x: hidden;
+  max-height: calc(600px - 80px);
+  flex: 1;
+}
+
+.lch-panel-body::-webkit-scrollbar {
+  width: 6px;
+}
+
+.lch-panel-body::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.lch-panel-body::-webkit-scrollbar-thumb {
+  background: var(--lch-border);
+  border-radius: 3px;
+}
+
+.lch-panel-body::-webkit-scrollbar-thumb:hover {
+  background: var(--lch-text-muted);
 }
 
 .lch-panel.active {
@@ -115,7 +142,7 @@
 
 /* Topic Badge */
 .lch-topic-section {
-  padding: 16px 24px;
+  padding: 16px 20px;
   border-bottom: 1px solid var(--lch-border);
 }
 
@@ -192,21 +219,6 @@
 /* Hints Section */
 .lch-hints-section {
   padding: 20px 24px;
-  overflow-y: auto;
-  max-height: 300px;
-}
-
-.lch-hints-section::-webkit-scrollbar {
-  width: 6px;
-}
-
-.lch-hints-section::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-.lch-hints-section::-webkit-scrollbar-thumb {
-  background: var(--lch-border);
-  border-radius: 3px;
 }
 
 .lch-hint-card {
@@ -345,7 +357,7 @@
 
 /* Error State */
 .lch-error {
-  padding: 24px;
+  padding: 32px 24px;
   text-align: center;
 }
 
@@ -376,39 +388,68 @@
   background: var(--lch-accent-hover);
 }
 
-/* Settings Prompt */
+/* Settings Prompt - Premium Design */
 .lch-settings-prompt {
-  padding: 32px 24px;
+  padding: 40px 28px;
   text-align: center;
 }
 
 .lch-settings-icon {
-  font-size: 48px;
-  margin-bottom: 16px;
+  font-size: 56px;
+  margin-bottom: 20px;
+  filter: drop-shadow(0 4px 12px rgba(251, 191, 36, 0.4));
+  animation: iconFloat 3s ease-in-out infinite;
+}
+
+@keyframes iconFloat {
+  0%, 100% { transform: translateY(0) rotate(0deg); }
+  50% { transform: translateY(-8px) rotate(5deg); }
 }
 
 .lch-settings-message {
-  font-size: 14px;
+  font-size: 15px;
   color: var(--lch-text-secondary);
-  margin-bottom: 20px;
-  line-height: 1.6;
+  margin-bottom: 24px;
+  line-height: 1.7;
+  font-weight: 400;
 }
 
 .lch-settings-btn {
-  padding: 12px 24px;
-  background: linear-gradient(135deg, var(--lch-accent) 0%, #8b5cf6 100%);
+  padding: 14px 32px;
+  background: linear-gradient(135deg, 
+    #6366f1 0%, 
+    #8b5cf6 50%,
+    #a855f7 100%);
+  background-size: 200% 200%;
   border: none;
-  border-radius: 10px;
-  font-size: 14px;
-  font-weight: 600;
+  border-radius: 12px;
+  font-size: 15px;
+  font-weight: 700;
   color: white;
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: 
+    0 6px 20px rgba(99, 102, 241, 0.4),
+    0 2px 4px rgba(0, 0, 0, 0.2),
+    inset 0 1px 0 rgba(255, 255, 255, 0.2);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+  letter-spacing: 0.5px;
 }
 
 .lch-settings-btn:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 8px 24px var(--lch-accent-glow);
+  transform: translateY(-3px) scale(1.02);
+  box-shadow: 
+    0 10px 32px rgba(99, 102, 241, 0.6),
+    0 0 40px rgba(139, 92, 246, 0.4),
+    inset 0 1px 0 rgba(255, 255, 255, 0.3);
+  background-position: 100% 50%;
+}
+
+.lch-settings-btn:active {
+  transform: translateY(-1px) scale(0.98);
+  box-shadow: 
+    0 4px 16px rgba(99, 102, 241, 0.5),
+    inset 0 2px 4px rgba(0, 0, 0, 0.3);
 }
 
 /* Feedback Section */
@@ -510,23 +551,27 @@
   transform: translateY(-1px);
 }
 
-/* Solved Button Section - Super Attractive */
+/* Solved Button Section - Premium & Attractive */
 .lch-solved-section {
-  padding: 20px 24px;
-  border-bottom: 1px solid var(--lch-border);
+  padding: 12px 16px 16px 16px;
   display: flex;
   justify-content: center;
-  background: linear-gradient(180deg, rgba(16, 185, 129, 0.05) 0%, transparent 100%);
+  position: relative;
 }
 
 .lch-mark-solved-btn {
-  padding: 16px 32px;
-  background: linear-gradient(135deg, #10b981 0%, #059669 50%, #047857 100%);
-  background-size: 200% 200%;
+  padding: 14px 32px;
+  background: linear-gradient(135deg, 
+    #10b981 0%, 
+    #059669 25%,
+    #047857 50%,
+    #059669 75%,
+    #10b981 100%);
+  background-size: 300% 300%;
   border: none;
   border-radius: 14px;
-  font-size: 16px;
-  font-weight: 700;
+  font-size: 15px;
+  font-weight: 800;
   color: white;
   cursor: pointer;
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
@@ -534,29 +579,61 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 8px;
+  gap: 10px;
   box-shadow: 
-    0 4px 16px rgba(16, 185, 129, 0.3),
-    0 0 0 1px rgba(255, 255, 255, 0.1) inset,
-    0 1px 0 rgba(255, 255, 255, 0.3) inset;
+    0 8px 24px rgba(16, 185, 129, 0.4),
+    0 4px 8px rgba(0, 0, 0, 0.2),
+    inset 0 2px 0 rgba(255, 255, 255, 0.2),
+    inset 0 -2px 8px rgba(0, 0, 0, 0.2);
   position: relative;
   overflow: hidden;
-  letter-spacing: 0.5px;
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
-  animation: buttonPulse 2s ease-in-out infinite;
+  letter-spacing: 0.8px;
+  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+  animation: buttonPulse 3s ease-in-out infinite;
+  width: 100%;
+  max-width: 260px;
+}
+
+.lch-mark-solved-btn::after {
+  content: '';
+  position: absolute;
+  top: -50%;
+  left: -50%;
+  width: 200%;
+  height: 200%;
+  background: radial-gradient(
+    circle,
+    rgba(255, 255, 255, 0.2) 0%,
+    transparent 70%
+  );
+  animation: pulseGlow 3s ease-in-out infinite;
 }
 
 @keyframes buttonPulse {
   0%, 100% {
     box-shadow: 
-      0 4px 16px rgba(16, 185, 129, 0.3),
-      0 0 0 1px rgba(255, 255, 255, 0.1) inset;
+      0 8px 24px rgba(16, 185, 129, 0.4),
+      0 4px 8px rgba(0, 0, 0, 0.2),
+      inset 0 2px 0 rgba(255, 255, 255, 0.2);
+    background-position: 0% 50%;
   }
   50% {
     box-shadow: 
-      0 4px 24px rgba(16, 185, 129, 0.5),
-      0 0 20px rgba(16, 185, 129, 0.3),
-      0 0 0 1px rgba(255, 255, 255, 0.2) inset;
+      0 12px 32px rgba(16, 185, 129, 0.6),
+      0 0 30px rgba(16, 185, 129, 0.4),
+      inset 0 2px 0 rgba(255, 255, 255, 0.3);
+    background-position: 100% 50%;
+  }
+}
+
+@keyframes pulseGlow {
+  0%, 100% {
+    transform: scale(1);
+    opacity: 0.3;
+  }
+  50% {
+    transform: scale(1.5);
+    opacity: 0.1;
   }
 }
 
@@ -575,13 +652,16 @@
 }
 
 .lch-mark-solved-btn:hover {
-  transform: translateY(-3px) scale(1.02);
+  transform: translateY(-4px) scale(1.03);
   background-position: 100% 50%;
   box-shadow: 
-    0 8px 32px rgba(16, 185, 129, 0.5),
-    0 0 40px rgba(16, 185, 129, 0.3),
-    0 0 0 2px rgba(255, 255, 255, 0.2) inset;
+    0 12px 40px rgba(16, 185, 129, 0.6),
+    0 0 50px rgba(16, 185, 129, 0.4),
+    0 0 30px rgba(255, 255, 255, 0.2),
+    inset 0 2px 0 rgba(255, 255, 255, 0.3),
+    inset 0 -2px 8px rgba(0, 0, 0, 0.2);
   animation: none;
+  letter-spacing: 1px;
 }
 
 .lch-mark-solved-btn:hover::before {
@@ -590,6 +670,9 @@
 
 .lch-mark-solved-btn:active {
   transform: translateY(-1px) scale(0.98);
+  box-shadow: 
+    0 6px 20px rgba(16, 185, 129, 0.5),
+    inset 0 3px 8px rgba(0, 0, 0, 0.3);
 }
 
 .lch-mark-solved-btn.solved {

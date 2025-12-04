@@ -115,6 +115,23 @@
     <!-- Settings Tab -->
     <section class="tab-content" id="settings-tab">
       <div class="settings-group">
+        <h3>👤 Platform Usernames</h3>
+        <p class="settings-desc">Enter your usernames to enable unified streak tracking across all platforms.</p>
+        <div class="input-group">
+          <label for="leetcodeUsername">LeetCode Username</label>
+          <input type="text" id="leetcodeUsername" placeholder="e.g., tourist" autocomplete="off">
+        </div>
+        <div class="input-group">
+          <label for="codeforcesUsername">Codeforces Handle</label>
+          <input type="text" id="codeforcesUsername" placeholder="e.g., tourist" autocomplete="off">
+        </div>
+        <div class="input-group">
+          <label for="codechefUsername">CodeChef Username</label>
+          <input type="text" id="codechefUsername" placeholder="e.g., gennady.korotkevich" autocomplete="off">
+        </div>
+      </div>
+
+      <div class="settings-group">
         <h3>🔑 API Configuration</h3>
         <p class="settings-desc">Choose your AI provider and enter the API key to enable smart hints.</p>
         <div class="input-group">
@@ -170,14 +187,6 @@
             <span class="toggle-switch"></span>
           </label>
           <p class="toggle-desc">Automatically open hints panel on problem pages</p>
-        </div>
-        <div class="toggle-group">
-          <label class="toggle-label">
-            <span>Auto-detect Solved Problems</span>
-            <input type="checkbox" id="autoDetectSolved" checked>
-            <span class="toggle-switch"></span>
-          </label>
-          <p class="toggle-desc">Automatically track when you solve a problem (detects "Accepted" submissions)</p>
         </div>
       </div>
 

@@ -38,7 +38,22 @@ function initTabs() {
 // Settings Management
 function initSettings() {
   // Load saved settings
-  chrome.storage.sync.get(['apiKey', 'apiProvider', 'notifyContests', 'reminderTime', 'autoShowPanel', 'autoDetectSolved'], (result) => {
+  chrome.storage.sync.get([
+    'apiKey', 'apiProvider', 'notifyContests', 'reminderTime', 'autoShowPanel',
+    'leetcodeUsername', 'codeforcesUsername', 'codechefUsername'
+  ], (result) => {
+    // Platform usernames
+    if (result.leetcodeUsername) {
+      document.getElementById('leetcodeUsername').value = result.leetcodeUsername;
+    }
+    if (result.codeforcesUsername) {
+      document.getElementById('codeforcesUsername').value = result.codeforcesUsername;
+    }
+    if (result.codechefUsername) {
+      document.getElementById('codechefUsername').value = result.codechefUsername;
+    }
+    
+    // API settings
     if (result.apiKey) {
       document.getElementById('apiKey').value = result.apiKey;
     }
@@ -49,8 +64,6 @@ function initSettings() {
     document.getElementById('notifyContests').checked = result.notifyContests !== false;
     document.getElementById('reminderTime').value = result.reminderTime || '30';
     document.getElementById('autoShowPanel').checked = result.autoShowPanel || false;
-    // Auto-detect solved is ON by default
-    document.getElementById('autoDetectSolved').checked = result.autoDetectSolved !== false;
   });
   
   // Update link when provider changes
@@ -71,12 +84,14 @@ function initSettings() {
   document.getElementById('saveSettings').addEventListener('click', async () => {
     const saveBtn = document.getElementById('saveSettings');
     const settings = {
+      leetcodeUsername: document.getElementById('leetcodeUsername').value.trim(),
+      codeforcesUsername: document.getElementById('codeforcesUsername').value.trim(),
+      codechefUsername: document.getElementById('codechefUsername').value.trim(),
       apiKey: document.getElementById('apiKey').value.trim(),
       apiProvider: document.getElementById('apiProvider').value,
       notifyContests: document.getElementById('notifyContests').checked,
       reminderTime: document.getElementById('reminderTime').value,
-      autoShowPanel: document.getElementById('autoShowPanel').checked,
-      autoDetectSolved: document.getElementById('autoDetectSolved').checked
+      autoShowPanel: document.getElementById('autoShowPanel').checked
     };
 
     await chrome.storage.sync.set(settings);
@@ -84,6 +99,11 @@ function initSettings() {
     // Update alarms if notifications are enabled
     if (settings.notifyContests) {
       chrome.runtime.sendMessage({ type: 'UPDATE_ALARMS' });
+    }
+    
+    // Trigger immediate streak sync if usernames were changed
+    if (settings.leetcodeUsername || settings.codeforcesUsername || settings.codechefUsername) {
+      chrome.runtime.sendMessage({ type: 'REFRESH_UNIFIED_STREAK' });
     }
 
     // Show success state
@@ -334,19 +354,26 @@ function updateApiKeyLink(provider) {
   }
 }
 
-// Streak Data Management with Motivational Messages
+// Unified Streak Data Management (API-based backend, classic UI)
 async function loadStreakData() {
   try {
     const response = await chrome.runtime.sendMessage({ type: 'GET_STREAK_DATA' });
     const streakData = response.streakData;
     
-    if (!streakData) return;
+    if (!streakData) {
+      // Show default state
+      document.getElementById('currentStreak').textContent = '0';
+      document.getElementById('longestStreak').textContent = '0';
+      document.getElementById('totalDays').textContent = '0';
+      document.getElementById('freezeTokens').textContent = '1';
+      document.getElementById('progressLabel').textContent = 'Configure usernames in settings';
+      return;
+    }
     
-    // Ensure streak is a valid number
+    // Ensure values are valid numbers
     const currentStreak = Number(streakData.currentStreak) || 0;
     const longestStreak = Number(streakData.longestStreak) || 0;
-    const totalDays = Number(streakData.totalDaysSolved) || 0;
-    const freezeTokens = Number(streakData.freezeTokens) || 1;
+    const totalDays = Number(streakData.totalActiveDays) || 0;
     
     // Update current streak
     document.getElementById('currentStreak').textContent = currentStreak;
@@ -370,7 +397,12 @@ async function loadStreakData() {
     const statusDot = statusEl.querySelector('.status-dot');
     const statusText = statusEl.querySelector('.status-text');
     
-    if (streakData.solvedToday) {
+    // Check if active today (lastActiveDate is today)
+    const today = new Date().toISOString().split('T')[0];
+    const lastActive = streakData.lastActiveDate;
+    const solvedToday = lastActive === today;
+    
+    if (solvedToday) {
       statusDot.classList.add('active');
       statusText.textContent = getMotivationalMessage(currentStreak, true);
     } else {
@@ -393,7 +425,7 @@ async function loadStreakData() {
     // Update stats
     document.getElementById('longestStreak').textContent = longestStreak;
     document.getElementById('totalDays').textContent = totalDays;
-    document.getElementById('freezeTokens').textContent = freezeTokens;
+    document.getElementById('freezeTokens').textContent = '1'; // Placeholder for now
     
   } catch (error) {
     console.error('Error loading streak data:', error);
@@ -421,6 +453,7 @@ function getMotivationalMessage(streak, solvedToday) {
     return `👑 Protect your legendary ${streakNum}-day streak!`;
   }
 }
+
 
 function getMilestoneName(milestone) {
   const names = {

@@ -12,51 +12,6 @@ chrome.runtime.onInstalled.addListener(async (details) => {
   await initializeStreakSystem();
 });
 
-// ============================================
-// LEETCODE SUBMISSION API LISTENER
-// ============================================
-
-// Listen for LeetCode submission API responses
-// This detects when a user submits code and the result comes back
-chrome.webRequest.onCompleted.addListener(
-  (details) => {
-    // Check for submission check endpoint (this returns the actual result)
-    // LeetCode uses endpoints like: /submissions/detail/{id}/check/
-    if (details.url.includes('/submissions/detail/') && 
-        details.url.includes('/check/') && 
-        details.statusCode === 200) {
-      
-      console.log('LC Helper: Detected submission check API call:', details.url);
-      
-      // Notify the content script that a submission result is available
-      // The content script will verify if it's "Accepted" by checking the DOM or re-fetching
-      chrome.tabs.sendMessage(details.tabId, {
-        event: 'submissionCheckCompleted',
-        url: details.url
-      }).catch(err => {
-        // Tab might not have content script loaded
-        console.log('LC Helper: Could not send message to tab:', err.message);
-      });
-    }
-    
-    // Also listen for the initial submission endpoint
-    if (details.url.includes('/problems/') && 
-        details.url.includes('/submit/') && 
-        details.statusCode === 200) {
-      
-      console.log('LC Helper: Detected submission API call:', details.url);
-      
-      chrome.tabs.sendMessage(details.tabId, {
-        event: 'submissionStarted',
-        url: details.url
-      }).catch(err => {
-        console.log('LC Helper: Could not send message to tab:', err.message);
-      });
-    }
-  },
-  { urls: ["*://leetcode.com/*"] }
-);
-
 // Also initialize on service worker startup (in case it was sleeping)
 (async () => {
   console.log('Service worker starting...');
@@ -145,14 +100,14 @@ async function handleMessage(message, sender, sendResponse) {
       sendResponse({ apiKey });
       break;
       
-    case 'MARK_SOLVED':
-      const result = await markProblemSolved(message.problemData);
-      sendResponse(result);
-      break;
-      
     case 'GET_STREAK_DATA':
       const { streakData } = await chrome.storage.local.get('streakData');
-      sendResponse({ streakData: streakData || {} });
+      sendResponse({ streakData: streakData?.unified || {} });
+      break;
+      
+    case 'REFRESH_UNIFIED_STREAK':
+      const refreshResult = await refreshUnifiedStreak();
+      sendResponse(refreshResult);
       break;
       
     default:
@@ -652,7 +607,7 @@ Format as JSON:
 }
 
 // ============================================
-// DAILY STREAK TRACKER SYSTEM
+// UNIFIED STREAK TRACKER SYSTEM (API-BASED)
 // ============================================
 
 // Ensure streak data exists (called on every service worker start)
@@ -660,20 +615,29 @@ async function ensureStreakDataExists() {
   const { streakData } = await chrome.storage.local.get('streakData');
   
   if (!streakData) {
-    console.log('Streak data not found, initializing...');
+    console.log('Unified streak data not found, initializing...');
     await chrome.storage.local.set({
       streakData: {
-        currentStreak: 0,
-        longestStreak: 0,
-        lastSolveDate: null,
-        totalDaysSolved: 0,
-        solvedToday: false,
-        streakHistory: [],
-        freezeTokens: 1,
-        lastCheckedDate: getTodayDateString()
-      }
+        unified: {
+          currentStreak: 0,
+          longestStreak: 0,
+          totalActiveDays: 0,
+          lastActiveDate: null,
+          platformBreakdown: {
+            leetcode: 0,
+            codeforces: 0,
+            codechef: 0
+          }
+        },
+        platforms: {
+          leetcode: null,
+          codeforces: null,
+          codechef: null
+        }
+      },
+      lastSyncTime: null
     });
-    console.log('Streak data initialized');
+    console.log('Unified streak data initialized');
   } else {
     console.log('Streak data exists:', streakData);
   }
@@ -682,10 +646,9 @@ async function ensureStreakDataExists() {
 async function initializeStreakSystem() {
   await ensureStreakDataExists();
   
-  // Set up daily streak check alarm (checks at midnight)
-  chrome.alarms.create('dailyStreakCheck', {
-    when: getNextMidnight(),
-    periodInMinutes: 1440 // Daily
+  // Set up unified streak sync alarm (every 6 hours)
+  chrome.alarms.create('unifiedStreakSync', {
+    periodInMinutes: 360 // 6 hours
   });
   
   // Set up daily reminder alarm (8 PM)
@@ -694,62 +657,330 @@ async function initializeStreakSystem() {
     periodInMinutes: 1440
   });
   
-  console.log('Streak system fully initialized with alarms');
+  // Initial sync
+  await syncUnifiedStreak();
+  
+  console.log('Unified streak system fully initialized with alarms');
 }
 
 // Update alarm listener to handle streak alarms
 const originalAlarmListener = chrome.alarms.onAlarm.hasListener;
 chrome.alarms.onAlarm.addListener(async (alarm) => {
-  if (alarm.name === 'dailyStreakCheck') {
-    await checkDailyStreak();
+  if (alarm.name === 'unifiedStreakSync') {
+    await syncUnifiedStreak();
   } else if (alarm.name === 'dailyStreakReminder') {
     await sendStreakReminder();
   }
 });
 
-// Check if streak should be reset
-async function checkDailyStreak() {
-  const { streakData } = await chrome.storage.local.get('streakData');
-  if (!streakData) return;
+// ============================================
+// UNIFIED STREAK SYNC - Fetch from all platforms
+// ============================================
+
+async function syncUnifiedStreak() {
+  console.log('Starting unified streak sync...');
   
-  const today = getTodayDateString();
-  
-  if (streakData.lastCheckedDate !== today) {
-    // New day started
-    if (!streakData.solvedToday && streakData.currentStreak > 0) {
-      // User didn't solve yesterday - streak may break
-      const yesterday = getYesterdayDateString();
-      if (streakData.lastSolveDate !== yesterday) {
-        // Streak broken!
-        await handleStreakBroken(streakData);
-      }
+  try {
+    // Get usernames from settings
+    const { leetcodeUsername, codeforcesUsername, codechefUsername } = 
+      await chrome.storage.sync.get(['leetcodeUsername', 'codeforcesUsername', 'codechefUsername']);
+    
+    if (!leetcodeUsername && !codeforcesUsername && !codechefUsername) {
+      console.log('No usernames configured, skipping sync');
+      return;
     }
     
-    // Reset daily flag
-    streakData.solvedToday = false;
-    streakData.lastCheckedDate = today;
-    await chrome.storage.local.set({ streakData });
+    // Fetch data from all platforms in parallel (with delay for Codeforces)
+    const results = await Promise.allSettled([
+      leetcodeUsername ? fetchLeetCodeActivity(leetcodeUsername) : Promise.resolve(null),
+      new Promise(resolve => setTimeout(async () => {
+        resolve(codeforcesUsername ? await fetchCodeforcesActivity(codeforcesUsername) : null);
+      }, 2000)), // 2 second delay for Codeforces rate limiting
+      codechefUsername ? fetchCodeChefActivity(codechefUsername) : Promise.resolve(null)
+    ]);
+    
+    const leetcodeData = results[0].status === 'fulfilled' ? results[0].value : null;
+    const codeforcesData = results[1].status === 'fulfilled' ? results[1].value : null;
+    const codechefData = results[2].status === 'fulfilled' ? results[2].value : null;
+    
+    console.log('Fetched platform data:', { leetcodeData, codeforcesData, codechefData });
+    
+    // Calculate unified streak
+    const unifiedStreakData = calculateUnifiedStreak(leetcodeData, codeforcesData, codechefData);
+    
+    // Store data
+    await chrome.storage.local.set({
+      streakData: {
+        unified: unifiedStreakData,
+        platforms: {
+          leetcode: leetcodeData,
+          codeforces: codeforcesData,
+          codechef: codechefData
+        }
+      },
+      lastSyncTime: Date.now()
+    });
+    
+    console.log('Unified streak calculated:', unifiedStreakData);
+    
+  } catch (error) {
+    console.error('Error syncing unified streak:', error);
   }
 }
 
-async function handleStreakBroken(streakData) {
-  // Update longest streak if needed
-  if (streakData.currentStreak > streakData.longestStreak) {
-    streakData.longestStreak = streakData.currentStreak;
+// ============================================
+// API FETCHING FUNCTIONS
+// ============================================
+
+async function fetchLeetCodeActivity(username) {
+  try {
+    const query = `
+      query userProfileCalendar($username: String!) {
+        matchedUser(username: $username) {
+          userCalendar {
+            streak
+            totalActiveDays
+            submissionCalendar
+          }
+        }
+      }
+    `;
+    
+    const response = await fetch('https://leetcode.com/graphql/', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        query,
+        variables: { username }
+      })
+    });
+    
+    if (!response.ok) {
+      throw new Error(`LeetCode API error: ${response.status}`);
+    }
+    
+    const data = await response.json();
+    const calendar = data.data?.matchedUser?.userCalendar;
+    
+    if (!calendar) {
+      throw new Error('Invalid LeetCode response');
+    }
+    
+    // Parse submission calendar (timestamps as keys)
+    const submissionCalendar = JSON.parse(calendar.submissionCalendar || '{}');
+    const activityDates = Object.keys(submissionCalendar).map(timestamp => {
+      const date = new Date(parseInt(timestamp) * 1000);
+      return formatDateToYYYYMMDD(date);
+    });
+    
+    return {
+      dates: activityDates,
+      totalActiveDays: calendar.totalActiveDays,
+      platform: 'leetcode'
+    };
+    
+  } catch (error) {
+    console.error('Error fetching LeetCode activity:', error);
+    return null;
+  }
+}
+
+async function fetchCodeforcesActivity(username) {
+  try {
+    const response = await fetch(
+      `https://codeforces.com/api/user.status?handle=${username}&from=1&count=1000`,
+      {
+        method: 'GET',
+        headers: { 'Accept': 'application/json' }
+      }
+    );
+    
+    if (!response.ok) {
+      throw new Error(`Codeforces API error: ${response.status}`);
+    }
+    
+    const data = await response.json();
+    
+    if (data.status !== 'OK') {
+      throw new Error('Invalid Codeforces response');
+    }
+    
+    // Filter accepted submissions and extract unique dates
+    const acceptedSubmissions = data.result.filter(s => s.verdict === 'OK');
+    const uniqueDates = new Set();
+    
+    acceptedSubmissions.forEach(submission => {
+      const date = new Date(submission.creationTimeSeconds * 1000);
+      uniqueDates.add(formatDateToYYYYMMDD(date));
+    });
+    
+    return {
+      dates: Array.from(uniqueDates),
+      totalActiveDays: uniqueDates.size,
+      platform: 'codeforces'
+    };
+    
+  } catch (error) {
+    console.error('Error fetching Codeforces activity:', error);
+    return null;
+  }
+}
+
+async function fetchCodeChefActivity(username) {
+  try {
+    const response = await fetch(
+      `https://codechef-api.vercel.app/heatmap/${username}`,
+      {
+        method: 'GET',
+        headers: { 'Accept': 'application/json' }
+      }
+    );
+    
+    if (!response.ok) {
+      throw new Error(`CodeChef API error: ${response.status}`);
+    }
+    
+    const data = await response.json();
+    
+    if (!data.heatmap) {
+      throw new Error('Invalid CodeChef response');
+    }
+    
+    // Heatmap already has dates in YYYY-MM-DD format
+    const activityDates = Object.keys(data.heatmap).filter(date => data.heatmap[date] > 0);
+    
+    return {
+      dates: activityDates,
+      totalActiveDays: activityDates.length,
+      platform: 'codechef',
+      apiStreak: data.streak // Optional: API-provided streak for reference
+    };
+    
+  } catch (error) {
+    console.error('Error fetching CodeChef activity:', error);
+    return null;
+  }
+}
+
+// ============================================
+// UNIFIED STREAK CALCULATION
+// ============================================
+
+function calculateUnifiedStreak(leetcodeData, codeforcesData, codechefData) {
+  // Merge all activity dates from all platforms
+  const allDates = new Set();
+  const platformBreakdown = {
+    leetcode: 0,
+    codeforces: 0,
+    codechef: 0
+  };
+  
+  if (leetcodeData?.dates) {
+    leetcodeData.dates.forEach(date => allDates.add(date));
   }
   
-  // Send notification about broken streak
-  chrome.notifications.create('streakBroken', {
-    type: 'basic',
-    iconUrl: 'assets/icon128.png',
-    title: '💔 Streak Broken',
-    message: `Your ${streakData.currentStreak}-day streak has ended. Start a new one today!`,
-    priority: 1
-  });
+  if (codeforcesData?.dates) {
+    codeforcesData.dates.forEach(date => allDates.add(date));
+  }
   
-  // Reset streak
-  streakData.currentStreak = 0;
-  await chrome.storage.local.set({ streakData });
+  if (codechefData?.dates) {
+    codechefData.dates.forEach(date => allDates.add(date));
+  }
+  
+  if (allDates.size === 0) {
+    return {
+      currentStreak: 0,
+      longestStreak: 0,
+      totalActiveDays: 0,
+      lastActiveDate: null,
+      platformBreakdown
+    };
+  }
+  
+  // Sort dates chronologically
+  const sortedDates = Array.from(allDates).sort();
+  
+  // Calculate individual platform streaks (for breakdown)
+  if (leetcodeData?.dates) {
+    platformBreakdown.leetcode = calculateCurrentStreak(leetcodeData.dates.sort());
+  }
+  if (codeforcesData?.dates) {
+    platformBreakdown.codeforces = calculateCurrentStreak(codeforcesData.dates.sort());
+  }
+  if (codechefData?.dates) {
+    platformBreakdown.codechef = calculateCurrentStreak(codechefData.dates.sort());
+  }
+  
+  // Calculate current streak from merged dates
+  const currentStreak = calculateCurrentStreak(sortedDates);
+  
+  // Calculate longest streak from merged dates
+  const longestStreak = calculateLongestStreak(sortedDates);
+  
+  return {
+    currentStreak,
+    longestStreak,
+    totalActiveDays: allDates.size,
+    lastActiveDate: sortedDates[sortedDates.length - 1],
+    platformBreakdown
+  };
+}
+
+function calculateCurrentStreak(sortedDates) {
+  if (sortedDates.length === 0) return 0;
+  
+  const today = getTodayDateString();
+  const yesterday = getYesterdayDateString();
+  
+  // Get most recent date
+  const mostRecent = sortedDates[sortedDates.length - 1];
+  
+  // Current streak only counts if last activity was today or yesterday
+  if (mostRecent !== today && mostRecent !== yesterday) {
+    return 0;
+  }
+  
+  // Count backwards from most recent date
+  let streak = 0;
+  let currentDate = mostRecent === today ? today : yesterday;
+  
+  for (let i = sortedDates.length - 1; i >= 0; i--) {
+    if (sortedDates[i] === currentDate) {
+      streak++;
+      currentDate = getPreviousDateString(currentDate);
+    } else if (sortedDates[i] < currentDate) {
+      // Found a gap
+      break;
+    }
+  }
+  
+  return streak;
+}
+
+function calculateLongestStreak(sortedDates) {
+  if (sortedDates.length === 0) return 0;
+  
+  let maxStreak = 1;
+  let currentStreak = 1;
+  
+  for (let i = 1; i < sortedDates.length; i++) {
+    const prevDate = new Date(sortedDates[i - 1]);
+    const currDate = new Date(sortedDates[i]);
+    
+    // Check if dates are consecutive
+    const diffDays = Math.floor((currDate - prevDate) / (1000 * 60 * 60 * 24));
+    
+    if (diffDays === 1) {
+      currentStreak++;
+      maxStreak = Math.max(maxStreak, currentStreak);
+    } else {
+      currentStreak = 1;
+    }
+  }
+  
+  return maxStreak;
 }
 
 // Send daily reminder notification
@@ -758,14 +989,19 @@ async function sendStreakReminder() {
   
   // Check if user has enabled daily reminders (default true)
   if (notifyDaily === false) return;
-  if (!streakData) return;
+  if (!streakData?.unified) return;
   
-  if (!streakData.solvedToday) {
+  const today = getTodayDateString();
+  const currentStreak = streakData.unified.currentStreak || 0;
+  const lastActiveDate = streakData.unified.lastActiveDate;
+  
+  // Only send reminder if user hasn't been active today
+  if (lastActiveDate !== today) {
     let message;
-    if (streakData.currentStreak > 0) {
-      message = `🔥 Keep your ${streakData.currentStreak}-day streak alive! Solve 1 problem today.`;
+    if (currentStreak > 0) {
+      message = `🔥 Keep your ${currentStreak}-day unified streak alive! Solve on any platform today.`;
     } else {
-      message = `🌟 Start a new streak today! Solve your first problem.`;
+      message = `🌟 Start a new streak today! Solve on LeetCode, Codeforces, or CodeChef.`;
     }
     
     chrome.notifications.create('dailyReminder', {
@@ -779,110 +1015,38 @@ async function sendStreakReminder() {
   }
 }
 
-// Mark problem as solved (call this when user solves a problem)
-async function markProblemSolved(problemData) {
-  console.log('markProblemSolved called with:', problemData);
-  
-  let { streakData } = await chrome.storage.local.get('streakData');
-  
-  if (!streakData) {
-    console.log('No streak data found, initializing...');
-    await ensureStreakDataExists();
-    const result = await chrome.storage.local.get('streakData');
-    streakData = result.streakData;
-  }
-  
-  console.log('Current streak data:', streakData);
-  
-  const today = getTodayDateString();
-  console.log('Today:', today);
-  
-  // Check if this is first solve today
-  if (!streakData.solvedToday) {
-    console.log('First solve today! Updating streak...');
-    streakData.solvedToday = true;
-    
-    // Check if streak should continue
-    const yesterday = getYesterdayDateString();
-    console.log('Yesterday:', yesterday, 'Last solve date:', streakData.lastSolveDate);
-    
-    if (streakData.lastSolveDate === yesterday || streakData.currentStreak === 0) {
-      // Continue or start streak
-      streakData.currentStreak++;
-      console.log('Streak continued/started! New streak:', streakData.currentStreak);
-      
-      // Update longest streak if current streak is now the longest
-      if (streakData.currentStreak > streakData.longestStreak) {
-        streakData.longestStreak = streakData.currentStreak;
-        console.log('New longest streak!', streakData.longestStreak);
-      }
-      
-      // Show celebration for milestones
-      if ([7, 30, 50, 100, 365].includes(streakData.currentStreak)) {
-        showStreakMilestone(streakData.currentStreak);
-      }
-    } else if (streakData.lastSolveDate !== today) {
-      // Gap in streak - reset
-      console.log('Gap detected! Resetting streak...');
-      if (streakData.currentStreak > streakData.longestStreak) {
-        streakData.longestStreak = streakData.currentStreak;
-      }
-      streakData.currentStreak = 1;
-    }
-    
-    streakData.lastSolveDate = today;
-    streakData.totalDaysSolved++;
-    
-    // Add to history for heatmap
-    if (!streakData.streakHistory) {
-      streakData.streakHistory = [];
-    }
-    if (!streakData.streakHistory.includes(today)) {
-      streakData.streakHistory.push(today);
-    }
-    
-    await chrome.storage.local.set({ streakData });
-    console.log('Streak data saved:', streakData);
-    
-    // Return updated data for UI
-    return { success: true, streakData };
-  }
-  
-  return { success: true, alreadySolvedToday: true, streakData };
+// Manual refresh trigger
+async function refreshUnifiedStreak() {
+  console.log('Manual refresh triggered');
+  await syncUnifiedStreak();
+  const { streakData } = await chrome.storage.local.get('streakData');
+  return { success: true, streakData: streakData?.unified };
 }
 
-function showStreakMilestone(days) {
-  const milestones = {
-    7: { title: '🔥 Week Warrior!', message: 'You hit a 7-day streak!' },
-    30: { title: '🔥🔥 Month Master!', message: '30 days strong!' },
-    50: { title: '🏆 Unstoppable!', message: '50-day streak achieved!' },
-    100: { title: '👑 Century Champion!', message: '100 days of dedication!' },
-    365: { title: '🌟 LEGEND STATUS!', message: 'You solved problems for a FULL YEAR!' }
-  };
-  
-  const milestone = milestones[days];
-  if (milestone) {
-    chrome.notifications.create(`milestone_${days}`, {
-      type: 'basic',
-      iconUrl: 'assets/icon128.png',
-      title: milestone.title,
-      message: milestone.message,
-      priority: 2,
-      requireInteraction: true
-    });
-  }
-}
 
-// Helper functions for dates
+// Helper functions for dates (YYYY-MM-DD format in UTC)
 function getTodayDateString() {
   const date = new Date();
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+  return formatDateToYYYYMMDD(date);
 }
 
 function getYesterdayDateString() {
   const date = new Date();
   date.setDate(date.getDate() - 1);
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+  return formatDateToYYYYMMDD(date);
+}
+
+function getPreviousDateString(dateStr) {
+  const date = new Date(dateStr);
+  date.setDate(date.getDate() - 1);
+  return formatDateToYYYYMMDD(date);
+}
+
+function formatDateToYYYYMMDD(date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
 }
 
 function getNextMidnight() {
