@@ -239,6 +239,11 @@ async function handleMessage(message, sender, sendResponse) {
       sendResponse({ dailyStats: updatedStats });
       break;
     
+    case 'SYNC_TODAY_COUNT_FROM_APIS':
+      const syncResult = await syncTodayCountFromAPIs();
+      sendResponse({ success: true, dailyStats: syncResult });
+      break;
+    
     // Favorites
     case 'GET_FAVORITES':
       const favorites = await getFavorites();
@@ -972,8 +977,16 @@ async function initializeStreakSystem() {
     periodInMinutes: 1440 // 24 hours
   });
   
+  // Set up today count auto-refresh alarm (every 15 minutes)
+  chrome.alarms.create('refreshTodayCount', {
+    periodInMinutes: 15
+  });
+  
   // Initial sync
   await syncUnifiedStreak();
+  
+  // Initial refresh of today's count
+  syncTodayCountFromAPIs().catch(err => console.log('Initial today count sync failed:', err));
   
   console.log('Unified streak system fully initialized with alarms');
 }
@@ -995,6 +1008,9 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
   } else if (alarm.name.startsWith('timer_')) {
     // 30-minute timer reminder
     await handleTimerAlarm(alarm.name);
+  } else if (alarm.name === 'refreshTodayCount') {
+    // Auto-refresh today's count from APIs
+    await syncTodayCountFromAPIs();
   }
 });
 
@@ -1434,7 +1450,7 @@ async function getDailyStats() {
   
   // If no stats or stats are from a different day, return fresh stats
   if (!dailyStats || dailyStats.date !== today) {
-    return { date: today, count: 0, problems: [] };
+    return { date: today, count: 0, problems: [], apiSynced: false };
   }
   
   return dailyStats;
@@ -1446,7 +1462,7 @@ async function incrementDailyCount(problemUrl) {
   
   // Reset if from different day
   if (!dailyStats || dailyStats.date !== today) {
-    dailyStats = { date: today, count: 0, problems: [] };
+    dailyStats = { date: today, count: 0, problems: [], apiSynced: false };
   }
   
   // Check if already counted this problem today
@@ -1457,6 +1473,214 @@ async function incrementDailyCount(problemUrl) {
   }
   
   return dailyStats;
+}
+
+// Sync today's count from APIs
+async function syncTodayCountFromAPIs() {
+  const today = getTodayDateString();
+  let { dailyStats } = await chrome.storage.local.get('dailyStats');
+  
+  // Reset if from different day
+  if (!dailyStats || dailyStats.date !== today) {
+    dailyStats = { date: today, count: 0, problems: [], apiSynced: false };
+  }
+  
+  // Get usernames from settings
+  const { leetcodeUsername, codeforcesUsername, codechefUsername } = 
+    await chrome.storage.sync.get(['leetcodeUsername', 'codeforcesUsername', 'codechefUsername']);
+  
+  if (!leetcodeUsername && !codeforcesUsername && !codechefUsername) {
+    console.log('No usernames configured for API sync');
+    return dailyStats;
+  }
+  
+  // Fetch today's solved problems from all platforms
+  const results = await Promise.allSettled([
+    leetcodeUsername ? fetchLeetCodeTodaySubmissions(leetcodeUsername) : Promise.resolve([]),
+    new Promise(resolve => setTimeout(async () => {
+      resolve(codeforcesUsername ? await fetchCodeforcesTodaySubmissions(codeforcesUsername) : []);
+    }, 2000)), // 2 second delay for Codeforces rate limiting
+    codechefUsername ? fetchCodeChefTodaySubmissions(codechefUsername) : Promise.resolve([])
+  ]);
+  
+  const leetcodeProblems = results[0].status === 'fulfilled' ? results[0].value : [];
+  const codeforcesProblems = results[1].status === 'fulfilled' ? results[1].value : [];
+  const codechefProblems = results[2].status === 'fulfilled' ? results[2].value : [];
+  
+  // Combine all problems from all platforms
+  const allTodayProblems = [
+    ...leetcodeProblems,
+    ...codeforcesProblems,
+    ...codechefProblems
+  ];
+  
+  // Update daily stats with API data
+  const existingProblems = new Set(dailyStats.problems || []);
+  let newCount = dailyStats.count || 0;
+  
+  allTodayProblems.forEach(problemUrl => {
+    if (!existingProblems.has(problemUrl)) {
+      existingProblems.add(problemUrl);
+      newCount++;
+    }
+  });
+  
+  dailyStats = {
+    date: today,
+    count: newCount,
+    problems: Array.from(existingProblems),
+    apiSynced: true,
+    lastApiSync: Date.now()
+  };
+  
+  await chrome.storage.local.set({ dailyStats });
+  console.log('Today count synced from APIs:', newCount, 'problems');
+  
+  return dailyStats;
+}
+
+// Fetch today's accepted submissions from LeetCode
+async function fetchLeetCodeTodaySubmissions(username) {
+  try {
+    const query = `
+      query recentAcSubmissions($username: String!, $limit: Int!) {
+        recentAcSubmissionList(username: $username, limit: $limit) {
+          id
+          title
+          titleSlug
+          timestamp
+        }
+      }
+    `;
+    
+    const response = await fetch('https://leetcode.com/graphql/', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Referer': 'https://leetcode.com'
+      },
+      body: JSON.stringify({
+        query,
+        variables: { username, limit: 50 }
+      })
+    });
+    
+    if (!response.ok) {
+      throw new Error(`LeetCode API error: ${response.status}`);
+    }
+    
+    const data = await response.json();
+    const submissions = data.data?.recentAcSubmissionList || [];
+    
+    const today = getTodayDateString();
+    const todayProblems = [];
+    
+    submissions.forEach(submission => {
+      const submissionDate = new Date(parseInt(submission.timestamp) * 1000);
+      const submissionDateStr = formatDateToYYYYMMDD(submissionDate);
+      
+      if (submissionDateStr === today) {
+        // Create problem URL from titleSlug
+        const problemUrl = `https://leetcode.com/problems/${submission.titleSlug}/`;
+        todayProblems.push(problemUrl);
+      }
+    });
+    
+    console.log('LeetCode today submissions:', todayProblems.length);
+    return todayProblems;
+    
+  } catch (error) {
+    console.error('Error fetching LeetCode today submissions:', error);
+    return [];
+  }
+}
+
+// Fetch today's accepted submissions from Codeforces
+async function fetchCodeforcesTodaySubmissions(username) {
+  try {
+    const response = await fetch(
+      `https://codeforces.com/api/user.status?handle=${username}&from=1&count=100`,
+      {
+        method: 'GET',
+        headers: { 'Accept': 'application/json' }
+      }
+    );
+    
+    if (!response.ok) {
+      throw new Error(`Codeforces API error: ${response.status}`);
+    }
+    
+    const data = await response.json();
+    
+    if (data.status !== 'OK') {
+      throw new Error('Invalid Codeforces response');
+    }
+    
+    const today = getTodayDateString();
+    const todayProblems = [];
+    
+    // Filter accepted submissions from today
+    data.result.forEach(submission => {
+      if (submission.verdict === 'OK') {
+        const submissionDate = new Date(submission.creationTimeSeconds * 1000);
+        const submissionDateStr = formatDateToYYYYMMDD(submissionDate);
+        
+        if (submissionDateStr === today) {
+          // Create problem URL from contest and problem index
+          const problemUrl = `https://codeforces.com/problemset/problem/${submission.problem.contestId}/${submission.problem.index}`;
+          if (!todayProblems.includes(problemUrl)) {
+            todayProblems.push(problemUrl);
+          }
+        }
+      }
+    });
+    
+    console.log('Codeforces today submissions:', todayProblems.length);
+    return todayProblems;
+    
+  } catch (error) {
+    console.error('Error fetching Codeforces today submissions:', error);
+    return [];
+  }
+}
+
+// Fetch today's solved problems from CodeChef
+async function fetchCodeChefTodaySubmissions(username) {
+  try {
+    // Use the community API to get user stats
+    const response = await fetch(
+      `https://codechef-api.vercel.app/handle/${username}`,
+      {
+        method: 'GET',
+        headers: { 'Accept': 'application/json' }
+      }
+    );
+    
+    if (!response.ok) {
+      throw new Error(`CodeChef API error: ${response.status}`);
+    }
+    
+    const data = await response.json();
+    
+    // CodeChef API doesn't provide detailed submission history easily
+    // We'll use a workaround: check if user has activity today via heatmap
+    const today = getTodayDateString();
+    const todayProblems = [];
+    
+    if (data.heatmap && data.heatmap[today] && data.heatmap[today] > 0) {
+      // User has activity today, but we can't get exact problem URLs from this API
+      // We'll mark it as active but can't count specific problems
+      // For now, we'll return empty array and rely on manual marking
+      // In the future, could scrape the user's submission page
+      console.log('CodeChef user has activity today, but exact problems not available from API');
+    }
+    
+    return todayProblems;
+    
+  } catch (error) {
+    console.error('Error fetching CodeChef today submissions:', error);
+    return [];
+  }
 }
 
 // Set up midnight reset alarm

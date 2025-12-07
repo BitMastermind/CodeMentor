@@ -7,7 +7,106 @@ document.addEventListener('DOMContentLoaded', () => {
   initFilters();
   loadStreakData();
   loadFavorites();
+  initRefreshButton();
 });
+
+// Clean up when popup closes (though this may not always fire)
+window.addEventListener('beforeunload', () => {
+  stopAutoRefresh();
+});
+
+// Auto-refresh interval for today's count (while popup is open)
+let todayCountRefreshInterval = null;
+
+// Initialize refresh button for today's count
+function initRefreshButton() {
+  const refreshBtn = document.getElementById('refreshTodayBtn');
+  if (refreshBtn) {
+    refreshBtn.addEventListener('click', async () => {
+      await refreshTodayCount(refreshBtn);
+    });
+  }
+  
+  // Start auto-refresh interval
+  startAutoRefresh();
+}
+
+// Start auto-refresh for today's count
+function startAutoRefresh() {
+  // Clear any existing interval
+  if (todayCountRefreshInterval) {
+    clearInterval(todayCountRefreshInterval);
+  }
+  
+  // Check when last refresh happened and refresh if needed
+  chrome.storage.local.get('dailyStats', async (result) => {
+    const dailyStats = result.dailyStats;
+    const lastRefresh = dailyStats?.lastApiSync || 0;
+    const timeSinceRefresh = Date.now() - lastRefresh;
+    const REFRESH_THRESHOLD = 5 * 60 * 1000; // 5 minutes
+    
+    // Refresh if it's been more than 5 minutes since last refresh
+    if (timeSinceRefresh > REFRESH_THRESHOLD) {
+      await refreshTodayCount(null, true);
+    }
+  });
+  
+  // Also refresh every 2 minutes while popup is open (for immediate feedback)
+  todayCountRefreshInterval = setInterval(() => {
+    refreshTodayCount(null, true);
+  }, 2 * 60 * 1000); // 2 minutes while popup is open
+}
+
+// Stop auto-refresh (when popup closes)
+function stopAutoRefresh() {
+  if (todayCountRefreshInterval) {
+    clearInterval(todayCountRefreshInterval);
+    todayCountRefreshInterval = null;
+  }
+}
+
+// Refresh today's count from APIs
+async function refreshTodayCount(button, silent = false) {
+  const refreshBtn = button || document.getElementById('refreshTodayBtn');
+  
+  if (refreshBtn && !silent) {
+    refreshBtn.style.opacity = '0.5';
+    refreshBtn.style.pointerEvents = 'none';
+  }
+  
+  try {
+    const response = await chrome.runtime.sendMessage({ type: 'SYNC_TODAY_COUNT_FROM_APIS' });
+    if (response && response.dailyStats) {
+      const todayCountEl = document.getElementById('todayCount');
+      if (todayCountEl) {
+        const newCount = response.dailyStats.count || 0;
+        const oldCount = parseInt(todayCountEl.textContent) || 0;
+        
+        // Update count
+        todayCountEl.textContent = newCount;
+        
+        // Show visual feedback if count increased (only if not silent)
+        if (!silent && newCount > oldCount) {
+          todayCountEl.style.transform = 'scale(1.2)';
+          todayCountEl.style.color = 'var(--success)';
+          setTimeout(() => {
+            todayCountEl.style.transform = 'scale(1)';
+            todayCountEl.style.color = '';
+          }, 500);
+        }
+      }
+    }
+  } catch (error) {
+    console.error('Error refreshing today count:', error);
+  } finally {
+    if (refreshBtn && !silent) {
+      setTimeout(() => {
+        refreshBtn.style.opacity = '1';
+        refreshBtn.style.pointerEvents = 'auto';
+      }, 1000);
+    }
+  }
+}
 
 // Tab Navigation
 function initTabs() {
@@ -370,6 +469,8 @@ async function loadStreakData() {
     // Update today's problem count
     const todayCount = dailyStats?.count || 0;
     document.getElementById('todayCount').textContent = todayCount;
+    
+    // Auto-refresh will be handled by initRefreshButton() which calls refreshTodayCount()
     
     if (!streakData) {
       // Show default state

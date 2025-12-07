@@ -368,6 +368,14 @@
       return;
     }
 
+    // Set currentProblemData for favorite button functionality
+    currentProblemData = {
+      url: window.location.href,
+      title: problem.title,
+      platform: 'codeforces',
+      difficulty: problem.difficulty
+    };
+
     problem.forceRefresh = forceRefresh;
 
     try {
@@ -562,8 +570,33 @@
     }
   }
 
-  function showSettingsPrompt() {
+  async function showSettingsPrompt() {
     const body = panel.querySelector('.lch-panel-body');
+    
+    // Set currentProblemData even without API key so favorite button works
+    if (!currentProblemData) {
+      try {
+        const problemData = await extractProblemData();
+        if (problemData.title) {
+          currentProblemData = {
+            url: window.location.href,
+            title: problemData.title,
+            platform: 'codeforces',
+            difficulty: problemData.difficulty
+          };
+        }
+      } catch (e) {
+        console.log('LC Helper: Could not extract problem data for favorites:', e.message);
+      }
+    }
+    
+    // Check if problem is in favorites
+    let isFavorite = false;
+    try {
+      const favResponse = await safeSendMessage({ type: 'IS_FAVORITE', url: window.location.href });
+      isFavorite = favResponse?.isFavorite || false;
+    } catch (e) {}
+    
     body.innerHTML = `
       <div class="lch-settings-prompt">
         <div class="lch-settings-icon">🔑</div>
@@ -572,11 +605,26 @@
         </p>
         <button class="lch-settings-btn">Open Settings</button>
       </div>
+      ${currentProblemData ? `
+      <div class="lch-actions-section">
+        <button class="lch-favorite-btn ${isFavorite ? 'active' : ''}" id="favoriteBtn">
+          ${isFavorite ? '❤️ Favorited' : '🤍 Add to Favorites'}
+        </button>
+      </div>
+      ` : ''}
     `;
 
     body.querySelector('.lch-settings-btn').addEventListener('click', () => {
       chrome.runtime.sendMessage({ type: 'OPEN_POPUP' });
     });
+    
+    // Add favorite button handler if button exists
+    const favoriteBtn = body.querySelector('#favoriteBtn');
+    if (favoriteBtn) {
+      favoriteBtn.addEventListener('click', async () => {
+        await toggleFavorite(favoriteBtn);
+      });
+    }
   }
 
   async function showHints(data) {

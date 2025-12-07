@@ -972,6 +972,14 @@ select:focus {
   transform: translateY(-2px) scale(0.98);
 }
 
+.stat-value-container {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
 .stat-value {
   font-size: 28px;
   font-weight: 900;
@@ -981,8 +989,35 @@ select:focus {
   background-clip: text;
   font-family: 'Inter', sans-serif;
   line-height: 1;
-  margin-bottom: 6px;
   letter-spacing: -1px;
+  transition: transform 0.3s ease, color 0.3s ease;
+}
+
+.refresh-today-btn {
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-size: 14px;
+  padding: 0;
+  color: var(--text-secondary);
+}
+
+.refresh-today-btn:hover {
+  background: var(--bg-tertiary);
+  border-color: var(--accent);
+  color: var(--accent);
+  transform: rotate(90deg);
+}
+
+.refresh-today-btn:active {
+  transform: rotate(180deg);
 }
 
 .stat-item:nth-child(1) .stat-value {
