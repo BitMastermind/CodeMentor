@@ -96,12 +96,12 @@
             ctx.roundRect(0, 0, size, size, radius);
             ctx.fill();
             
-            // Draw lightning bolt / question mark
+            // Draw "LC" text
             ctx.fillStyle = 'white';
-            ctx.font = `bold ${size * 0.6}px Arial`;
+            ctx.font = `bold ${size * 0.5}px Arial`;
             ctx.textAlign = 'center';
             ctx.textBaseline = 'middle';
-            ctx.fillText('?', size / 2, size / 2 + size * 0.05);
+            ctx.fillText('LC', size / 2, size / 2 + size * 0.05);
             
             // Add subtle shine
             const shine = ctx.createLinearGradient(0, 0, 0, size / 2);

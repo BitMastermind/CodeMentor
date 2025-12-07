@@ -925,6 +925,10 @@ select:focus {
   gap: 10px;
 }
 
+.streak-stats.two-columns {
+  grid-template-columns: repeat(2, 1fr);
+}
+
 .stat-item {
   text-align: center;
   padding: 16px 12px;
@@ -1006,5 +1010,131 @@ select:focus {
   letter-spacing: 1px;
   font-weight: 600;
   margin-top: 4px;
+}
+
+/* ============================================
+   FAVORITES LIST STYLES
+   ============================================ */
+
+.favorites-count {
+  font-size: 12px;
+  color: var(--text-muted);
+  font-weight: 500;
+}
+
+.favorites-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.favorite-card {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 14px;
+  transition: all 0.2s ease;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.favorite-card:hover {
+  border-color: var(--accent);
+  transform: translateY(-2px);
+}
+
+.favorite-platform {
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.favorite-platform.leetcode {
+  background: rgba(255, 161, 22, 0.15);
+  color: var(--leetcode);
+}
+
+.favorite-platform.codeforces {
+  background: rgba(24, 144, 255, 0.15);
+  color: var(--codeforces);
+}
+
+.favorite-platform.codechef {
+  background: rgba(91, 70, 56, 0.25);
+  color: #c4a882;
+}
+
+.favorite-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.favorite-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-bottom: 4px;
+}
+
+.favorite-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.favorite-difficulty {
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-weight: 600;
+  font-size: 10px;
+}
+
+.favorite-difficulty.easy {
+  background: rgba(16, 185, 129, 0.15);
+  color: var(--success);
+}
+
+.favorite-difficulty.medium {
+  background: rgba(245, 158, 11, 0.15);
+  color: var(--warning);
+}
+
+.favorite-difficulty.hard {
+  background: rgba(239, 68, 68, 0.15);
+  color: var(--danger);
+}
+
+.favorite-remove-btn {
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+  flex-shrink: 0;
+}
+
+.favorite-remove-btn:hover {
+  background: rgba(239, 68, 68, 0.15);
+  border-color: var(--danger);
+  color: var(--danger);
 }
 

@@ -913,3 +913,233 @@
   transform: translateX(0);
 }
 
+/* ============================================
+   TIMER DISPLAY STYLES
+   ============================================ */
+
+.lch-panel-header-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.lch-timer-badge {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  background: linear-gradient(135deg, rgba(99, 102, 241, 0.15) 0%, rgba(139, 92, 246, 0.15) 100%);
+  border: 1px solid rgba(99, 102, 241, 0.3);
+  border-radius: 10px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--lch-accent-hover);
+  white-space: nowrap;
+}
+
+.lch-timer-icon {
+  font-size: 14px;
+}
+
+.lch-timer-display {
+  font-family: var(--lch-font-mono);
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 1px;
+}
+
+.lch-timer-display.warning {
+  color: var(--lch-warning);
+  animation: timerPulse 1s ease-in-out infinite;
+}
+
+@keyframes timerPulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
+}
+
+/* ============================================
+   30-MINUTE REMINDER MODAL
+   ============================================ */
+
+.lch-timer-modal {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.7);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100001;
+  animation: modalFadeIn 0.3s ease;
+}
+
+@keyframes modalFadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.lch-timer-modal-content {
+  background: linear-gradient(135deg, var(--lch-bg-primary) 0%, var(--lch-bg-secondary) 100%);
+  border: 1px solid var(--lch-border);
+  border-radius: 24px;
+  padding: 40px;
+  text-align: center;
+  max-width: 400px;
+  width: 90%;
+  box-shadow: 
+    0 24px 80px rgba(0, 0, 0, 0.5),
+    0 0 0 1px rgba(255, 255, 255, 0.05) inset;
+  font-family: var(--lch-font-main);
+  animation: modalPop 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+@keyframes modalPop {
+  from {
+    opacity: 0;
+    transform: scale(0.9) translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+.lch-timer-modal-icon {
+  font-size: 64px;
+  margin-bottom: 16px;
+  animation: alarmShake 0.5s ease-in-out infinite;
+  filter: drop-shadow(0 0 20px rgba(245, 158, 11, 0.5));
+}
+
+@keyframes alarmShake {
+  0%, 100% { transform: rotate(-5deg); }
+  50% { transform: rotate(5deg); }
+}
+
+.lch-timer-modal-title {
+  font-size: 24px;
+  font-weight: 700;
+  color: var(--lch-warning);
+  margin: 0 0 12px 0;
+  text-shadow: 0 0 20px rgba(245, 158, 11, 0.3);
+}
+
+.lch-timer-modal-text {
+  font-size: 15px;
+  color: var(--lch-text-secondary);
+  margin: 0 0 24px 0;
+  line-height: 1.6;
+}
+
+.lch-timer-modal-buttons {
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+  margin-bottom: 20px;
+}
+
+.lch-timer-modal-btn {
+  padding: 14px 24px;
+  border: none;
+  border-radius: 12px;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--lch-font-main);
+}
+
+.lch-timer-modal-btn.hint {
+  background: linear-gradient(135deg, var(--lch-accent) 0%, #8b5cf6 100%);
+  color: white;
+  box-shadow: 0 4px 16px rgba(99, 102, 241, 0.4);
+}
+
+.lch-timer-modal-btn.hint:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 24px rgba(99, 102, 241, 0.5);
+}
+
+.lch-timer-modal-btn.solution {
+  background: linear-gradient(135deg, var(--lch-success) 0%, #059669 100%);
+  color: white;
+  box-shadow: 0 4px 16px rgba(16, 185, 129, 0.4);
+}
+
+.lch-timer-modal-btn.solution:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 24px rgba(16, 185, 129, 0.5);
+}
+
+.lch-timer-modal-close {
+  background: transparent;
+  border: 1px solid var(--lch-border);
+  border-radius: 8px;
+  padding: 10px 20px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--lch-text-muted);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-family: var(--lch-font-main);
+}
+
+.lch-timer-modal-close:hover {
+  border-color: var(--lch-text-secondary);
+  color: var(--lch-text-secondary);
+  background: var(--lch-bg-tertiary);
+}
+
+/* ============================================
+   FAVORITE BUTTON STYLES
+   ============================================ */
+
+.lch-actions-section {
+  padding: 12px 24px;
+  border-top: 1px solid var(--lch-border);
+}
+
+.lch-favorite-btn {
+  width: 100%;
+  padding: 12px 20px;
+  background: var(--lch-bg-secondary);
+  border: 1px solid var(--lch-border);
+  border-radius: 10px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--lch-text-secondary);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  font-family: var(--lch-font-main);
+}
+
+.lch-favorite-btn:hover {
+  background: var(--lch-bg-tertiary);
+  border-color: #ec4899;
+  color: #ec4899;
+  transform: translateY(-1px);
+}
+
+.lch-favorite-btn.active {
+  background: linear-gradient(135deg, rgba(236, 72, 153, 0.15) 0%, rgba(219, 39, 119, 0.15) 100%);
+  border-color: #ec4899;
+  color: #ec4899;
+}
+
+.lch-favorite-btn.active:hover {
+  background: linear-gradient(135deg, rgba(236, 72, 153, 0.25) 0%, rgba(219, 39, 119, 0.25) 100%);
+}
+

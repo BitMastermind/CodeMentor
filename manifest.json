@@ -26,17 +26,17 @@
   "content_scripts": [
     {
       "matches": ["https://leetcode.com/problems/*"],
-      "js": ["content/leetcode.js"],
+      "js": ["browser-polyfill.js", "html2canvas.min.js", "content/leetcode.js"],
       "css": ["styles/hints-panel.css"]
     },
     {
       "matches": ["https://codeforces.com/problemset/problem/*", "https://codeforces.com/contest/*/problem/*"],
-      "js": ["content/codeforces.js"],
+      "js": ["browser-polyfill.js", "html2canvas.min.js", "content/codeforces.js"],
       "css": ["styles/hints-panel.css"]
     },
     {
       "matches": ["https://www.codechef.com/problems/*", "https://www.codechef.com/*/problems/*"],
-      "js": ["content/codechef.js"],
+      "js": ["browser-polyfill.js", "html2canvas.min.js", "content/codechef.js"],
       "css": ["styles/hints-panel.css"]
     }
   ],
@@ -52,6 +52,11 @@
     "16": "assets/icon16.png",
     "48": "assets/icon48.png",
     "128": "assets/icon128.png"
+  },
+  "browser_specific_settings": {
+    "safari": {
+      "strict_min_version": "15.4"
+    }
   }
 }
 

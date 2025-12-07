@@ -6,6 +6,7 @@ document.addEventListener('DOMContentLoaded', () => {
   loadContests();
   initFilters();
   loadStreakData();
+  loadFavorites();
 });
 
 // Tab Navigation
@@ -357,14 +358,22 @@ function updateApiKeyLink(provider) {
 // Unified Streak Data Management (API-based backend, classic UI)
 async function loadStreakData() {
   try {
-    const response = await chrome.runtime.sendMessage({ type: 'GET_STREAK_DATA' });
-    const streakData = response.streakData;
+    // Fetch streak data and daily stats in parallel
+    const [streakResponse, dailyResponse] = await Promise.all([
+      chrome.runtime.sendMessage({ type: 'GET_STREAK_DATA' }),
+      chrome.runtime.sendMessage({ type: 'GET_DAILY_STATS' })
+    ]);
+    
+    const streakData = streakResponse.streakData;
+    const dailyStats = dailyResponse.dailyStats;
+    
+    // Update today's problem count
+    const todayCount = dailyStats?.count || 0;
+    document.getElementById('todayCount').textContent = todayCount;
     
     if (!streakData) {
       // Show default state
       document.getElementById('currentStreak').textContent = '0';
-      document.getElementById('longestStreak').textContent = '0';
-      document.getElementById('totalDays').textContent = '0';
       document.getElementById('freezeTokens').textContent = '1';
       document.getElementById('progressLabel').textContent = 'Configure usernames in settings';
       return;
@@ -372,8 +381,6 @@ async function loadStreakData() {
     
     // Ensure values are valid numbers
     const currentStreak = Number(streakData.currentStreak) || 0;
-    const longestStreak = Number(streakData.longestStreak) || 0;
-    const totalDays = Number(streakData.totalActiveDays) || 0;
     
     // Update current streak
     document.getElementById('currentStreak').textContent = currentStreak;
@@ -422,9 +429,7 @@ async function loadStreakData() {
     document.getElementById('progressLabel').textContent = 
       `${currentStreak}/${nextMilestone} to ${milestoneName}`;
     
-    // Update stats
-    document.getElementById('longestStreak').textContent = longestStreak;
-    document.getElementById('totalDays').textContent = totalDays;
+    // Update freeze tokens
     document.getElementById('freezeTokens').textContent = '1'; // Placeholder for now
     
   } catch (error) {
@@ -464,5 +469,95 @@ function getMilestoneName(milestone) {
     365: "Legend Status 🌟"
   };
   return names[Number(milestone)] || "Next Level";
+}
+
+// ============================================
+// FAVORITES MANAGEMENT
+// ============================================
+
+async function loadFavorites() {
+  try {
+    const response = await chrome.runtime.sendMessage({ type: 'GET_FAVORITES' });
+    const favorites = response.favorites || [];
+    
+    renderFavorites(favorites);
+  } catch (error) {
+    console.error('Error loading favorites:', error);
+  }
+}
+
+function renderFavorites(favorites) {
+  const favoritesList = document.getElementById('favoritesList');
+  const favoritesCount = document.getElementById('favoritesCount');
+  
+  favoritesCount.textContent = `${favorites.length} saved`;
+  
+  if (favorites.length === 0) {
+    favoritesList.innerHTML = `
+      <div class="empty-state">
+        <div class="empty-state-icon">❤️</div>
+        <p>No favorites yet. Add problems from any platform!</p>
+      </div>
+    `;
+    return;
+  }
+  
+  // Sort by most recently added
+  const sortedFavorites = [...favorites].sort((a, b) => b.addedAt - a.addedAt);
+  
+  favoritesList.innerHTML = sortedFavorites.map(fav => {
+    const platformIcon = getPlatformIcon(fav.platform);
+    const difficultyClass = (fav.difficulty || 'unknown').toLowerCase();
+    
+    return `
+      <div class="favorite-card" data-url="${fav.url}">
+        <div class="favorite-platform ${fav.platform}">${platformIcon}</div>
+        <div class="favorite-info">
+          <div class="favorite-title" title="${escapeHtml(fav.title)}">${escapeHtml(fav.title)}</div>
+          <div class="favorite-meta">
+            <span class="favorite-difficulty ${difficultyClass}">${fav.difficulty || 'Unknown'}</span>
+            <span>${getPlatformName(fav.platform)}</span>
+          </div>
+        </div>
+        <button class="favorite-remove-btn" data-id="${fav.id}" title="Remove from favorites">
+          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="18" y1="6" x2="6" y2="18"></line>
+            <line x1="6" y1="6" x2="18" y2="18"></line>
+          </svg>
+        </button>
+      </div>
+    `;
+  }).join('');
+  
+  // Add click handlers for opening problems
+  favoritesList.querySelectorAll('.favorite-card').forEach(card => {
+    card.addEventListener('click', (e) => {
+      if (!e.target.closest('.favorite-remove-btn')) {
+        chrome.tabs.create({ url: card.dataset.url });
+      }
+    });
+  });
+  
+  // Add click handlers for remove buttons
+  favoritesList.querySelectorAll('.favorite-remove-btn').forEach(btn => {
+    btn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      const id = btn.dataset.id;
+      
+      await chrome.runtime.sendMessage({
+        type: 'REMOVE_FAVORITE',
+        id
+      });
+      
+      // Reload favorites
+      loadFavorites();
+    });
+  });
+}
+
+function escapeHtml(text) {
+  const div = document.createElement('div');
+  div.textContent = text;
+  return div.innerHTML;
 }
 

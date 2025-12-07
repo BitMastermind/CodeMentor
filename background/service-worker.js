@@ -43,6 +43,48 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
 
 // Handle notification clicks
 chrome.notifications.onClicked.addListener(async (notificationId) => {
+  // Handle timer reminder notifications
+  if (notificationId.startsWith('timerReminder_')) {
+    // Find active timer from storage
+    const allStorage = await chrome.storage.local.get(null);
+    const timerEntries = Object.entries(allStorage).filter(([key]) => key.startsWith('timer_'));
+    
+    if (timerEntries.length > 0) {
+      const [timerKey, timerData] = timerEntries[0];
+      
+      // Find tab with problem URL
+      const tabs = await chrome.tabs.query({ url: timerData.url });
+      if (tabs.length > 0) {
+        const tab = tabs[0];
+        chrome.tabs.update(tab.id, { active: true });
+        // Try to open hints panel
+        setTimeout(() => {
+          chrome.tabs.sendMessage(tab.id, { 
+            type: 'SHOW_HINTS_PANEL' 
+          }).catch(() => {
+            // If message fails, tab might not have content script loaded
+          });
+        }, 500);
+      } else {
+        // Try URL pattern matching
+        const urlPattern = timerData.url.split('?')[0] + '*';
+        const matchingTabs = await chrome.tabs.query({ url: urlPattern });
+        if (matchingTabs.length > 0) {
+          const tab = matchingTabs[0];
+          chrome.tabs.update(tab.id, { active: true });
+          setTimeout(() => {
+            chrome.tabs.sendMessage(tab.id, { 
+              type: 'SHOW_HINTS_PANEL' 
+            }).catch(() => {});
+          }, 500);
+        }
+      }
+    }
+    chrome.notifications.clear(notificationId);
+    return;
+  }
+  
+  // Handle contest notifications
   const { contests } = await chrome.storage.local.get('contests');
   const contest = contests?.find(c => c.id === notificationId);
   
@@ -52,6 +94,57 @@ chrome.notifications.onClicked.addListener(async (notificationId) => {
 });
 
 chrome.notifications.onButtonClicked.addListener(async (notificationId, buttonIndex) => {
+  // Handle timer reminder notifications
+  if (notificationId.startsWith('timerReminder_')) {
+    // Find active timer from storage
+    const allStorage = await chrome.storage.local.get(null);
+    const timerEntries = Object.entries(allStorage).filter(([key]) => key.startsWith('timer_'));
+    
+    if (timerEntries.length > 0) {
+      const [timerKey, timerData] = timerEntries[0];
+      
+      if (buttonIndex === 0) {
+        // "Take a Hint" button - find tab with problem URL and open hints panel
+        const tabs = await chrome.tabs.query({ url: timerData.url });
+        if (tabs.length > 0) {
+          // Use the first matching tab
+          const tab = tabs[0];
+          chrome.tabs.update(tab.id, { active: true });
+          // Wait a bit for tab to activate, then send message
+          setTimeout(() => {
+            chrome.tabs.sendMessage(tab.id, { 
+              type: 'SHOW_HINTS_PANEL' 
+            }).catch(() => {
+              // If message fails, tab might not have content script loaded
+              console.log('LC Helper: Could not send message to tab');
+            });
+          }, 500);
+        } else {
+          // Tab not found, try to find by URL pattern
+          const urlPattern = timerData.url.split('?')[0] + '*';
+          const matchingTabs = await chrome.tabs.query({ url: urlPattern });
+          if (matchingTabs.length > 0) {
+            const tab = matchingTabs[0];
+            chrome.tabs.update(tab.id, { active: true });
+            setTimeout(() => {
+              chrome.tabs.sendMessage(tab.id, { 
+                type: 'SHOW_HINTS_PANEL' 
+              }).catch(() => {});
+            }, 500);
+          }
+        }
+      } else if (buttonIndex === 1) {
+        // "Watch Solution" button - open solution/discussion
+        const solutionUrl = getSolutionUrl(timerData.url, timerData.platform);
+        chrome.tabs.create({ url: solutionUrl });
+      }
+    }
+    // Close notification
+    chrome.notifications.clear(notificationId);
+    return;
+  }
+  
+  // Handle contest notifications
   if (buttonIndex === 0) {
     const { contests } = await chrome.storage.local.get('contests');
     const contest = contests?.find(c => c.id === notificationId);
@@ -61,6 +154,31 @@ chrome.notifications.onButtonClicked.addListener(async (notificationId, buttonIn
     }
   }
 });
+
+// Helper to get active tab
+async function getActiveTab() {
+  const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+  return tabs[0] || null;
+}
+
+// Helper to get solution URL based on platform
+function getSolutionUrl(problemUrl, platform) {
+  if (platform === 'leetcode') {
+    // LeetCode discussions
+    const problemSlug = problemUrl.match(/\/problems\/([^\/]+)/)?.[1];
+    if (problemSlug) {
+      return `https://leetcode.com/problems/${problemSlug}/discuss/`;
+    }
+    return 'https://leetcode.com/discuss/';
+  } else if (platform === 'codeforces') {
+    // Codeforces editorial
+    return problemUrl.replace(/\/problem\//, '/problem/') + '#comment';
+  } else if (platform === 'codechef') {
+    // CodeChef editorial
+    return problemUrl + '/editorial';
+  }
+  return problemUrl;
+}
 
 // Handle messages from popup and content scripts
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
@@ -108,6 +226,66 @@ async function handleMessage(message, sender, sendResponse) {
     case 'REFRESH_UNIFIED_STREAK':
       const refreshResult = await refreshUnifiedStreak();
       sendResponse(refreshResult);
+      break;
+    
+    // Daily Stats
+    case 'GET_DAILY_STATS':
+      const dailyStats = await getDailyStats();
+      sendResponse({ dailyStats });
+      break;
+      
+    case 'INCREMENT_DAILY_COUNT':
+      const updatedStats = await incrementDailyCount(message.problemUrl);
+      sendResponse({ dailyStats: updatedStats });
+      break;
+    
+    // Favorites
+    case 'GET_FAVORITES':
+      const favorites = await getFavorites();
+      sendResponse({ favorites });
+      break;
+      
+    case 'ADD_FAVORITE':
+      const addResult = await addFavorite(message.problem);
+      sendResponse(addResult);
+      break;
+      
+    case 'REMOVE_FAVORITE':
+      const removeResult = await removeFavorite(message.id);
+      sendResponse(removeResult);
+      break;
+      
+    case 'IS_FAVORITE':
+      const isFav = await isFavorite(message.url);
+      sendResponse({ isFavorite: isFav });
+      break;
+    
+    // Timer
+    case 'START_TIMER':
+      const timerResult = await startProblemTimer(message.problem);
+      sendResponse(timerResult);
+      break;
+      
+    case 'GET_TIMER':
+      const timerData = await getActiveTimer(message.url);
+      sendResponse({ timer: timerData });
+      break;
+      
+    case 'STOP_TIMER':
+      await stopProblemTimer(message.url);
+      sendResponse({ success: true });
+      break;
+    
+    case 'TEST_TIMER_NOTIFICATION':
+      // Test handler to manually trigger 30-minute notification
+      const testTimerResult = await testTimerNotification(message.url);
+      sendResponse(testTimerResult);
+      break;
+    
+    case 'OPEN_POPUP':
+      // Open extension popup/options page
+      chrome.runtime.openOptionsPage();
+      sendResponse({ success: true });
       break;
       
     default:
@@ -178,14 +356,21 @@ async function fetchAllContests() {
 
 async function fetchCodeforcesContests() {
   try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
+    
     const response = await fetch('https://codeforces.com/api/contest.list', {
       method: 'GET',
-      headers: { 'Accept': 'application/json' }
+      headers: { 'Accept': 'application/json' },
+      signal: controller.signal
     });
+    
+    clearTimeout(timeoutId);
+    
     const data = await response.json();
     
     if (data.status !== 'OK') {
-      console.error('Codeforces API returned error:', data);
+      console.log('LC Helper: Codeforces API returned error');
       return [];
     }
     
@@ -204,7 +389,9 @@ async function fetchCodeforcesContests() {
     console.log('Codeforces contests fetched:', contests.length);
     return contests;
   } catch (error) {
-    console.error('Error fetching Codeforces contests:', error);
+    if (error.name !== 'AbortError') {
+      console.log('LC Helper: Codeforces API unavailable');
+    }
     return [];
   }
 }
@@ -213,10 +400,16 @@ async function fetchLeetCodeContests() {
   try {
     // Try kontests.net API first
     try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
+      
       const response = await fetch('https://kontests.net/api/v1/leet_code', {
         method: 'GET',
-        headers: { 'Accept': 'application/json' }
+        headers: { 'Accept': 'application/json' },
+        signal: controller.signal
       });
+      
+      clearTimeout(timeoutId);
       
       if (response.ok) {
         const data = await response.json();
@@ -236,11 +429,13 @@ async function fetchLeetCodeContests() {
         return contests;
       }
     } catch (e) {
-      console.warn('Kontests.net failed, trying alternative...', e);
+      // Silently fall back - network errors are expected
+      if (e.name !== 'AbortError') {
+        console.log('LC Helper: LeetCode API unavailable, using fallback');
+      }
     }
     
-    // Fallback: Return empty or use mock data for testing
-    console.log('Using mock LeetCode contest for testing');
+    // Fallback: Return estimated weekly contest
     const now = new Date();
     const nextWeekly = new Date(now);
     nextWeekly.setDate(now.getDate() + (7 - now.getDay()) % 7); // Next Sunday
@@ -259,7 +454,7 @@ async function fetchLeetCodeContests() {
       duration: 90
     }];
   } catch (error) {
-    console.error('Error fetching LeetCode contests:', error);
+    console.log('LC Helper: Error fetching LeetCode contests');
     return [];
   }
 }
@@ -268,10 +463,16 @@ async function fetchCodeChefContests() {
   try {
     // Try kontests.net API
     try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
+      
       const response = await fetch('https://kontests.net/api/v1/code_chef', {
         method: 'GET',
-        headers: { 'Accept': 'application/json' }
+        headers: { 'Accept': 'application/json' },
+        signal: controller.signal
       });
+      
+      clearTimeout(timeoutId);
       
       if (response.ok) {
         const data = await response.json();
@@ -291,12 +492,23 @@ async function fetchCodeChefContests() {
         return contests;
       }
     } catch (e) {
-      console.warn('Kontests.net failed for CodeChef', e);
+      // Silently try next fallback
+      if (e.name !== 'AbortError') {
+        console.log('LC Helper: Kontests.net unavailable for CodeChef, trying direct API');
+      }
     }
     
     // Try direct CodeChef API as fallback
     try {
-      const response = await fetch('https://www.codechef.com/api/list/contests/all?sort_by=START&sorting_order=asc&offset=0&mode=all');
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 10000);
+      
+      const response = await fetch('https://www.codechef.com/api/list/contests/all?sort_by=START&sorting_order=asc&offset=0&mode=all', {
+        signal: controller.signal
+      });
+      
+      clearTimeout(timeoutId);
+      
       if (response.ok) {
         const data = await response.json();
         const futureContests = data.future_contests || [];
@@ -311,12 +523,15 @@ async function fetchCodeChefContests() {
         }));
       }
     } catch (e) {
-      console.warn('Direct CodeChef API also failed', e);
+      // Silently return empty - network errors are expected
+      if (e.name !== 'AbortError') {
+        console.log('LC Helper: CodeChef API unavailable');
+      }
     }
     
     return [];
   } catch (error) {
-    console.error('Error fetching CodeChef contests:', error);
+    console.log('LC Helper: Error fetching CodeChef contests');
     return [];
   }
 }
@@ -412,7 +627,7 @@ async function generateHints(problem) {
   const { apiKey, apiProvider } = await chrome.storage.sync.get(['apiKey', 'apiProvider']);
   
   if (!apiKey) {
-    return { error: 'API key not configured' };
+    return { error: 'API key not configured. Add your API key in settings.' };
   }
   
   const provider = apiProvider || 'gemini';
@@ -451,6 +666,53 @@ function generateCacheKey(input) {
   return normalized;
 }
 
+// Convert API errors to user-friendly messages
+function formatApiError(errorMessage, provider = 'gemini') {
+  if (!errorMessage) return 'An error occurred. Please try again.';
+  
+  const message = errorMessage.toLowerCase();
+  
+  // Quota/limit exceeded errors
+  if (message.includes('quota') || message.includes('limit') || message.includes('exceeded')) {
+    if (message.includes('limit: 0')) {
+      return 'API quota exhausted. Get a new API key or enable billing.';
+    }
+    return 'API quota exceeded. Try again later or upgrade your plan.';
+  }
+  
+  // Invalid API key errors
+  if (message.includes('invalid') && (message.includes('api key') || message.includes('key'))) {
+    return 'Invalid API key. Check your settings and try again.';
+  }
+  
+  // Authentication errors
+  if (message.includes('unauthorized') || message.includes('permission') || message.includes('forbidden')) {
+    return 'API key not authorized. Check your key in settings.';
+  }
+  
+  // Rate limiting
+  if (message.includes('rate limit') || message.includes('too many requests')) {
+    return 'Too many requests. Please wait a moment and try again.';
+  }
+  
+  // Network errors
+  if (message.includes('network') || message.includes('fetch') || message.includes('connection')) {
+    return 'Network error. Check your internet connection.';
+  }
+  
+  // Billing errors
+  if (message.includes('billing') || message.includes('payment')) {
+    return 'Billing issue. Enable billing in your API account.';
+  }
+  
+  // Default: return shortened version of original error
+  if (message.length > 100) {
+    return 'API error occurred. Check your API key and try again.';
+  }
+  
+  return errorMessage;
+}
+
 async function generateHintsGemini(problem, apiKey) {
   try {
     // Enhanced context extraction
@@ -480,6 +742,8 @@ ${existingTags ? `Platform Tags: ${existingTags}` : ''}
 Constraints: ${problem.constraints || 'Not specified'}
 Description: ${problem.description}
 
+${problem.hasImages ? 'Note: This problem includes images/graphs in the problem statement. Analyze them carefully along with the text description.' : ''}
+
 OUTPUT FORMAT (JSON only):
 {
   "topic": "<Algorithm/DS> - O() time, O() space",
@@ -497,8 +761,26 @@ REQUIREMENTS:
 4. Hint 3: List 3-5 numbered steps, mention edge cases, NO actual code
 5. Use specific terminology: "unordered_map in C++", "bisect_left in Python", "lower_bound in C++"
 6. Compare complexities: O(n log n) vs O(n²), explain trade-offs
+${problem.hasImages ? '7. If images/graphs are present, incorporate visual information into your analysis' : ''}
 
 Be specific, concise, and competition-focused.`;
+
+    // Build parts array - include image if available
+    const parts = [{ text: prompt }];
+    
+    if (problem.hasImages && problem.imageData) {
+      // Extract base64 data and mime type from data URL
+      const matches = problem.imageData.match(/^data:([^;]+);base64,(.+)$/);
+      const mimeType = matches ? matches[1] : 'image/jpeg';
+      const base64Data = matches ? matches[2] : problem.imageData;
+      
+      parts.push({
+        inline_data: {
+          mime_type: mimeType,
+          data: base64Data
+        }
+      });
+    }
 
     const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`, {
       method: 'POST',
@@ -507,9 +789,7 @@ Be specific, concise, and competition-focused.`;
       },
       body: JSON.stringify({
         contents: [{
-          parts: [{
-            text: prompt
-          }]
+          parts: parts
         }],
         generationConfig: {
           temperature: 0.5,  // Lowered from 0.7 for more consistent hints
@@ -523,7 +803,8 @@ Be specific, concise, and competition-focused.`;
     const data = await response.json();
     
     if (data.error) {
-      return { error: data.error.message };
+      const friendlyError = formatApiError(data.error.message, 'gemini');
+      return { error: friendlyError };
     }
     
     const content = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
@@ -534,27 +815,20 @@ Be specific, concise, and competition-focused.`;
       return JSON.parse(jsonMatch[0]);
     }
     
-    return { error: 'Failed to parse response' };
+    return { error: 'Failed to parse response. Please try again.' };
   } catch (error) {
     console.error('Error generating hints with Gemini:', error);
-    return { error: error.message };
+    const friendlyError = formatApiError(error.message, 'gemini');
+    return { error: friendlyError };
   }
 }
 
 async function generateHintsOpenAI(problem, apiKey) {
   try {
-    const response = await fetch('https://api.openai.com/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiKey}`
-      },
-      body: JSON.stringify({
-        model: 'gpt-4o-mini',
-        messages: [
-          {
-            role: 'system',
-            content: `You are a world-class competitive programming coach. Provide HIGH-PERFORMANCE, contest-winning insights with focus on:
+    // Use gpt-4o for vision support if images are present, otherwise use gpt-4o-mini
+    const model = (problem.hasImages && problem.imageData) ? 'gpt-4o' : 'gpt-4o-mini';
+    
+    const systemPrompt = `You are a world-class competitive programming coach. Provide HIGH-PERFORMANCE, contest-winning insights with focus on:
 
 1. EXACT TOPIC (with time complexity) - Be hyper-specific, e.g. "DP on Trees with Re-rooting O(n)", "Binary Search on Answer O(n log m)", "Monotonic Stack O(n)"
 
@@ -564,6 +838,7 @@ async function generateHintsOpenAI(problem, apiKey) {
    - Hint 3: Step-by-step approach with optimizations, edge cases, and full complexity analysis
 
 Focus on OPTIMAL solutions, mention specific data structures (Segment Tree, Fenwick Tree, etc.), and consider competitive programming constraints.
+${problem.hasImages ? 'Note: This problem includes images/graphs. Analyze them carefully along with the text description.' : ''}
 
 Format as JSON:
 {
@@ -573,11 +848,43 @@ Format as JSON:
     "Hint 2 with algorithm + complexity...",
     "Hint 3 with implementation strategy..."
   ]
-}`
+}`;
+
+    // Build user content - include image if available
+    const userContent = [
+      {
+        type: 'text',
+        text: `Analyze for optimal competitive programming solution:\n\nTitle: ${problem.title}\n\nDescription: ${problem.description}\n\nConstraints: ${problem.constraints || 'Not specified'}`
+      }
+    ];
+
+    // Add image if present
+    if (problem.hasImages && problem.imageData) {
+      // OpenAI accepts the full data URL directly
+      userContent.push({
+        type: 'image_url',
+        image_url: {
+          url: problem.imageData
+        }
+      });
+    }
+
+    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiKey}`
+      },
+      body: JSON.stringify({
+        model: model,
+        messages: [
+          {
+            role: 'system',
+            content: systemPrompt
           },
           {
             role: 'user',
-            content: `Analyze for optimal competitive programming solution:\n\nTitle: ${problem.title}\n\nDescription: ${problem.description}\n\nConstraints: ${problem.constraints || 'Not specified'}`
+            content: userContent
           }
         ],
         temperature: 0.7,
@@ -588,7 +895,8 @@ Format as JSON:
     const data = await response.json();
     
     if (data.error) {
-      return { error: data.error.message };
+      const friendlyError = formatApiError(data.error.message, 'openai');
+      return { error: friendlyError };
     }
     
     const content = data.choices[0].message.content;
@@ -599,10 +907,11 @@ Format as JSON:
       return JSON.parse(jsonMatch[0]);
     }
     
-    return { error: 'Failed to parse response' };
+    return { error: 'Failed to parse response. Please try again.' };
   } catch (error) {
     console.error('Error generating hints with OpenAI:', error);
-    return { error: error.message };
+    const friendlyError = formatApiError(error.message, 'openai');
+    return { error: friendlyError };
   }
 }
 
@@ -657,6 +966,12 @@ async function initializeStreakSystem() {
     periodInMinutes: 1440
   });
   
+  // Set up daily stats reset alarm (midnight)
+  chrome.alarms.create('dailyStatsReset', {
+    when: getNextMidnight(),
+    periodInMinutes: 1440 // 24 hours
+  });
+  
   // Initial sync
   await syncUnifiedStreak();
   
@@ -670,8 +985,47 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
     await syncUnifiedStreak();
   } else if (alarm.name === 'dailyStreakReminder') {
     await sendStreakReminder();
+  } else if (alarm.name === 'dailyStatsReset') {
+    // Reset daily stats at midnight
+    const today = getTodayDateString();
+    await chrome.storage.local.set({ 
+      dailyStats: { date: today, count: 0, problems: [] }
+    });
+    console.log('Daily stats reset for:', today);
+  } else if (alarm.name.startsWith('timer_')) {
+    // 30-minute timer reminder
+    await handleTimerAlarm(alarm.name);
   }
 });
+
+// Handle 30-minute timer alarm
+async function handleTimerAlarm(alarmName) {
+  const timerKey = alarmName; // timer_xxx format matches storage key
+  const result = await chrome.storage.local.get(timerKey);
+  const timerData = result[timerKey];
+  
+  if (timerData && !timerData.reminderSent) {
+    // Mark reminder as sent
+    timerData.reminderSent = true;
+    await chrome.storage.local.set({ [timerKey]: timerData });
+    
+    // Send notification
+    chrome.notifications.create(`timerReminder_${Date.now()}`, {
+      type: 'basic',
+      iconUrl: 'assets/icon128.png',
+      title: '⏰ 30 Minutes Elapsed!',
+      message: `You've been working on "${timerData.title}" for 30 minutes. Consider taking a hint or watching the solution.`,
+      buttons: [
+        { title: '💡 Take a Hint' },
+        { title: '📺 Watch Solution' }
+      ],
+      priority: 2,
+      requireInteraction: true
+    });
+    
+    console.log('Timer reminder sent for:', timerData.title);
+  }
+}
 
 // ============================================
 // UNIFIED STREAK SYNC - Fetch from all platforms
@@ -1068,5 +1422,188 @@ function getDailyReminderTime() {
   }
   
   return reminder.getTime();
+}
+
+// ============================================
+// DAILY STATS TRACKING
+// ============================================
+
+async function getDailyStats() {
+  const { dailyStats } = await chrome.storage.local.get('dailyStats');
+  const today = getTodayDateString();
+  
+  // If no stats or stats are from a different day, return fresh stats
+  if (!dailyStats || dailyStats.date !== today) {
+    return { date: today, count: 0, problems: [] };
+  }
+  
+  return dailyStats;
+}
+
+async function incrementDailyCount(problemUrl) {
+  const today = getTodayDateString();
+  let { dailyStats } = await chrome.storage.local.get('dailyStats');
+  
+  // Reset if from different day
+  if (!dailyStats || dailyStats.date !== today) {
+    dailyStats = { date: today, count: 0, problems: [] };
+  }
+  
+  // Check if already counted this problem today
+  if (!dailyStats.problems.includes(problemUrl)) {
+    dailyStats.count++;
+    dailyStats.problems.push(problemUrl);
+    await chrome.storage.local.set({ dailyStats });
+  }
+  
+  return dailyStats;
+}
+
+// Set up midnight reset alarm
+async function setupDailyResetAlarm() {
+  const midnight = getNextMidnight();
+  chrome.alarms.create('dailyStatsReset', {
+    when: midnight,
+    periodInMinutes: 1440 // 24 hours
+  });
+  console.log('Daily reset alarm set for:', new Date(midnight));
+}
+
+// ============================================
+// FAVORITES SYSTEM
+// ============================================
+
+async function getFavorites() {
+  const { favorites } = await chrome.storage.local.get('favorites');
+  return favorites || [];
+}
+
+async function addFavorite(problem) {
+  const { favorites = [] } = await chrome.storage.local.get('favorites');
+  
+  // Generate unique ID
+  const id = `${problem.platform}_${generateCacheKey(problem.url)}`;
+  
+  // Check if already exists
+  if (favorites.some(f => f.id === id)) {
+    return { success: false, error: 'Already in favorites' };
+  }
+  
+  const newFavorite = {
+    id,
+    url: problem.url,
+    title: problem.title,
+    platform: problem.platform,
+    difficulty: problem.difficulty || 'Unknown',
+    addedAt: Date.now()
+  };
+  
+  favorites.push(newFavorite);
+  await chrome.storage.local.set({ favorites });
+  
+  return { success: true, favorite: newFavorite };
+}
+
+async function removeFavorite(id) {
+  const { favorites = [] } = await chrome.storage.local.get('favorites');
+  const updated = favorites.filter(f => f.id !== id);
+  await chrome.storage.local.set({ favorites: updated });
+  return { success: true };
+}
+
+async function isFavorite(url) {
+  const { favorites = [] } = await chrome.storage.local.get('favorites');
+  return favorites.some(f => f.url === url);
+}
+
+// ============================================
+// PROBLEM TIMER SYSTEM
+// ============================================
+
+async function startProblemTimer(problem) {
+  const timerKey = `timer_${generateCacheKey(problem.url)}`;
+  const now = Date.now();
+  
+  // Check if timer already exists for this problem
+  const existing = await chrome.storage.local.get(timerKey);
+  if (existing[timerKey]) {
+    return { timer: existing[timerKey], isNew: false };
+  }
+  
+  const timerData = {
+    url: problem.url,
+    title: problem.title,
+    platform: problem.platform,
+    startTime: now,
+    reminderSent: false
+  };
+  
+  await chrome.storage.local.set({ [timerKey]: timerData });
+  
+  // Set 30-minute alarm
+  chrome.alarms.create(`timer_${generateCacheKey(problem.url)}`, {
+    delayInMinutes: 30
+  });
+  
+  console.log('Timer started for:', problem.title);
+  
+  return { timer: timerData, isNew: true };
+}
+
+async function getActiveTimer(url) {
+  const timerKey = `timer_${generateCacheKey(url)}`;
+  const result = await chrome.storage.local.get(timerKey);
+  return result[timerKey] || null;
+}
+
+async function stopProblemTimer(url) {
+  const timerKey = `timer_${generateCacheKey(url)}`;
+  const alarmName = `timer_${generateCacheKey(url)}`;
+  
+  await chrome.storage.local.remove(timerKey);
+  chrome.alarms.clear(alarmName);
+  
+  console.log('Timer stopped for:', url);
+}
+
+// Test function to manually trigger timer notification
+async function testTimerNotification(url) {
+  const timerKey = `timer_${generateCacheKey(url)}`;
+  const result = await chrome.storage.local.get(timerKey);
+  const timerData = result[timerKey];
+  
+  if (!timerData) {
+    return { success: false, error: 'No active timer found for this problem. Please start a timer first.' };
+  }
+  
+  // Manually trigger the notification
+  await handleTimerAlarm(`timer_${generateCacheKey(url)}`);
+  
+  // Also trigger the modal on the page
+  try {
+    const tabs = await chrome.tabs.query({ url: url });
+    if (tabs.length > 0) {
+      // Send message to content script to show modal
+      chrome.tabs.sendMessage(tabs[0].id, { 
+        type: 'TEST_TIMER_MODAL' 
+      }).catch(() => {
+        // Tab might not have content script loaded yet
+        console.log('LC Helper: Could not send modal message to tab');
+      });
+    } else {
+      // Try URL pattern matching
+      const urlPattern = url.split('?')[0] + '*';
+      const matchingTabs = await chrome.tabs.query({ url: urlPattern });
+      if (matchingTabs.length > 0) {
+        chrome.tabs.sendMessage(matchingTabs[0].id, { 
+          type: 'TEST_TIMER_MODAL' 
+        }).catch(() => {});
+      }
+    }
+  } catch (e) {
+    console.log('LC Helper: Could not trigger modal:', e.message);
+  }
+  
+  return { success: true, message: 'Notification and modal triggered successfully!' };
 }
 

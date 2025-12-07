@@ -6,6 +6,98 @@
   let panel = null;
   let fab = null;
   let isLoading = false;
+  let timerInterval = null;
+  let timerStartTime = null;
+  let currentProblemData = null;
+
+  // Check if extension context is still valid
+  function isExtensionContextValid() {
+    try {
+      // This will throw if context is invalidated
+      return chrome.runtime && chrome.runtime.id;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  // Safe wrapper for chrome.storage.sync operations
+  async function safeStorageGet(key) {
+    if (!isExtensionContextValid()) {
+      console.log('LC Helper: Extension context invalidated, using fallback');
+      return {};
+    }
+    try {
+      return await chrome.storage.sync.get(key);
+    } catch (e) {
+      console.log('LC Helper: Storage access failed:', e.message);
+      return {};
+    }
+  }
+
+  // Safe wrapper for chrome.runtime.sendMessage
+  async function safeSendMessage(message) {
+    if (!isExtensionContextValid()) {
+      console.log('LC Helper: Extension context invalidated, cannot send message');
+      return null;
+    }
+    try {
+      return await chrome.runtime.sendMessage(message);
+    } catch (e) {
+      console.log('LC Helper: Message send failed:', e.message);
+      return null;
+    }
+  }
+
+  // Handle messages from background script
+  chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+    if (message.type === 'SHOW_HINTS_PANEL') {
+      if (panel) {
+        panel.classList.add('active');
+        loadHints();
+      } else {
+        // Initialize if not already done
+        init();
+        setTimeout(() => {
+          if (panel) {
+            panel.classList.add('active');
+            loadHints();
+          }
+        }, 2000);
+      }
+      sendResponse({ success: true });
+    } else if (message.type === 'TEST_TIMER_MODAL') {
+      // Test handler to manually show the timer reminder modal
+      showTimerReminderModal();
+      sendResponse({ success: true });
+    }
+    return true;
+  });
+
+  // Listen for messages from page context (for testing)
+  window.addEventListener('message', async (event) => {
+    // Only accept messages from same origin
+    if (event.data && event.data.type === 'LCH_TEST_TIMER') {
+      try {
+        const response = await safeSendMessage({
+          type: 'TEST_TIMER_NOTIFICATION',
+          url: event.data.url || location.href
+        });
+        
+        // Send response back to page
+        window.postMessage({
+          type: 'LCH_TEST_RESPONSE',
+          success: response?.success || false,
+          error: response?.error || null
+        }, '*');
+      } catch (error) {
+        window.postMessage({
+          type: 'LCH_TEST_RESPONSE',
+          success: false,
+          error: error.message
+        }, '*');
+      }
+    }
+  });
 
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', init);
@@ -14,25 +106,185 @@
   }
 
   function init() {
-    setTimeout(() => {
+    // Function to initialize everything
+    const doInit = async () => {
+      if (!document.body) {
+        // If body still doesn't exist, wait a bit more
+        setTimeout(doInit, 100);
+        return;
+      }
+      
       createFAB();
       checkAutoShow();
-    }, 1500);
+      
+      // Start problem timer
+      await initializeTimer();
+    };
+    
+    // Wait for page to load, but also check if body is ready
+    if (document.body) {
+      setTimeout(doInit, 1500);
+    } else {
+      // Wait for body to be ready
+      const bodyObserver = new MutationObserver((mutations, observer) => {
+        if (document.body) {
+          observer.disconnect();
+          setTimeout(doInit, 1500);
+        }
+      });
+      bodyObserver.observe(document.documentElement, { childList: true, subtree: true });
+      // Fallback timeout
+      setTimeout(() => {
+        bodyObserver.disconnect();
+        doInit();
+      }, 5000);
+    }
+  }
+
+  // Initialize problem timer
+  async function initializeTimer() {
+    if (!isExtensionContextValid()) return;
+    
+    try {
+      const problemData = await extractProblemData();
+      if (!problemData.title) return;
+      
+      currentProblemData = {
+        url: window.location.href,
+        title: problemData.title,
+        platform: 'codechef',
+        difficulty: problemData.difficulty
+      };
+      
+      const response = await safeSendMessage({
+        type: 'START_TIMER',
+        problem: currentProblemData
+      });
+      
+      if (response?.timer) {
+        timerStartTime = response.timer.startTime;
+        startTimerDisplay();
+        
+        if (response.timer.reminderSent) {
+          showTimerReminderModal();
+        }
+      }
+    } catch (e) {
+      console.log('LC Helper: Timer init failed:', e.message);
+    }
+  }
+
+  function startTimerDisplay() {
+    if (timerInterval) clearInterval(timerInterval);
+    timerInterval = setInterval(updateTimerDisplay, 1000);
+    updateTimerDisplay();
+  }
+
+  function updateTimerDisplay() {
+    const timerEl = document.querySelector('.lch-timer-display');
+    if (!timerEl || !timerStartTime) return;
+    
+    const elapsed = Date.now() - timerStartTime;
+    const minutes = Math.floor(elapsed / 60000);
+    const seconds = Math.floor((elapsed % 60000) / 1000);
+    
+    timerEl.textContent = `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+    
+    if (minutes >= 30) {
+      timerEl.classList.add('warning');
+    }
+  }
+
+  function showTimerReminderModal() {
+    if (document.querySelector('.lch-timer-modal')) return;
+    
+    const modal = document.createElement('div');
+    modal.className = 'lch-timer-modal';
+    modal.innerHTML = `
+      <div class="lch-timer-modal-content">
+        <div class="lch-timer-modal-icon">⏰</div>
+        <h3 class="lch-timer-modal-title">30 Minutes Elapsed!</h3>
+        <p class="lch-timer-modal-text">You've been working on this problem for a while. Consider:</p>
+        <div class="lch-timer-modal-buttons">
+          <button class="lch-timer-modal-btn hint" id="timerHintBtn">💡 Take a Hint</button>
+          <button class="lch-timer-modal-btn solution" id="timerSolutionBtn">📺 Watch Solution</button>
+        </div>
+        <button class="lch-timer-modal-close" id="timerModalClose">Keep Trying</button>
+      </div>
+    `;
+    
+    document.body.appendChild(modal);
+    
+    document.getElementById('timerHintBtn').addEventListener('click', () => {
+      modal.remove();
+      if (!panel) createPanel();
+      panel.classList.add('active');
+      loadHints();
+    });
+    
+    document.getElementById('timerSolutionBtn').addEventListener('click', () => {
+      modal.remove();
+      // Open CodeChef discussions/editorials
+      window.open('https://discuss.codechef.com/', '_blank');
+    });
+    
+    document.getElementById('timerModalClose').addEventListener('click', () => {
+      modal.remove();
+    });
+    
+    modal.addEventListener('click', (e) => {
+      if (e.target === modal) modal.remove();
+    });
   }
 
   function createFAB() {
     if (document.querySelector('.lch-fab')) return;
 
+    // Ensure document.body exists
+    if (!document.body) {
+      // Retry after a short delay if body isn't ready
+      setTimeout(createFAB, 100);
+      return;
+    }
+
     fab = document.createElement('button');
     fab.className = 'lch-fab';
+    // Add inline styles as fallback to ensure visibility
+    fab.style.cssText = `
+      position: fixed !important;
+      bottom: 24px !important;
+      right: 24px !important;
+      width: 56px !important;
+      height: 56px !important;
+      border-radius: 16px !important;
+      background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%) !important;
+      border: none !important;
+      cursor: pointer !important;
+      display: flex !important;
+      align-items: center !important;
+      justify-content: center !important;
+      box-shadow: 0 4px 24px rgba(99, 102, 241, 0.3), 0 0 0 1px rgba(255, 255, 255, 0.1) inset !important;
+      z-index: 99999 !important;
+      padding: 0 !important;
+      margin: 0 !important;
+    `;
     fab.innerHTML = `
-      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor">
-        <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 17h-2v-2h2v2zm2.07-7.75l-.9.92C13.45 12.9 13 13.5 13 15h-2v-.5c0-1.1.45-2.1 1.17-2.83l1.24-1.26c.37-.36.59-.86.59-1.41 0-1.1-.9-2-2-2s-2 .9-2 2H8c0-2.21 1.79-4 4-4s4 1.79 4 4c0 .88-.36 1.68-.93 2.25z"/>
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" style="width: 24px; height: 24px; fill: white;">
+        <path d="M13 2L3 14h8l-1 8 10-12h-8l1-8z"/>
       </svg>
     `;
     fab.title = 'LC Helper - Get Hints';
+    fab.setAttribute('aria-label', 'LC Helper - Get Hints');
     fab.addEventListener('click', togglePanel);
-    document.body.appendChild(fab);
+    
+    try {
+      document.body.appendChild(fab);
+      console.log('LC Helper: FAB created and appended to body');
+    } catch (e) {
+      console.error('LC Helper: Failed to append FAB:', e);
+      // Retry after a delay
+      setTimeout(createFAB, 200);
+    }
   }
 
   function createPanel() {
@@ -42,8 +294,16 @@
     panel.className = 'lch-panel';
     panel.innerHTML = `
       <div class="lch-panel-header">
-        <h3 class="lch-panel-title">LC Helper</h3>
-        <p class="lch-panel-subtitle">Smart hints & topic analysis</p>
+        <div class="lch-panel-header-top">
+          <div>
+            <h3 class="lch-panel-title">LC Helper</h3>
+            <p class="lch-panel-subtitle">Smart hints & topic analysis</p>
+          </div>
+          <div class="lch-timer-badge">
+            <span class="lch-timer-icon">⏱️</span>
+            <span class="lch-timer-display">00:00</span>
+          </div>
+        </div>
       </div>
       <div class="lch-panel-body">
         <div class="lch-loading">
@@ -53,6 +313,10 @@
       </div>
     `;
     document.body.appendChild(panel);
+    
+    if (timerStartTime) {
+      updateTimerDisplay();
+    }
   }
 
   function togglePanel() {
@@ -62,7 +326,9 @@
   }
 
   async function checkAutoShow() {
-    const { autoShowPanel } = await chrome.storage.sync.get('autoShowPanel');
+    if (!isExtensionContextValid()) return;
+    
+    const { autoShowPanel } = await safeStorageGet('autoShowPanel');
     if (autoShowPanel) {
       createPanel();
       panel.classList.add('active');
@@ -71,13 +337,18 @@
   }
 
   async function loadHints(forceRefresh = false) {
-    const { apiKey } = await chrome.storage.sync.get('apiKey');
+    if (!isExtensionContextValid()) {
+      showError('Extension was reloaded. Please refresh the page.');
+      return;
+    }
+
+    const { apiKey } = await safeStorageGet('apiKey');
     if (!apiKey) { showSettingsPrompt(); return; }
 
     isLoading = true;
     showLoading();
 
-    const problem = extractProblemData();
+    const problem = await extractProblemData();
     if (!problem.title || !problem.description) {
       showError('Could not extract problem data.');
       isLoading = false;
@@ -87,16 +358,27 @@
     problem.forceRefresh = forceRefresh;
 
     try {
+      if (!isExtensionContextValid()) {
+        showError('Extension was reloaded. Please refresh the page.');
+        isLoading = false;
+        return;
+      }
+
       const response = await chrome.runtime.sendMessage({ type: 'GET_HINTS', problem });
-      if (response.error) showError(response.error);
-      else showHints(response);
+      if (!response) {
+        showError('Extension was reloaded. Please refresh the page.');
+      } else if (response.error) {
+        showError(response.error);
+      } else {
+        await showHints(response);
+      }
     } catch (error) {
-      showError(error.message);
+      showError(error.message || 'An error occurred. Please refresh the page.');
     }
     isLoading = false;
   }
 
-  function extractProblemData() {
+  async function extractProblemData() {
     const titleEl = document.querySelector('h1') || document.querySelector('.problem-name');
     const descEl = document.querySelector('.problem-statement') || 
                    document.querySelector('[class*="problem"]');
@@ -119,7 +401,7 @@
         .join(', ');
     }
     
-    return {
+    const baseData = {
       title: titleEl?.textContent?.trim() || '',
       description: descEl?.textContent?.trim().slice(0, 2000) || '',
       constraints: '',
@@ -127,6 +409,67 @@
       tags: tags,
       url: window.location.href
     };
+
+    // Check if problem has images/graphs and capture them
+    if (descEl && typeof html2canvas !== 'undefined') {
+      const hasImages = descEl.querySelectorAll('img, svg, canvas').length > 0;
+      
+      if (hasImages) {
+        try {
+          // Capture the problem description element as an image
+          const canvas = await html2canvas(descEl, {
+            allowTaint: true,
+            useCORS: true,
+            scale: 1.5, // Balance between quality and size
+            logging: false,
+            backgroundColor: '#ffffff'
+          });
+          
+          // Optimize image size - resize if too large
+          const optimizedImage = optimizeImageData(canvas);
+          
+          return {
+            ...baseData,
+            hasImages: true,
+            imageData: optimizedImage // Base64 encoded image
+          };
+        } catch (error) {
+          console.error('LC Helper: Failed to capture image:', error);
+          // Fall back to text-only if image capture fails
+        }
+      }
+    }
+
+    return baseData;
+  }
+
+  // Optimize image data to reduce payload size
+  function optimizeImageData(canvas, maxWidth = 1200, maxHeight = 1600, quality = 0.8) {
+    let { width, height } = canvas;
+    
+    // Calculate scale factor if image is too large
+    const scaleX = maxWidth / width;
+    const scaleY = maxHeight / height;
+    const scale = Math.min(scaleX, scaleY, 1); // Don't upscale
+    
+    if (scale < 1) {
+      // Need to resize
+      const newWidth = Math.floor(width * scale);
+      const newHeight = Math.floor(height * scale);
+      
+      const resizedCanvas = document.createElement('canvas');
+      resizedCanvas.width = newWidth;
+      resizedCanvas.height = newHeight;
+      
+      const ctx = resizedCanvas.getContext('2d');
+      ctx.drawImage(canvas, 0, 0, newWidth, newHeight);
+      
+      // Use JPEG for better compression
+      return resizedCanvas.toDataURL('image/jpeg', quality);
+    }
+    
+    // If small enough, use JPEG with compression
+    return canvas.toDataURL('image/jpeg', quality);
   }
 
   function showLoading() {
@@ -139,13 +482,34 @@
 
   function showError(message) {
     const body = panel.querySelector('.lch-panel-body');
+    
+    // Check if it's a quota error and add helpful action
+    const isQuotaError = message.toLowerCase().includes('quota') || message.toLowerCase().includes('exhausted');
+    const isApiKeyError = message.toLowerCase().includes('api key') || message.toLowerCase().includes('not configured');
+    
+    let actionButton = '';
+    if (isQuotaError) {
+      actionButton = '<button class="lch-settings-btn" style="margin-top: 8px;">Get New API Key</button>';
+    } else if (isApiKeyError) {
+      actionButton = '<button class="lch-settings-btn" style="margin-top: 8px;">Open Settings</button>';
+    }
+    
     body.innerHTML = `
       <div class="lch-error">
-        <div class="lch-error-icon">😕</div>
+        <div class="lch-error-icon">${isQuotaError ? '⚠️' : '😕'}</div>
         <p class="lch-error-message">${escapeHtml(message)}</p>
         <button class="lch-retry-btn">Try Again</button>
+        ${actionButton}
       </div>`;
+    
     body.querySelector('.lch-retry-btn').addEventListener('click', loadHints);
+    
+    if (actionButton) {
+      const actionBtn = body.querySelector('.lch-settings-btn');
+      actionBtn.addEventListener('click', () => {
+        chrome.runtime.sendMessage({ type: 'OPEN_POPUP' });
+      });
+    }
   }
 
   function showSettingsPrompt() {
@@ -157,7 +521,7 @@
       </div>`;
   }
 
-  function showHints(data) {
+  async function showHints(data) {
     const body = panel.querySelector('.lch-panel-body');
     const labels = ['Gentle Push', 'Stronger Nudge', 'Almost There'];
     const classes = ['hint-1', 'hint-2', 'hint-3'];
@@ -169,6 +533,13 @@
         <button class="lch-refresh-btn" title="Regenerate hints">🔄 Refresh</button>
       </div>
     ` : '';
+    
+    // Check if problem is in favorites
+    let isFavorite = false;
+    try {
+      const favResponse = await safeSendMessage({ type: 'IS_FAVORITE', url: window.location.href });
+      isFavorite = favResponse?.isFavorite || false;
+    } catch (e) {}
 
     body.innerHTML = `
       <div class="lch-topic-section">
@@ -189,6 +560,11 @@
             <div class="lch-hint-content" data-hint="${i}">${escapeHtml(hint)}</div>
           </div>
         `).join('')}
+      </div>
+      <div class="lch-actions-section">
+        <button class="lch-favorite-btn ${isFavorite ? 'active' : ''}" id="favoriteBtn">
+          ${isFavorite ? '❤️ Favorited' : '🤍 Add to Favorites'}
+        </button>
       </div>
       <div class="lch-feedback-section" id="feedbackSection">
         <span class="lch-feedback-label">Were these hints helpful?</span>
@@ -220,7 +596,37 @@
       btn.addEventListener('click', () => handleFeedback(btn.dataset.rating, data));
     });
     
+    // Add favorite button handler
+    const favoriteBtn = body.querySelector('#favoriteBtn');
+    if (favoriteBtn) {
+      favoriteBtn.addEventListener('click', async () => {
+        await toggleFavorite(favoriteBtn);
+      });
+    }
+    
     addSolvedButton();
+  }
+  
+  // Toggle favorite status
+  async function toggleFavorite(btn) {
+    if (!isExtensionContextValid() || !currentProblemData) return;
+    
+    const isCurrentlyFavorite = btn.classList.contains('active');
+    
+    try {
+      if (isCurrentlyFavorite) {
+        const id = `codechef_${generateCacheKey(currentProblemData.url)}`;
+        await safeSendMessage({ type: 'REMOVE_FAVORITE', id });
+        btn.classList.remove('active');
+        btn.innerHTML = '🤍 Add to Favorites';
+      } else {
+        await safeSendMessage({ type: 'ADD_FAVORITE', problem: currentProblemData });
+        btn.classList.add('active');
+        btn.innerHTML = '❤️ Favorited';
+      }
+    } catch (e) {
+      console.log('LC Helper: Favorite toggle failed:', e.message);
+    }
   }
   
   function handleFeedback(rating, hintData) {
@@ -309,6 +715,18 @@
       
       await chrome.storage.local.set({ [`solved_${problemKey}`]: saveData });
       console.log('Problem saved to local storage');
+      
+      // Increment daily count
+      await safeSendMessage({
+        type: 'INCREMENT_DAILY_COUNT',
+        problemUrl: window.location.href
+      });
+      
+      // Stop the timer for this problem
+      await safeSendMessage({
+        type: 'STOP_TIMER',
+        url: window.location.href
+      });
       
       console.log('Sending MARK_SOLVED message to background...');
       const response = await chrome.runtime.sendMessage({
