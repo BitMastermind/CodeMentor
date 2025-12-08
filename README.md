@@ -9,6 +9,7 @@ A powerful Chrome extension that provides AI-powered hints, topic classification
 ## ✨ Features
 
 ### 🤖 AI-Powered Smart Hints
+
 - **Progressive Hints**: Get three levels of hints (Gentle Push → Stronger Nudge → Almost There)
 - **Topic Classification**: Automatically identifies problem topics with time complexity analysis
 - **Multi-Provider Support**: Works with OpenAI (GPT-4o-mini) or Google Gemini (Gemini 2.0 Flash)
@@ -16,12 +17,14 @@ A powerful Chrome extension that provides AI-powered hints, topic classification
 - **Smart Caching**: Caches hints to reduce API calls and costs
 
 ### 📊 Contest Tracking
+
 - **Multi-Platform**: Tracks contests from LeetCode, Codeforces, and CodeChef
 - **Smart Notifications**: Get notified before contests start (configurable reminder time)
 - **Filter & Search**: Filter contests by platform and search by name
 - **Auto-Refresh**: Automatically fetches latest contests every 6 hours
 
 ### 🔥 Streak Management
+
 - **Unified Streak**: Combines activity from all platforms into one streak
 - **API-Based Tracking**: Automatically syncs with LeetCode, Codeforces, and CodeChef APIs
 - **Daily Counter**: Tracks problems solved today with auto-refresh every 15 minutes
@@ -29,17 +32,20 @@ A powerful Chrome extension that provides AI-powered hints, topic classification
 - **Progress Tracking**: Visual progress bars for streak milestones (7, 30, 50, 100, 365 days)
 
 ### ⏱️ Problem Timer
+
 - **Automatic Tracking**: Starts timer when you open a problem
 - **30-Minute Reminder**: Get notified if you've been stuck for 30 minutes
 - **Visual Display**: See elapsed time in the hints panel
 - **Smart Suggestions**: Get hints or solution links when timer hits 30 minutes
 
 ### ❤️ Favorites System
+
 - **Save Problems**: Mark problems as favorites across all platforms
 - **Quick Access**: View all favorites in the extension popup
 - **One-Click Open**: Click any favorite to open it in a new tab
 
 ### 📈 Daily Statistics
+
 - **Today's Count**: See how many problems you've solved today
 - **API Integration**: Automatically syncs from LeetCode and Codeforces APIs
 - **Background Refresh**: Updates every 15 minutes even when popup is closed
@@ -50,12 +56,14 @@ A powerful Chrome extension that provides AI-powered hints, topic classification
 ### From Source
 
 1. **Clone the repository**
+
    ```bash
    git clone https://github.com/BitMastermind/LC-Helper.git
    cd LC-Helper
    ```
 
 2. **Load the extension in Chrome**
+
    - Open Chrome and navigate to `chrome://extensions/`
    - Enable "Developer mode" (toggle in top-right)
    - Click "Load unpacked"
@@ -103,16 +111,19 @@ A powerful Chrome extension that provides AI-powered hints, topic classification
 ### API Keys
 
 **OpenAI:**
+
 - Get your API key from [OpenAI Platform](https://platform.openai.com/api-keys)
 - Supports GPT-4o-mini (default) and GPT-4o (for image analysis)
 
 **Google Gemini:**
+
 - Get your API key from [Google AI Studio](https://aistudio.google.com/app/apikey)
 - Uses Gemini 2.0 Flash model
 
 ### Platform Usernames
 
 Enter your usernames in Settings to enable:
+
 - Automatic streak tracking
 - Daily problem count sync
 - Activity-based reminders
@@ -134,16 +145,19 @@ Enter your usernames in Settings to enable:
 ### API Integration
 
 **LeetCode:**
+
 - GraphQL API for user activity and submissions
 - `recentAcSubmissions` query for today's solved problems
 - `userProfileCalendar` for streak data
 
 **Codeforces:**
+
 - REST API (`user.status`) for submissions
 - `contest.list` for upcoming contests
 - Rate-limited (2-second delay between calls)
 
 **CodeChef:**
+
 - Community API (`codechef-api.vercel.app`) for user stats
 - Heatmap data for activity tracking
 
@@ -182,6 +196,7 @@ LC-Helper/
 ## 🧪 Testing
 
 See `TEST-INSTRUCTIONS.md` for detailed testing guide, including:
+
 - How to test timer notifications
 - Testing API sync functionality
 - Manual testing procedures

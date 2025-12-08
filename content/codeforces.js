@@ -69,6 +69,10 @@
       // Test handler to manually show the timer reminder modal
       showTimerReminderModal();
       sendResponse({ success: true });
+    } else if (message.type === 'TIMER_STOPPED') {
+      // Timer was stopped (either after 1 hour or tab closed)
+      stopTimerDisplay();
+      sendResponse({ success: true });
     }
     return true;
   });
@@ -189,11 +193,28 @@
     const minutes = Math.floor(elapsed / 60000);
     const seconds = Math.floor((elapsed % 60000) / 1000);
     
+    // Stop timer if it reaches 1 hour (60 minutes)
+    if (minutes >= 60) {
+      stopTimerDisplay();
+      timerEl.textContent = '60:00';
+      timerEl.classList.add('warning');
+      return;
+    }
+    
     timerEl.textContent = `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
     
     if (minutes >= 30) {
       timerEl.classList.add('warning');
     }
+  }
+
+  // Stop timer display
+  function stopTimerDisplay() {
+    if (timerInterval) {
+      clearInterval(timerInterval);
+      timerInterval = null;
+    }
+    timerStartTime = null;
   }
 
   function showTimerReminderModal() {
@@ -307,17 +328,116 @@
         </div>
       </div>
       <div class="lch-panel-body">
-        <div class="lch-loading">
-          <div class="lch-spinner"></div>
-          <span class="lch-loading-text">Analyzing problem...</span>
-        </div>
+        <div class="lch-quick-actions"></div>
       </div>
     `;
 
     document.body.appendChild(panel);
     
+    // Prevent clicks inside panel from closing it
+    panel.addEventListener('click', (e) => {
+      e.stopPropagation();
+    });
+    
+    // Close panel when clicking outside (but not on FAB)
+    document.addEventListener('click', handleOutsideClick);
+    
     if (timerStartTime) {
       updateTimerDisplay();
+    }
+    
+    // Show quick actions (favorite, get hints) without auto-loading
+    showQuickActions();
+  }
+
+  function handleOutsideClick(e) {
+    // Don't close if panel doesn't exist or isn't active
+    if (!panel || !panel.classList.contains('active')) {
+      return;
+    }
+    
+    // Don't close if clicking on the FAB (it has its own toggle handler)
+    if (fab && fab.contains(e.target)) {
+      return;
+    }
+    
+    // Don't close if clicking inside the panel
+    if (panel.contains(e.target)) {
+      return;
+    }
+    
+    // Close the panel if clicking outside
+    panel.classList.remove('active');
+  }
+
+  // Show quick actions panel without loading hints
+  async function showQuickActions() {
+    const body = panel.querySelector('.lch-panel-body');
+    
+    // Extract problem data for favorites (lightweight, no API call)
+    if (!currentProblemData) {
+      try {
+        const problemData = await extractProblemData();
+        if (problemData.title) {
+          currentProblemData = {
+            url: window.location.href,
+            title: problemData.title,
+            platform: 'codeforces',
+            difficulty: problemData.difficulty
+          };
+        }
+      } catch (e) {
+        console.log('LC Helper: Could not extract problem data:', e.message);
+      }
+    }
+    
+    // Check if problem is in favorites
+    let isFavorite = false;
+    try {
+      const favResponse = await safeSendMessage({ type: 'IS_FAVORITE', url: window.location.href });
+      isFavorite = favResponse?.isFavorite || false;
+    } catch (e) {}
+    
+    body.innerHTML = `
+      <div class="lch-quick-actions">
+        <div class="lch-quick-section">
+          <button class="lch-explain-btn" id="explainBtn">
+            <span class="lch-btn-icon">📖</span>
+            <span class="lch-btn-text">Explain the Problem</span>
+          </button>
+          <p class="lch-quick-hint">Understand the problem statement better</p>
+        </div>
+        <div class="lch-quick-divider"></div>
+        <div class="lch-quick-section">
+          <button class="lch-get-hints-btn" id="getHintsBtn">
+            <span class="lch-btn-icon">💡</span>
+            <span class="lch-btn-text">Get Smart Hints</span>
+          </button>
+          <p class="lch-quick-hint">Uses AI to analyze the problem</p>
+        </div>
+        <div class="lch-quick-divider"></div>
+        <div class="lch-quick-section">
+          <button class="lch-favorite-btn ${isFavorite ? 'active' : ''}" id="favoriteBtn">
+            ${isFavorite ? '❤️ Favorited' : '🤍 Add to Favorites'}
+          </button>
+        </div>
+      </div>
+    `;
+    
+    // Add event listeners
+    body.querySelector('#explainBtn').addEventListener('click', () => {
+      explainProblem();
+    });
+    
+    body.querySelector('#getHintsBtn').addEventListener('click', () => {
+      loadHints();
+    });
+    
+    const favoriteBtn = body.querySelector('#favoriteBtn');
+    if (favoriteBtn) {
+      favoriteBtn.addEventListener('click', async () => {
+        await toggleFavorite(favoriteBtn);
+      });
     }
   }
 
@@ -327,10 +447,9 @@
     }
 
     panel.classList.toggle('active');
-
-    if (panel.classList.contains('active') && !isLoading) {
-      loadHints();
-    }
+    
+    // Don't auto-load hints - let user click "Get Hints" button
+    // This saves API calls when user just wants to check timer or favorite
   }
 
   async function checkAutoShow() {
@@ -404,6 +523,59 @@
     isLoading = false;
   }
 
+  async function explainProblem() {
+    if (!isExtensionContextValid()) {
+      showError('Extension was reloaded. Please refresh the page.');
+      return;
+    }
+    
+    try {
+      const { apiKey } = await safeStorageGet('apiKey');
+
+      if (!apiKey) {
+        showSettingsPrompt();
+        return;
+      }
+
+      isLoading = true;
+      showLoading();
+
+      const problem = await extractProblemData();
+
+      if (!problem.title || !problem.description) {
+        showError('Could not extract problem data. Please refresh the page.');
+        isLoading = false;
+        return;
+      }
+
+      if (!currentProblemData) {
+        currentProblemData = {
+          url: window.location.href,
+          title: problem.title,
+          platform: 'codeforces',
+          difficulty: problem.difficulty
+        };
+      }
+
+      const response = await chrome.runtime.sendMessage({
+        type: 'EXPLAIN_PROBLEM',
+        problem
+      });
+
+      if (!response) {
+        showError('Extension was reloaded. Please refresh the page.');
+      } else if (response.error) {
+        showError(response.error);
+      } else {
+        showExplanation(response);
+      }
+    } catch (error) {
+      showError(error.message || 'An error occurred. Please refresh the page.');
+    }
+
+    isLoading = false;
+  }
+
   async function extractProblemData() {
     // Codeforces problem page selectors
     const titleEl = document.querySelector('.title');
@@ -414,6 +586,7 @@
     
     // Extract difficulty from title (e.g., "A. Problem Name" -> Easy, "E. Problem Name" -> Hard)
     let difficulty = 'Unknown';
+    let problemRating = '';
     if (titleEl) {
       const titleText = titleEl.textContent.trim();
       const letter = titleText.match(/^([A-G])\./)?.[1];
@@ -423,61 +596,701 @@
       }
     }
     
+    // Try to get problem rating (shown on some problem pages)
+    const ratingEl = document.querySelector('.tag-box[title*="Difficulty"]') || 
+                     document.querySelector('[title*="rating"]');
+    if (ratingEl) {
+      problemRating = ratingEl.textContent.trim().replace('*', '');
+    }
+    
     // Extract tags if available
     let tags = '';
     const tagElements = document.querySelectorAll('.tag-box a, [class*="tag"]');
     if (tagElements.length > 0) {
       tags = Array.from(tagElements)
         .map(el => el.textContent.trim())
-        .filter(t => t.length > 0 && t.length < 30)
+        .filter(t => t.length > 0 && t.length < 30 && !t.match(/^\*?\d+$/)) // Exclude rating numbers
         .slice(0, 5)
         .join(', ');
     }
     
+    // Extract input/output format descriptions
+    let inputFormat = '';
+    let outputFormat = '';
+    
+    // Helper function to clean LaTeX duplication patterns
+    function cleanLatexDuplication(text) {
+      if (!text) return '';
+      
+      // Remove leading "ss" or other common prefixes (with or without space)
+      text = text.replace(/^ss\s*/, '');
+      
+      // Map Unicode math symbols to their ASCII equivalents
+      const unicodeToAscii = {
+        '𝑠': 's', '𝑡': 't', '𝑛': 'n', '𝑖': 'i', '𝑎': 'a', 'ℎ': 'h', '𝑚': 'm'
+      };
+      
+      // Pattern 1: Remove Unicode math symbol followed by ASCII equivalent
+      // e.g., "𝑛n" -> "𝑛", "𝑖i" -> "𝑖", "𝑎a" -> "𝑎"
+      Object.keys(unicodeToAscii).forEach(unicode => {
+        const ascii = unicodeToAscii[unicode];
+        // Simple pattern: unicode + ascii (one or more) -> unicode
+        text = text.replace(new RegExp(`(${unicode})(${ascii})+`, 'g'), '$1');
+        
+        // Pattern with operators: "𝑛×n×n" -> "𝑛×𝑛"
+        // Match: unicode + operator + ascii + operator + ascii
+        // Try with and without spaces
+        const operatorPatterns = [
+          new RegExp(`(${unicode})([×≤≥≠−＋])\\s*(${ascii})\\s*\\2\\s*(${ascii})`, 'g'),
+          new RegExp(`(${unicode})([×≤≥≠−＋])(${ascii})\\2(${ascii})`, 'g'),
+        ];
+        operatorPatterns.forEach(regex => {
+          text = text.replace(regex, (match, u, op, a1, a2) => {
+            // Convert the second ascii back to unicode
+            return u + op + u;
+          });
+        });
+      });
+      
+      // Pattern 1b: Handle "𝑛×n×n" -> "𝑛×𝑛" more directly
+      // Match: unicode + operator + ascii + operator + ascii
+      Object.keys(unicodeToAscii).forEach(unicode => {
+        const ascii = unicodeToAscii[unicode];
+        // Try multiple patterns to catch variations
+        const patterns = [
+          // "𝑛×n×n" -> "𝑛×𝑛"
+          new RegExp(`(${unicode})([×])([${ascii}])\\2([${ascii}])`, 'g'),
+          // "𝑛×n×n" with any operator
+          new RegExp(`(${unicode})([×≤≥≠−＋])([${ascii}])\\2([${ascii}])`, 'g'),
+        ];
+        patterns.forEach(regex => {
+          text = text.replace(regex, '$1$2$1');
+        });
+      });
+      
+      // Pattern 2: Handle subscript patterns like "ℎ𝑖hi" -> "ℎ𝑖"
+      // Match: two unicode symbols followed by their ASCII equivalents
+      Object.keys(unicodeToAscii).forEach(u1 => {
+        const a1 = unicodeToAscii[u1];
+        Object.keys(unicodeToAscii).forEach(u2 => {
+          const a2 = unicodeToAscii[u2];
+          const pattern = new RegExp(`(${u1})(${u2})(${a1})(${a2})`, 'g');
+          text = text.replace(pattern, '$1$2');
+        });
+      });
+      
+      // Pattern 3: Handle expressions like "1≤𝑖<𝑛1≤i<n" -> "1≤𝑖<𝑛"
+      // This is more complex - match number + operators + unicode vars + same in ASCII
+      text = text.replace(/(\d+)([≤≥<>=])([𝑛𝑖𝑎ℎ𝑠𝑡])([≤≥<>=])([𝑛𝑖𝑎ℎ𝑠𝑡])(\d+)([≤≥<>=])([a-z])([≤≥<>=])([a-z])/g, 
+        (match, n1, op1, u1, op2, u2, n2, op3, a1, op4, a2) => {
+          if (n1 === n2 && op1 === op3 && op2 === op4 && 
+              unicodeToAscii[u1] === a1 && unicodeToAscii[u2] === a2) {
+            return n1 + op1 + u1 + op2 + u2;
+          }
+          return match;
+        });
+      
+      // Pattern 3b: Handle expressions like "1<𝑖<𝑛1<i<n" -> "1<𝑖<𝑛" (without numbers at end)
+      text = text.replace(/(\d+)([<>=])([𝑛𝑖𝑎ℎ𝑠𝑡])([<>=])([𝑛𝑖𝑎ℎ𝑠𝑡])(\d+)([<>=])([a-z])([<>=])([a-z])/g, 
+        (match, n1, op1, u1, op2, u2, n2, op3, a1, op4, a2) => {
+          if (n1 === n2 && op1 === op3 && op2 === op4 && 
+              unicodeToAscii[u1] === a1 && unicodeToAscii[u2] === a2) {
+            return n1 + op1 + u1 + op2 + u2;
+          }
+          return match;
+        });
+      
+      // Pattern 3c: Handle expressions like "1≤𝑖≤𝑛1≤i≤n" -> "1≤𝑖≤𝑛"
+      text = text.replace(/(\d+)([≤≥])([𝑛𝑖𝑎ℎ𝑠𝑡])([≤≥])([𝑛𝑖𝑎ℎ𝑠𝑡])(\d+)([≤≥])([a-z])([≤≥])([a-z])/g, 
+        (match, n1, op1, u1, op2, u2, n2, op3, a1, op4, a2) => {
+          if (n1 === n2 && op1 === op3 && op2 === op4 && 
+              unicodeToAscii[u1] === a1 && unicodeToAscii[u2] === a2) {
+            return n1 + op1 + u1 + op2 + u2;
+          }
+          return match;
+        });
+      
+      // Pattern 4: Handle superscripts - detect "1018" and convert to "10^18"
+      // Also handle "−1018" -> "−10^18"
+      // Match patterns like "1018", "10^18", or superscript Unicode
+      text = text.replace(/([−]?)10(\d{1,3})(?![0-9])/g, (match, sign, exp) => {
+        // If it's a reasonable exponent (1-3 digits), convert to 10^exp
+        if (exp.length <= 3 && parseInt(exp) > 0) {
+          return (sign || '') + '10^' + exp;
+        }
+        return match;
+      });
+      
+      // Pattern 4b: Handle "5×105" -> "5×10^5"
+      text = text.replace(/(\d+)×10(\d)/g, (match, base, exp) => {
+        return base + '×10^' + exp;
+      });
+      
+      // Pattern 4c: Handle Unicode superscripts like 10¹⁸ -> 10^18
+      const superscriptMap = {
+        '¹': '1', '²': '2', '³': '3', '⁴': '4', '⁵': '5', '⁶': '6', '⁷': '7', '⁸': '8', '⁹': '9', '⁰': '0'
+      };
+      Object.keys(superscriptMap).forEach(sup => {
+        const num = superscriptMap[sup];
+        text = text.replace(new RegExp(`10${sup}`, 'g'), `10^${num}`);
+        // Handle multi-digit superscripts like 10¹⁸
+        const multiSupPattern = new RegExp(`10([¹²³⁴⁵⁶⁷⁸⁹⁰]+)`, 'g');
+        text = text.replace(multiSupPattern, (match, sups) => {
+          const exp = sups.split('').map(s => superscriptMap[s] || '').join('');
+          return `10^${exp}`;
+        });
+      });
+      
+      // Pattern 5: Handle patterns like "𝑛−1n−1" -> "𝑛−1"
+      Object.keys(unicodeToAscii).forEach(unicode => {
+        const ascii = unicodeToAscii[unicode];
+        const pattern = new RegExp(`(${unicode})([−＋])(\\d+)(${ascii})\\2(\\d+)`, 'g');
+        text = text.replace(pattern, (match, u, op, n1, a, n2) => {
+          if (n1 === n2) return u + op + n1;
+          return match;
+        });
+      });
+      
+      // Pattern 5b: Handle patterns like "(𝑛−1)(n−1)" -> "(𝑛−1)"
+      Object.keys(unicodeToAscii).forEach(unicode => {
+        const ascii = unicodeToAscii[unicode];
+        const pattern = new RegExp(`\\((${unicode})([−＋])(\\d+)\\)\\((${ascii})\\2(\\d+)\\)`, 'g');
+        text = text.replace(pattern, (match, u, op, n1, a, n2) => {
+          if (n1 === n2) return `(${u}${op}${n1})`;
+          return match;
+        });
+      });
+      
+      // Pattern 6: Handle patterns like "𝑎𝑖ai" -> "𝑎𝑖" (already handled in Pattern 2, but be explicit)
+      Object.keys(unicodeToAscii).forEach(u1 => {
+        const a1 = unicodeToAscii[u1];
+        Object.keys(unicodeToAscii).forEach(u2 => {
+          const a2 = unicodeToAscii[u2];
+          const pattern = new RegExp(`(${u1})(${u2})(${a1})(${a2})(?![a-z])`, 'g');
+          text = text.replace(pattern, '$1$2');
+        });
+      });
+      
+      // Pattern 6b: Handle patterns like "𝑛=300000n=300000" -> "𝑛=300000"
+      // Match: unicode + operator + value + ascii + operator + value
+      Object.keys(unicodeToAscii).forEach(unicode => {
+        const ascii = unicodeToAscii[unicode];
+        // Pattern: unicode=value + ascii=value
+        text = text.replace(new RegExp(`(${unicode})=([^=]+)(${ascii})=\\2`, 'g'), '$1=$2');
+        // Pattern: unicode=value + ascii=value (with spaces)
+        text = text.replace(new RegExp(`(${unicode})\\s*=\\s*([^=\\s]+)\\s*(${ascii})\\s*=\\s*\\2`, 'g'), '$1=$2');
+      });
+      
+      // Get unicode characters string once for use in multiple patterns
+      const unicodeChars = Object.keys(unicodeToAscii).join('');
+      
+      // Pattern 6c: Handle patterns like "𝑎1,𝑎2,…,𝑎𝑛a1,a2,…,an" -> "𝑎1,𝑎2,…,𝑎𝑛"
+      // Match: unicode sequence pattern followed by ASCII version
+      // Use explicit unicode characters instead of ranges
+      Object.keys(unicodeToAscii).forEach(unicode => {
+        const ascii = unicodeToAscii[unicode];
+        // Pattern: ...unicode + comma/ellipsis + unicode + ascii + comma/ellipsis + ascii
+        const unicodePattern = `[${unicodeChars}\\d,]+`;
+        text = text.replace(new RegExp(`(${unicodePattern})(${unicode})([a-z\\d,]+)(${ascii})`, 'g'), 
+          (match, before1, u, before2, a) => {
+            // Check if before1 and before2 are similar (same structure)
+            // Remove unicode chars and keep only digits/commas
+            const clean1 = before1.replace(new RegExp(`[${unicodeChars}]`, 'g'), '').replace(/[^0-9,]/g, '');
+            const clean2 = before2.replace(/[a-z]/g, '').replace(/[^0-9,]/g, '');
+            if (clean1 === clean2) {
+              return before1 + u; // Keep unicode version
+            }
+            return match;
+          });
+      });
+      
+      // Pattern 6c2: More aggressive pattern for "𝑎1,𝑎2,…,𝑎𝑛a1,a2,…,an" -> "𝑎1,𝑎2,…,𝑎𝑛"
+      // Match sequences ending with unicode variable followed by same in ASCII
+      Object.keys(unicodeToAscii).forEach(unicode => {
+        const ascii = unicodeToAscii[unicode];
+        // Match: unicode sequence ending with unicode var, followed by ASCII sequence ending with ASCII var
+        const pattern = new RegExp(`([${unicodeChars}\\d,]+${unicode})([a-z\\d,]+${ascii})`, 'g');
+        text = text.replace(pattern, (match, unicodeSeq, asciiSeq) => {
+          // Extract just the numeric/structural part
+          const unicodeNums = unicodeSeq.replace(new RegExp(`[${unicodeChars}]`, 'g'), '').replace(/[^0-9,]/g, '');
+          const asciiNums = asciiSeq.replace(/[a-z]/g, '').replace(/[^0-9,]/g, '');
+          if (unicodeNums === asciiNums) {
+            return unicodeSeq; // Keep unicode version
+          }
+          return match;
+        });
+      });
+      
+      // Pattern 6d: Handle patterns like "|𝑎𝑖−𝑎𝑖−1|<|𝑎𝑖+1−𝑎𝑖||ai−ai−1|<|ai+1−ai|" -> "|𝑎𝑖−𝑎𝑖−1|<|𝑎𝑖+1−𝑎𝑖|"
+      // Match: expression with unicode + same expression with ASCII
+      text = text.replace(/(\|[^|]+\|)(\|[^|]+\|)/g, (match, expr1, expr2) => {
+        // Check if expr2 is ASCII version of expr1
+        const expr1Clean = expr1.replace(new RegExp(`[${unicodeChars}]`, 'g'), '').replace(/[^a-z0-9|−+<>≤≥=]/g, '');
+        const expr2Clean = expr2.replace(/[a-z]/g, '').replace(/[^a-z0-9|−+<>≤≥=]/g, '');
+        if (expr1Clean === expr2Clean && expr1.includes('𝑎') && expr2.includes('a')) {
+          return expr1; // Keep unicode version
+        }
+        return match;
+      });
+      
+      // Pattern 6e: Handle patterns like "[1,1,3,6,10,3,11,1][1,1,3,6,10,3,11,1]" -> "[1,1,3,6,10,3,11,1]"
+      text = text.replace(/(\[[^\]]+\])\1/g, '$1');
+      
+      // Pattern 6f: Handle patterns like "0,2,3,4,7,8,100,2,3,4,7,8,10" -> "0,2,3,4,7,8,10"
+      // Match: number sequence + same sequence repeated
+      text = text.replace(/(\d+(?:,\d+)+),\1/g, '$1');
+      
+      // Pattern 6g: Handle number duplication like "55" when it should be "5"
+      // But be careful - only fix obvious duplications in context
+      // Match: single digit repeated 2+ times when followed by text like "different values"
+      text = text.replace(/(\d)\1+(?=\s*(?:different|distinct|values|points|elements))/g, '$1');
+      
+      // Pattern 6h: Handle "−1018≤𝑎𝑖≤1018−1018≤ai≤1018" -> "−10^18≤𝑎𝑖≤10^18"
+      // First convert 1018 to 10^18, then remove duplication
+      // This pattern handles constraint expressions with duplication
+      text = text.replace(new RegExp(`([−]?10\\^\\d+)([≤≥<>=])([${unicodeChars}]+)([≤≥<>=])(10\\^\\d+)([−]?10\\^\\d+)\\2([a-z]+)\\4(10\\^\\d+)`, 'g'), 
+        (match, val1, op1, var1, op2, val2, val1Dup, var1Dup, val2Dup) => {
+          // Check if it's a duplication
+          if (val1 === val1Dup && val2 === val2Dup && 
+              unicodeToAscii[var1] === var1Dup) {
+            return val1 + op1 + var1 + op2 + val2;
+          }
+          return match;
+        });
+      
+      // Pattern 6h2: Handle simpler case "−1018≤𝑎𝑖≤1018−1018≤ai≤1018" before superscript conversion
+      // Match: constraint expression + same expression in ASCII
+      text = text.replace(new RegExp(`([−]?\\d+)([≤≥<>=])([${unicodeChars}]+)([≤≥<>=])(\\d+)([−]?\\d+)\\2([a-z]+)\\4(\\d+)`, 'g'),
+        (match, val1, op1, var1, op2, val2, val1Dup, var1Dup, val2Dup) => {
+          if (val1 === val1Dup && val2 === val2Dup && 
+              unicodeToAscii[var1] === var1Dup) {
+            return val1 + op1 + var1 + op2 + val2;
+          }
+          return match;
+        });
+      
+      // Pattern 6h3: Handle "−10^18≤𝑎𝑖≤10^18−10^18≤ai≤10^18" after superscript conversion
+      // Match: constraint expression with superscript + same expression in ASCII
+      text = text.replace(new RegExp(`([−]?10\\^\\d+)([≤≥<>=])([${unicodeChars}]+)([≤≥<>=])(10\\^\\d+)([−]?10\\^\\d+)\\2([a-z]+)\\4(10\\^\\d+)`, 'g'),
+        (match, val1, op1, var1, op2, val2, val1Dup, var1Dup, val2Dup) => {
+          if (val1 === val1Dup && val2 === val2Dup && 
+              unicodeToAscii[var1] === var1Dup) {
+            return val1 + op1 + var1 + op2 + val2;
+          }
+          return match;
+        });
+      
+      // Pattern 6i: Handle thousands separator - "300000" -> "300 000" (but only in specific contexts)
+      // Only apply to numbers that appear in test case descriptions like "n = 300000"
+      text = text.replace(/([𝑛𝑚])\s*=\s*(\d{4,})/g, (match, variable, num) => {
+        if (num.length >= 4) {
+          return variable + ' = ' + num.replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
+        }
+        return match;
+      });
+      
+      // Pattern 7: Handle triple repetition like "998244353998244353998244353"
+      text = text.replace(/(\d{4,})\1{2,}/g, '$1');
+      
+      // Pattern 8: Handle simple word duplication (be careful with legitimate words)
+      text = text.replace(/([A-Za-z]{2,15})\1{1,}(?=\s|$|[.,;:!?])/g, '$1');
+      
+      // Pattern 9: Fix word boundary issues - "cel" -> "cell", "unles" -> "unless", etc.
+      const wordFixes = {
+        'cel': 'cell',
+        'unles': 'unless',
+        'Al tiles': 'All tiles',
+        'al tiles': 'all tiles',
+        'Al ': 'All ',
+        'al ': 'all ',
+        'equall to': 'equal to'
+      };
+      Object.keys(wordFixes).forEach(wrong => {
+        const correct = wordFixes[wrong];
+        text = text.replace(new RegExp(wrong.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'), correct);
+      });
+      
+      // Pattern 10: Clean up constraints duplication
+      // Remove duplicate "time limit per test" lines (handle with or without newlines)
+      text = text.replace(/(time limit per test[^\n]+)(\s*\n?\s*)\1/g, '$1');
+      text = text.replace(/(memory limit per test[^\n]+)(\s*\n?\s*)\1/g, '$1');
+      // Also handle cases where they appear on same line
+      text = text.replace(/(time limit per test[^\n]+)\s+\1/g, '$1');
+      text = text.replace(/(memory limit per test[^\n]+)\s+\1/g, '$1');
+      
+      // Clean up multiple spaces
+      text = text.replace(/\s{2,}/g, ' ');
+      
+      // Clean up multiple newlines
+      text = text.replace(/\n{3,}/g, '\n\n');
+      
+      return text.trim();
+    }
+    
+    // Helper function to extract formatted text preserving structure
+    function extractFormattedText(element, useInnerText = true) {
+      if (!element) return '';
+      
+      // Clone the element to avoid modifying the original
+      const clone = element.cloneNode(true);
+      
+      // Remove section titles (we'll handle them separately)
+      clone.querySelectorAll('.section-title').forEach(el => el.remove());
+      
+      // Remove script and style tags
+      clone.querySelectorAll('script, style').forEach(el => el.remove());
+      
+      // Use innerText for visible text (avoids LaTeX source duplication)
+      // innerText respects CSS and only returns rendered text
+      let text = '';
+      if (useInnerText && clone.innerText) {
+        text = clone.innerText.trim();
+      } else {
+        // Fallback to textContent, but clean it
+        text = clone.textContent.trim();
+      }
+      
+      // Clean LaTeX duplication patterns
+      text = cleanLatexDuplication(text);
+      
+      // Normalize line breaks
+      text = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+      
+      // Clean up excessive line breaks
+      text = text.replace(/\n{3,}/g, '\n\n');
+      
+      return text;
+    }
+    
     if (problemStatement) {
-      // Get the main problem description (excluding input/output format)
-      const divs = problemStatement.querySelectorAll(':scope > div');
-      divs.forEach(div => {
-        if (!div.querySelector('.section-title')) {
-          description += div.textContent + '\n';
+      // Codeforces structure: .problem-statement > div (description divs) > .section-title (Input/Output/Note)
+      // We want to capture everything before Input/Output sections
+      
+      // Method 1: Get all direct child divs and process them
+      const allDivs = Array.from(problemStatement.querySelectorAll(':scope > div'));
+      const descriptionParts = [];
+      
+      // Find where Input section starts
+      let inputSectionIndex = -1;
+      let outputSectionIndex = -1;
+      
+      allDivs.forEach((div, index) => {
+        const sectionTitle = div.querySelector('.section-title');
+        if (sectionTitle) {
+          const titleText = sectionTitle.textContent.trim().toLowerCase();
+          if (titleText.includes('input') && inputSectionIndex === -1) {
+            inputSectionIndex = index;
+          }
+          if (titleText.includes('output') && outputSectionIndex === -1) {
+            outputSectionIndex = index;
+          }
         }
       });
       
-      // Get input specification for constraints
+      // Extract description: all divs before Input section
+      const descriptionEndIndex = inputSectionIndex !== -1 ? inputSectionIndex : 
+                                  (outputSectionIndex !== -1 ? outputSectionIndex : allDivs.length);
+      
+      for (let i = 0; i < descriptionEndIndex; i++) {
+        const div = allDivs[i];
+        const sectionTitle = div.querySelector('.section-title');
+        
+        // Skip if it's a section header (Input/Output/Note)
+        if (sectionTitle) {
+          const titleText = sectionTitle.textContent.trim().toLowerCase();
+          if (titleText.includes('input') || titleText.includes('output') || 
+              titleText.includes('note') || titleText.includes('example')) {
+            break; // Stop at first section
+          }
+        }
+        
+        // Extract text with better formatting
+        const divText = extractFormattedText(div);
+        if (divText.trim()) {
+          descriptionParts.push(divText.trim());
+        }
+      }
+      
+      description = descriptionParts.join('\n\n');
+      
+      // Clean up description to remove LaTeX duplication
+      description = cleanLatexDuplication(description);
+      
+      // Remove title if it appears at the start of description (common duplication)
+      if (titleEl) {
+        const titleText = titleEl.textContent.trim();
+        if (description.startsWith(titleText)) {
+          description = description.substring(titleText.length).trim();
+        }
+        // Also check for title with "time limit" prefix
+        const titleMatch = description.match(new RegExp(`^.*?${titleText.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`, 'i'));
+        if (titleMatch && titleMatch.index === 0) {
+          description = description.substring(titleMatch[0].length).trim();
+        }
+      }
+      
+      // Remove time/memory limit lines if they appear in description
+      description = description.replace(/time limit per test\s*\d+\s*(second|seconds)/gi, '').trim();
+      description = description.replace(/memory limit per test\s*\d+\s*(megabyte|megabytes|mb)/gi, '').trim();
+      description = description.replace(/input\s*standard input/gi, '').trim();
+      description = description.replace(/output\s*standard output/gi, '').trim();
+      
+      // Fallback: If description is too short or empty, try alternative extraction
+      if (!description || description.trim().length < 100) {
+        // Try getting all text before Input section using innerText (rendered text only)
+        const problemText = problemStatement.innerText || problemStatement.textContent || '';
+        const inputMatch = problemText.match(/Input\s*:?\s*/i);
+        if (inputMatch) {
+          description = cleanLatexDuplication(problemText.substring(0, inputMatch.index).trim());
+        } else {
+          // Last resort: get first few divs' content
+          const firstDivs = allDivs.slice(0, Math.min(5, allDivs.length));
+          description = firstDivs.map(div => extractFormattedText(div)).filter(t => t.trim()).join('\n\n');
+          description = cleanLatexDuplication(description);
+        }
+      }
+      
+      // Get input specification
       const inputSpec = problemStatement.querySelector('.input-specification');
       if (inputSpec) {
-        constraints = inputSpec.textContent;
+        const inputText = extractFormattedText(inputSpec);
+        // Remove "Input" header if present
+        inputFormat = inputText.replace(/^Input\s*:?\s*/i, '').trim();
+      }
+      
+      // Get output specification
+      const outputSpec = problemStatement.querySelector('.output-specification');
+      if (outputSpec) {
+        const outputText = extractFormattedText(outputSpec);
+        // Remove "Output" header if present
+        outputFormat = outputText.replace(/^Output\s*:?\s*/i, '').trim();
+      }
+      
+      // Extract constraints separately (time limit, memory limit, and constraint section)
+      const constraintParts = [];
+      
+      // Get time and memory limits
+      const timeLimit = document.querySelector('.time-limit');
+      const memoryLimit = document.querySelector('.memory-limit');
+      if (timeLimit) {
+        constraintParts.push(timeLimit.textContent.trim());
+      }
+      if (memoryLimit) {
+        constraintParts.push(memoryLimit.textContent.trim());
+      }
+      
+      // Look for a constraints section (if it exists separately from input)
+      const constraintSection = problemStatement.querySelector('.property-title');
+      if (constraintSection) {
+        const constraintText = constraintSection.parentElement?.textContent?.trim();
+        if (constraintText && !constraintText.toLowerCase().includes('input') && 
+            !constraintText.toLowerCase().includes('output')) {
+          constraintParts.push(constraintText);
+        }
+      }
+      
+      // If we have input format but no separate constraints, extract constraints from input format
+      // (Codeforces often puts constraints in the input section)
+      if (inputFormat && constraintParts.length === 0) {
+        // Try to extract constraint-like text from input format
+        // Look for patterns like "1 ≤ q ≤ 10", "2 ≤ |s| ≤ 11", etc.
+        const constraintMatches = inputFormat.match(/\d+\s*≤\s*[^≤]+≤\s*\d+/g);
+        if (constraintMatches && constraintMatches.length > 0) {
+          constraintParts.push(...constraintMatches);
+        }
+      }
+      
+      constraints = constraintParts.join('\n');
+      
+      // Also get Note section if it exists (adds important context)
+      const noteSpec = problemStatement.querySelector('.note');
+      if (noteSpec && !description.includes('Note:')) {
+        const noteText = extractFormattedText(noteSpec);
+        if (noteText.trim()) {
+          description += '\n\nNote: ' + noteText.replace(/^Note\s*:?\s*/i, '').trim();
+        }
       }
     }
 
-    // Get time and memory limits
-    const limits = document.querySelector('.time-limit, .memory-limit');
-    if (limits) {
-      constraints = limits.parentElement?.textContent + '\n' + constraints;
-    }
+    // Constraints are now handled above in the input/output extraction section
 
+    // Extract sample test cases from Codeforces structure
+    const examples = [];
+    const sampleTests = document.querySelectorAll('.sample-test');
+    
+    // Helper function to extract text with proper line breaks from Codeforces pre elements
+    function extractPreText(preEl) {
+      if (!preEl) return '';
+      
+      // Method 1: Check for nested divs (Codeforces uses divs for each line)
+      const divs = preEl.querySelectorAll('div');
+      if (divs.length > 0) {
+        return Array.from(divs).map(d => {
+          // Use innerText to avoid LaTeX duplication
+          const text = d.innerText || d.textContent || '';
+          return cleanLatexDuplication(text.trim());
+        }).join('\n');
+      }
+      
+      // Method 2: Check for <br> tags
+      const html = preEl.innerHTML;
+      if (html.includes('<br')) {
+        const text = html
+          .replace(/<br\s*\/?>/gi, '\n')
+          .replace(/<[^>]+>/g, '')
+          .trim();
+        return cleanLatexDuplication(text);
+      }
+      
+      // Method 3: Use innerText which preserves line breaks better than textContent
+      // innerText respects CSS styling and returns rendered text with line breaks
+      if (preEl.innerText) {
+        return cleanLatexDuplication(preEl.innerText.trim());
+      }
+      
+      // Fallback: textContent (but clean it)
+      return cleanLatexDuplication(preEl.textContent.trim());
+    }
+    
+    sampleTests.forEach((sampleTest, testIndex) => {
+      const inputs = sampleTest.querySelectorAll('.input pre');
+      const outputs = sampleTest.querySelectorAll('.output pre');
+      
+      // Codeforces usually has paired input/output
+      const maxPairs = Math.max(inputs.length, outputs.length);
+      
+      for (let i = 0; i < maxPairs; i++) {
+        const inputEl = inputs[i];
+        const outputEl = outputs[i];
+        
+        if (inputEl || outputEl) {
+          const inputText = extractPreText(inputEl);
+          const outputText = extractPreText(outputEl);
+          
+          examples.push({
+            index: examples.length + 1,
+            input: inputText,
+            output: outputText
+          });
+        }
+      }
+    });
+
+    // Format examples as string for LLM
+    const examplesText = examples.map(ex => {
+      return `Example ${ex.index}:\n  Input:\n    ${ex.input.split('\n').join('\n    ')}\n  Output:\n    ${ex.output.split('\n').join('\n    ')}`;
+    }).join('\n\n');
+
+    // Increase limits for better problem capture
+    // Description: up to 5000 chars (most problems fit, but allow for longer ones)
+    // Input/Output: up to 1000 chars each
+    // Constraints: up to 1000 chars
     const baseData = {
       title: titleEl?.textContent?.trim() || '',
-      description: description.trim().slice(0, 2000) || '',
-      constraints: constraints.slice(0, 500),
+      description: description.trim().slice(0, 5000) || '',
+      constraints: constraints.slice(0, 1000),
       difficulty: difficulty,
+      problemRating: problemRating,
       tags: tags,
+      inputFormat: inputFormat.slice(0, 1000),
+      outputFormat: outputFormat.slice(0, 1000),
+      examples: examplesText,
+      examplesCount: examples.length,
       url: window.location.href
     };
+    
+    // Console log extracted data for accuracy testing
+    console.log('='.repeat(60));
+    console.log('LC Helper - Extracted Problem Data (Codeforces)');
+    console.log('='.repeat(60));
+    console.log('📌 Title:', baseData.title);
+    console.log('📊 Difficulty:', baseData.difficulty, problemRating ? `(Rating: ${problemRating})` : '');
+    console.log('🏷️ Tags:', baseData.tags || 'None found');
+    console.log('-'.repeat(60));
+    console.log('📝 Description (' + baseData.description.length + ' chars):');
+    const descPreview = baseData.description.length > 800 ? 
+      baseData.description.slice(0, 800) + '...\n[... ' + (baseData.description.length - 800) + ' more characters ...]' : 
+      baseData.description;
+    console.log(descPreview);
+    console.log('-'.repeat(60));
+    console.log('📥 Input Format:', inputFormat.slice(0, 200) || 'None found');
+    console.log('📤 Output Format:', outputFormat.slice(0, 200) || 'None found');
+    console.log('📏 Constraints:', baseData.constraints.slice(0, 200) || 'None found');
+    console.log('-'.repeat(60));
+    console.log(`📋 Sample Test Cases (${examples.length} found):`);
+    examples.forEach(ex => {
+      console.log(`  Example ${ex.index}:`);
+      console.log(`    Input:`);
+      ex.input.split('\n').forEach(line => console.log(`      ${line}`));
+      console.log(`    Output:`);
+      ex.output.split('\n').forEach(line => console.log(`      ${line}`));
+    });
+    console.log('-'.repeat(60));
+    console.log('🔗 URL:', baseData.url);
+    console.log('='.repeat(60));
 
     // Check if problem has images/graphs and capture them
     if (problemStatement && typeof html2canvas !== 'undefined') {
-      const hasImages = problemStatement.querySelectorAll('img, svg, canvas').length > 0;
+      const imageElements = problemStatement.querySelectorAll('img, svg, canvas');
+      const hasImages = imageElements.length > 0;
       
       if (hasImages) {
+        // Check for external images that might cause CORS issues
+        let hasExternalImages = false;
+        const currentOrigin = window.location.origin;
+        
+        imageElements.forEach(img => {
+          if (img.tagName === 'IMG') {
+            const src = img.src || img.getAttribute('src') || '';
+            if (src) {
+              try {
+                const url = new URL(src, window.location.href);
+                if (url.origin !== currentOrigin && url.origin !== window.location.origin) {
+                  hasExternalImages = true;
+                }
+              } catch (e) {
+                // Invalid URL, might be external
+                if (src.startsWith('http') || src.includes('espresso.codeforces.com')) {
+                  hasExternalImages = true;
+                }
+              }
+            }
+          }
+        });
+        
+        // If we have external images, skip image capture to avoid CORS errors
+        if (hasExternalImages) {
+          console.log('LC Helper: Skipping image capture due to external images (CORS restrictions)');
+          return baseData; // Return text-only version
+        }
+        
         try {
           // Capture the problem statement element as an image
           const canvas = await html2canvas(problemStatement, {
-            allowTaint: true,
+            allowTaint: false, // Don't allow tainted canvas
             useCORS: true,
             scale: 1.5, // Balance between quality and size
             logging: false,
-            backgroundColor: '#ffffff'
+            backgroundColor: '#ffffff',
+            onclone: (clonedDoc) => {
+              // Remove external images from cloned document to prevent CORS issues
+              const clonedImages = clonedDoc.querySelectorAll('img');
+              clonedImages.forEach(img => {
+                const src = img.src || img.getAttribute('src') || '';
+                if (src) {
+                  try {
+                    const url = new URL(src, window.location.href);
+                    if (url.origin !== window.location.origin) {
+                      img.remove(); // Remove external images
+                    }
+                  } catch (e) {
+                    if (src.includes('espresso.codeforces.com') || src.startsWith('http')) {
+                      img.remove(); // Remove potentially external images
+                    }
+                  }
+                }
+              });
+            }
           });
           
           // Optimize image size - resize if too large
@@ -489,7 +1302,12 @@
             imageData: optimizedImage // Base64 encoded image
           };
         } catch (error) {
-          console.error('LC Helper: Failed to capture image:', error);
+          // Silently fail for CORS-related errors, log others
+          if (!error.message?.includes('CORS') && 
+              !error.message?.includes('Access-Control') &&
+              !error.message?.includes('tainted')) {
+            console.warn('LC Helper: Failed to capture image:', error.message);
+          }
           // Fall back to text-only if image capture fails
         }
       }
@@ -627,6 +1445,60 @@
     }
   }
 
+  async function showExplanation(data) {
+    const body = panel.querySelector('.lch-panel-body');
+    
+    let isFavorite = false;
+    try {
+      const favResponse = await safeSendMessage({ type: 'IS_FAVORITE', url: window.location.href });
+      isFavorite = favResponse?.isFavorite || false;
+    } catch (e) {}
+
+    const formattedExplanation = parseMarkdown(data.explanation || '');
+
+    body.innerHTML = `
+      <div class="lch-explanation-section">
+        <div class="lch-explanation-header">
+          <span class="lch-explanation-icon">📖</span>
+          <h3 class="lch-explanation-title">Problem Explanation</h3>
+        </div>
+        <div class="lch-explanation-content">${formattedExplanation}</div>
+        ${data.keyPoints ? `
+        <div class="lch-key-points">
+          <h4 class="lch-key-points-title">Key Points:</h4>
+          <ul class="lch-key-points-list">
+            ${data.keyPoints.map(point => `<li>${parseMarkdown(point)}</li>`).join('')}
+          </ul>
+        </div>
+        ` : ''}
+        <div class="lch-explanation-actions">
+          <button class="lch-get-hints-after-explanation" id="getHintsAfterExplanation">
+            💡 Now Get Hints
+          </button>
+        </div>
+      </div>
+      <div class="lch-actions-section">
+        <button class="lch-favorite-btn ${isFavorite ? 'active' : ''}" id="favoriteBtn">
+          ${isFavorite ? '❤️ Favorited' : '🤍 Add to Favorites'}
+        </button>
+      </div>
+    `;
+
+    const getHintsBtn = body.querySelector('#getHintsAfterExplanation');
+    if (getHintsBtn) {
+      getHintsBtn.addEventListener('click', () => {
+        loadHints();
+      });
+    }
+    
+    const favoriteBtn = body.querySelector('#favoriteBtn');
+    if (favoriteBtn) {
+      favoriteBtn.addEventListener('click', async () => {
+        await toggleFavorite(favoriteBtn);
+      });
+    }
+  }
+
   async function showHints(data) {
     const body = panel.querySelector('.lch-panel-body');
     
@@ -649,11 +1521,11 @@
     } catch (e) {}
 
     body.innerHTML = `
-      <div class="lch-topic-section">
+      ${data.topic ? `<div class="lch-topic-section">
         <div class="lch-topic-label">Problem Topic</div>
         <div class="lch-topic-badge">${escapeHtml(data.topic)}</div>
         ${cacheInfo}
-      </div>
+      </div>` : `<div class="lch-topic-section">${cacheInfo}</div>`}
       <div class="lch-hints-section">
         ${data.hints.map((hint, i) => `
           <div class="lch-hint-card">
@@ -665,7 +1537,7 @@
               <button class="lch-hint-reveal-btn">Reveal</button>
             </div>
             <div class="lch-hint-content" data-hint="${i}">
-              ${escapeHtml(hint)}
+              ${formatHint(hint, i)}
             </div>
           </div>
         `).join('')}
@@ -714,8 +1586,6 @@
         await toggleFavorite(favoriteBtn);
       });
     }
-    
-    addSolvedButton();
   }
   
   // Toggle favorite status
@@ -767,103 +1637,169 @@
     }
   }
 
+  // Format hint text professionally
+  function formatHint(hint, hintIndex) {
+    if (!hint) return '';
+    
+    let formatted = hint.trim();
+    
+    // Remove redundant prefixes like "Hint 3:", "Implementation:", "Hint 3: Implementation:"
+    formatted = formatted.replace(/^Hint\s+\d+\s*:?\s*/i, '');
+    formatted = formatted.replace(/^Implementation\s*:?\s*/i, '');
+    formatted = formatted.trim();
+    
+    // Split by numbered list items (1), 2), 3), etc.)
+    // Pattern: number followed by ) and space, capturing everything until next number) or end
+    const parts = [];
+    let currentIndex = 0;
+    
+    // Find all numbered list items
+    const listItemRegex = /(\d+\))\s+/g;
+    const matches = [];
+    let match;
+    
+    while ((match = listItemRegex.exec(formatted)) !== null) {
+      matches.push({
+        index: match.index,
+        number: match[1],
+        length: match[0].length
+      });
+    }
+    
+    // If we found numbered items, process them
+    if (matches.length >= 2) {
+      let htmlList = '<ol class="lch-hint-list">';
+      let lastItemEnd = 0;
+      
+      for (let i = 0; i < matches.length; i++) {
+        const start = matches[i].index + matches[i].length;
+        const end = (i < matches.length - 1) ? matches[i + 1].index : formatted.length;
+        let itemText = formatted.substring(start, end).trim();
+        lastItemEnd = end;
+        
+        // Clean up trailing periods/spaces
+        itemText = itemText.replace(/^[.\s]+|[.\s]+$/g, '');
+        
+        if (itemText) {
+          htmlList += `<li>${escapeHtml(itemText)}</li>`;
+        }
+      }
+      
+      htmlList += '</ol>';
+      
+      // Check for edge cases or additional notes after the last item
+      const remainingText = formatted.substring(lastItemEnd).trim();
+      
+      if (remainingText && !remainingText.match(/^\d+\)/)) {
+        // Check if it starts with "Edge cases" or "Edge case"
+        const edgeCaseMatch = remainingText.match(/^(Edge\s+cases?:?\s*)(.+)$/i);
+        if (edgeCaseMatch) {
+          htmlList += `<div class="lch-hint-edge-cases"><strong>Edge Cases:</strong> ${escapeHtml(edgeCaseMatch[2])}</div>`;
+        } else {
+          htmlList += `<div class="lch-hint-note">${escapeHtml(remainingText)}</div>`;
+        }
+      }
+      
+      return htmlList;
+    }
+    
+    // If not a numbered list, just escape and return
+    return escapeHtml(formatted);
+  }
+
   function escapeHtml(text) {
     const div = document.createElement('div');
     div.textContent = text;
     return div.innerHTML;
   }
 
-  function addSolvedButton() {
-    const body = panel.querySelector('.lch-panel-body');
-    const problemKey = generateCacheKey(window.location.href);
+  // Parse markdown to HTML for professional formatting
+  function parseMarkdown(text) {
+    if (!text) return '';
     
-    chrome.storage.local.get(`solved_${problemKey}`, (result) => {
-      const isSolved = result[`solved_${problemKey}`];
+    // First escape HTML to prevent XSS (but preserve structure)
+    let html = escapeHtml(text);
+    
+    // Split into lines for better processing
+    const lines = html.split('\n');
+    const processedLines = [];
+    let inParagraph = false;
+    
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i].trim();
+      const nextLine = i < lines.length - 1 ? lines[i + 1].trim() : '';
       
-      if (!body.querySelector('.lch-solved-section')) {
-        const solvedSection = document.createElement('div');
-        solvedSection.className = 'lch-solved-section';
-        solvedSection.innerHTML = `
-          <button class="lch-mark-solved-btn ${isSolved ? 'solved' : ''}">
-            ${isSolved ? '✓ Solved' : '✓ Mark as Solved'}
-          </button>
-        `;
-        
-        const feedbackSection = body.querySelector('.lch-feedback-section');
-        if (feedbackSection) {
-          body.insertBefore(solvedSection, feedbackSection);
-        } else {
-          body.appendChild(solvedSection);
+      // Skip empty lines (they'll create paragraph breaks)
+      if (!line) {
+        if (inParagraph) {
+          processedLines.push('</p>');
+          inParagraph = false;
         }
-        
-        const solvedBtn = solvedSection.querySelector('.lch-mark-solved-btn');
-        if (!isSolved) {
-          solvedBtn.addEventListener('click', async () => {
-            await markProblemAsSolved(solvedBtn);
-          });
-        } else {
-          solvedBtn.disabled = true;
-        }
+        continue;
       }
-    });
-  }
-
-  async function markProblemAsSolved(button) {
-    console.log('Mark as Solved button clicked!');
-    
-    try {
-      const problemData = extractProblemData();
-      const problemKey = generateCacheKey(window.location.href);
       
-      const saveData = {
-        title: problemData.title,
-        url: window.location.href,
-        difficulty: problemData.difficulty,
-        tags: problemData.tags,
-        solvedAt: Date.now(),
-        platform: 'codeforces'
-      };
+      // Detect section headers (lines ending with ':' that are short and followed by content)
+      if (line.endsWith(':') && line.length < 60 && nextLine && !nextLine.startsWith('-') && !nextLine.match(/^\d+\./)) {
+        if (inParagraph) {
+          processedLines.push('</p>');
+          inParagraph = false;
+        }
+        // Format as section header
+        const headerText = line.slice(0, -1); // Remove the colon
+        processedLines.push(`<h4 class="lch-explanation-section-header">${headerText}</h4>`);
+        continue;
+      }
       
-      await chrome.storage.local.set({ [`solved_${problemKey}`]: saveData });
-      console.log('Problem saved to local storage');
+      // Detect list items (lines starting with "- " or numbered)
+      if (line.match(/^[-•]\s+/) || line.match(/^\d+\.\s+/)) {
+        if (inParagraph) {
+          processedLines.push('</p>');
+          inParagraph = false;
+        }
+        const listContent = line.replace(/^[-•]\s+/, '').replace(/^\d+\.\s+/, '');
+        processedLines.push(`<li class="lch-explanation-list-item">${listContent}</li>`);
+        continue;
+      }
       
-      // Increment daily count
-      await safeSendMessage({
-        type: 'INCREMENT_DAILY_COUNT',
-        problemUrl: window.location.href
-      });
-      
-      // Stop the timer for this problem
-      await safeSendMessage({
-        type: 'STOP_TIMER',
-        url: window.location.href
-      });
-      
-      console.log('Sending MARK_SOLVED message to background...');
-      const response = await chrome.runtime.sendMessage({
-        type: 'MARK_SOLVED',
-        problemData: saveData
-      });
-      
-      console.log('Response from background:', response);
-      
-      if (response && response.success) {
-        button.textContent = '✓ Solved';
-        button.classList.add('solved');
-        button.disabled = true;
-        showStreakCelebration(response.streakData);
+      // Regular paragraph content
+      if (!inParagraph) {
+        processedLines.push('<p class="lch-explanation-paragraph">');
+        inParagraph = true;
       } else {
-        console.error('Failed to update streak:', response);
-        button.textContent = '✓ Solved';
-        button.classList.add('solved');
-        button.disabled = true;
+        processedLines.push('<br>');
       }
-    } catch (error) {
-      console.error('Error marking problem as solved:', error);
-      button.textContent = '✓ Solved';
-      button.classList.add('solved');
-      button.disabled = true;
+      processedLines.push(line);
     }
+    
+    // Close any open paragraph
+    if (inParagraph) {
+      processedLines.push('</p>');
+    }
+    
+    html = processedLines.join('');
+    
+    // Now process markdown formatting within the HTML
+    // Convert **bold** to <strong> (handle nested cases)
+    html = html.replace(/\*\*([^*]+?)\*\*/g, '<strong class="lch-markdown-bold">$1</strong>');
+    
+    // Convert *italic* to <em> (but not if it's part of **bold**)
+    html = html.replace(/(?<!\*)\*([^*\s][^*]*?[^*\s])\*(?!\*)/g, '<em class="lch-markdown-italic">$1</em>');
+    
+    // Convert `code` to <code>
+    html = html.replace(/`([^`]+)`/g, '<code class="lch-markdown-code">$1</code>');
+    
+    // Wrap consecutive list items in ul tags
+    // Replace patterns like: <li>...</li><li>...</li> with <ul><li>...</li><li>...</li></ul>
+    html = html.replace(/(<li class="lch-explanation-list-item">[\s\S]*?<\/li>(?:\s*<li class="lch-explanation-list-item">[\s\S]*?<\/li>)*)/g, 
+      (match) => {
+        // Only wrap if not already wrapped
+        if (!match.includes('<ul')) {
+          return `<ul class="lch-explanation-list">${match}</ul>`;
+        }
+        return match;
+      });
+    
+    return html;
   }
 
   function generateCacheKey(url) {
@@ -873,85 +1809,5 @@
       .slice(0, 100);
   }
 
-  function showStreakCelebration(streakData) {
-    const currentStreak = streakData?.currentStreak || 1;
-    
-    const celebration = document.createElement('div');
-    celebration.className = 'lch-celebration';
-    
-    const { icon, title, subtitle } = getCelebrationContent(currentStreak);
-    
-    celebration.innerHTML = `
-      <div class="lch-celebration-content">
-        <div class="lch-celebration-icon">${icon}</div>
-        <div class="lch-celebration-title">${title}</div>
-        <div class="lch-celebration-streak">
-          🔥 ${currentStreak} Day Streak
-        </div>
-        <div class="lch-celebration-subtitle">${subtitle}</div>
-      </div>
-    `;
-    document.body.appendChild(celebration);
-    
-    setTimeout(() => celebration.remove(), 3000);
-  }
-
-  function getCelebrationContent(streak) {
-    if (streak === 1) {
-      return {
-        icon: '🎉',
-        title: 'Awesome Start!',
-        subtitle: 'First step to greatness! Come back tomorrow!'
-      };
-    } else if (streak === 7) {
-      return {
-        icon: '🏅',
-        title: 'Week Warrior!',
-        subtitle: 'You\'ve built an amazing 7-day habit!'
-      };
-    } else if (streak === 30) {
-      return {
-        icon: '🏆',
-        title: 'Month Master!',
-        subtitle: '30 days of dedication! You\'re unstoppable!'
-      };
-    } else if (streak === 50) {
-      return {
-        icon: '💎',
-        title: 'Elite Status!',
-        subtitle: '50 days! You\'re in the top 1%!'
-      };
-    } else if (streak === 100) {
-      return {
-        icon: '👑',
-        title: 'CENTURY LEGEND!',
-        subtitle: '100 days! You\'re absolutely incredible!'
-      };
-    } else if (streak < 7) {
-      return {
-        icon: '🌟',
-        title: 'Problem Solved!',
-        subtitle: `${streak} days and counting! Keep going!`
-      };
-    } else if (streak < 30) {
-      return {
-        icon: '🔥',
-        title: 'On Fire!',
-        subtitle: `${streak} days! You\'re building something special!`
-      };
-    } else if (streak < 100) {
-      return {
-        icon: '⚡',
-        title: 'Crushing It!',
-        subtitle: `${streak} days of pure dedication!`
-      };
-    } else {
-      return {
-        icon: '🚀',
-        title: 'LEGENDARY!',
-        subtitle: `${streak} days! You\'re a coding machine!`
-      };
-    }
-  }
 })();
 

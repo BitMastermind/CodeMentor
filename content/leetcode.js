@@ -83,6 +83,10 @@
       // Test handler to manually show the timer reminder modal
       showTimerReminderModal();
       sendResponse({ success: true });
+    } else if (message.type === 'TIMER_STOPPED') {
+      // Timer was stopped (either after 1 hour or tab closed)
+      stopTimerDisplay();
+      sendResponse({ success: true });
     }
     return true;
   });
@@ -211,12 +215,29 @@
     const minutes = Math.floor(elapsed / 60000);
     const seconds = Math.floor((elapsed % 60000) / 1000);
     
+    // Stop timer if it reaches 1 hour (60 minutes)
+    if (minutes >= 60) {
+      stopTimerDisplay();
+      timerEl.textContent = '60:00';
+      timerEl.classList.add('warning');
+      return;
+    }
+    
     timerEl.textContent = `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
     
     // Add warning class if over 30 minutes
     if (minutes >= 30) {
       timerEl.classList.add('warning');
     }
+  }
+
+  // Stop timer display
+  function stopTimerDisplay() {
+    if (timerInterval) {
+      clearInterval(timerInterval);
+      timerInterval = null;
+    }
+    timerStartTime = null;
   }
 
   // Show 30-minute reminder modal
@@ -304,7 +325,7 @@
         <path d="M13 2L3 14h8l-1 8 10-12h-8l1-8z"/>
       </svg>
     `;
-    fab.title = 'LC Helper - Get Hints (Right-click to mark as solved)';
+    fab.title = 'LC Helper - Get Hints';
     fab.setAttribute('aria-label', 'LC Helper - Get Hints');
     fab.addEventListener('click', togglePanel);
 
@@ -337,18 +358,117 @@
         </div>
       </div>
       <div class="lch-panel-body">
-        <div class="lch-loading">
-          <div class="lch-spinner"></div>
-          <span class="lch-loading-text">Analyzing problem...</span>
-        </div>
+        <div class="lch-quick-actions"></div>
       </div>
     `;
 
     document.body.appendChild(panel);
     
+    // Prevent clicks inside panel from closing it
+    panel.addEventListener('click', (e) => {
+      e.stopPropagation();
+    });
+    
+    // Close panel when clicking outside (but not on FAB)
+    document.addEventListener('click', handleOutsideClick);
+    
     // Update timer display if already running
     if (timerStartTime) {
       updateTimerDisplay();
+    }
+    
+    // Show quick actions (favorite, get hints) without auto-loading
+    showQuickActions();
+  }
+
+  function handleOutsideClick(e) {
+    // Don't close if panel doesn't exist or isn't active
+    if (!panel || !panel.classList.contains('active')) {
+      return;
+    }
+    
+    // Don't close if clicking on the FAB (it has its own toggle handler)
+    if (fab && fab.contains(e.target)) {
+      return;
+    }
+    
+    // Don't close if clicking inside the panel
+    if (panel.contains(e.target)) {
+      return;
+    }
+    
+    // Close the panel if clicking outside
+    panel.classList.remove('active');
+  }
+
+  // Show quick actions panel without loading hints
+  async function showQuickActions() {
+    const body = panel.querySelector('.lch-panel-body');
+    
+    // Extract problem data for favorites (lightweight, no API call)
+    if (!currentProblemData) {
+      try {
+        const problemData = await extractProblemData();
+        if (problemData.title) {
+          currentProblemData = {
+            url: window.location.href,
+            title: problemData.title,
+            platform: 'leetcode',
+            difficulty: problemData.difficulty
+          };
+        }
+      } catch (e) {
+        console.log('LC Helper: Could not extract problem data:', e.message);
+      }
+    }
+    
+    // Check if problem is in favorites
+    let isFavorite = false;
+    try {
+      const favResponse = await safeSendMessage({ type: 'IS_FAVORITE', url: window.location.href });
+      isFavorite = favResponse?.isFavorite || false;
+    } catch (e) {}
+    
+    body.innerHTML = `
+      <div class="lch-quick-actions">
+        <div class="lch-quick-section">
+          <button class="lch-explain-btn" id="explainBtn">
+            <span class="lch-btn-icon">📖</span>
+            <span class="lch-btn-text">Explain the Problem</span>
+          </button>
+          <p class="lch-quick-hint">Understand the problem statement better</p>
+        </div>
+        <div class="lch-quick-divider"></div>
+        <div class="lch-quick-section">
+          <button class="lch-get-hints-btn" id="getHintsBtn">
+            <span class="lch-btn-icon">💡</span>
+            <span class="lch-btn-text">Get Smart Hints</span>
+          </button>
+          <p class="lch-quick-hint">Uses AI to analyze the problem</p>
+        </div>
+        <div class="lch-quick-divider"></div>
+        <div class="lch-quick-section">
+          <button class="lch-favorite-btn ${isFavorite ? 'active' : ''}" id="favoriteBtn">
+            ${isFavorite ? '❤️ Favorited' : '🤍 Add to Favorites'}
+          </button>
+        </div>
+      </div>
+    `;
+    
+    // Add event listeners
+    body.querySelector('#explainBtn').addEventListener('click', () => {
+      explainProblem();
+    });
+    
+    body.querySelector('#getHintsBtn').addEventListener('click', () => {
+      loadHints();
+    });
+    
+    const favoriteBtn = body.querySelector('#favoriteBtn');
+    if (favoriteBtn) {
+      favoriteBtn.addEventListener('click', async () => {
+        await toggleFavorite(favoriteBtn);
+      });
     }
   }
 
@@ -358,10 +478,9 @@
     }
 
     panel.classList.toggle('active');
-
-    if (panel.classList.contains('active') && !isLoading) {
-      loadHints();
-    }
+    
+    // Don't auto-load hints - let user click "Get Hints" button
+    // This saves API calls when user just wants to check timer or favorite
   }
 
   async function checkAutoShow() {
@@ -434,6 +553,114 @@
     isLoading = false;
   }
 
+  async function explainProblem() {
+    if (!isExtensionContextValid()) {
+      showError('Extension was reloaded. Please refresh the page.');
+      return;
+    }
+    
+    try {
+      const { apiKey } = await chrome.storage.sync.get('apiKey');
+
+      if (!apiKey) {
+        showSettingsPrompt();
+        return;
+      }
+
+      isLoading = true;
+      showLoading();
+
+      const problem = await extractProblemData();
+
+      if (!problem.title || !problem.description) {
+        showError('Could not extract problem data. Please refresh the page.');
+        isLoading = false;
+        return;
+      }
+
+      // Set currentProblemData for favorite button functionality
+      if (!currentProblemData) {
+        currentProblemData = {
+          url: window.location.href,
+          title: problem.title,
+          platform: 'leetcode',
+          difficulty: problem.difficulty
+        };
+      }
+
+      const response = await safeSendMessage({
+        type: 'EXPLAIN_PROBLEM',
+        problem
+      });
+
+      if (!response) {
+        showError('Extension was reloaded. Please refresh the page.');
+      } else if (response.error) {
+        showError(response.error);
+      } else {
+        showExplanation(response);
+      }
+    } catch (error) {
+      showError(error.message || 'An error occurred. Please refresh the page.');
+    }
+
+    isLoading = false;
+  }
+
+  // Helper function to extract text with superscript handling
+  function extractTextWithSuperscripts(element) {
+    if (!element) return '';
+    
+    // Clone the element to avoid modifying the original
+    const clone = element.cloneNode(true);
+    
+    // Map Unicode superscript characters to their numeric equivalents
+    const superscriptMap = {
+      '¹': '1', '²': '2', '³': '3', '⁴': '4', '⁵': '5', 
+      '⁶': '6', '⁷': '7', '⁸': '8', '⁹': '9', '⁰': '0',
+      '⁺': '+', '⁻': '-', '⁼': '=', '⁽': '(', '⁾': ')',
+      'ⁿ': 'n', 'ⁱ': 'i'
+    };
+    
+    // Convert all <sup> tags to ^ notation
+    // Process in reverse order to avoid index issues when replacing
+    const supElements = Array.from(clone.querySelectorAll('sup')).reverse();
+    supElements.forEach(sup => {
+      const supText = sup.textContent.trim();
+      // Convert Unicode superscripts to regular numbers if needed
+      const normalizedText = supText.split('').map(char => superscriptMap[char] || char).join('');
+      // Replace <sup>content</sup> with ^content
+      const replacement = document.createTextNode('^' + normalizedText);
+      if (sup.parentNode) {
+        sup.parentNode.replaceChild(replacement, sup);
+      }
+    });
+    
+    // Now extract the text after processing <sup> tags
+    let text = clone.textContent || clone.innerText || '';
+    
+    // Also handle Unicode superscript characters directly in text (in case they weren't in <sup> tags)
+    // Handle multi-character superscripts first (e.g., ¹⁸ -> ^18)
+    const supChars = Object.keys(superscriptMap).join('').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const multiSupPattern = new RegExp(`([a-zA-Z0-9])([${supChars}]+)(?![${supChars}])`, 'g');
+    text = text.replace(multiSupPattern, (match, base, sups) => {
+      const normalized = sups.split('').map(char => superscriptMap[char] || char).join('');
+      return base + '^' + normalized;
+    });
+    
+    // Then handle single superscript characters (only those not already converted)
+    Object.keys(superscriptMap).forEach(supChar => {
+      const num = superscriptMap[supChar];
+      const escapedChar = supChar.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      // Replace superscript character with ^num, but only if it's not already part of ^ notation
+      // Pattern: letter/number followed by superscript character (not already after ^ or part of another superscript)
+      const regex = new RegExp(`([a-zA-Z0-9])${escapedChar}(?![0-9^${supChars}])`, 'g');
+      text = text.replace(regex, `$1^${num}`);
+    });
+    
+    return text.trim();
+  }
+
   async function extractProblemData() {
     // LeetCode problem page selectors
     const titleEl = document.querySelector('[data-cy="question-title"]') || 
@@ -474,18 +701,159 @@
     if (constraintsHeader) {
       const constraintsList = constraintsHeader.closest('p')?.nextElementSibling;
       if (constraintsList) {
-        constraints = constraintsList.textContent;
+        constraints = extractTextWithSuperscripts(constraintsList);
       }
     }
 
+    // Helper function to extract text with proper line breaks from pre elements
+    function extractPreText(preEl) {
+      if (!preEl) return '';
+      
+      // First handle superscripts, then extract text
+      const textWithSuperscripts = extractTextWithSuperscripts(preEl);
+      if (textWithSuperscripts) return textWithSuperscripts;
+      
+      // Method 1: Check for nested divs
+      const divs = preEl.querySelectorAll('div');
+      if (divs.length > 0) {
+        return Array.from(divs).map(d => extractTextWithSuperscripts(d) || d.textContent.trim()).join('\n');
+      }
+      
+      // Method 2: Check for <br> tags
+      const html = preEl.innerHTML;
+      if (html.includes('<br')) {
+        // Clone and process superscripts before extracting
+        const clone = preEl.cloneNode(true);
+        clone.querySelectorAll('sup').forEach(sup => {
+          const supText = sup.textContent.trim();
+          const replacement = document.createTextNode('^' + supText);
+          sup.parentNode.replaceChild(replacement, sup);
+        });
+        return clone.textContent
+          .replace(/<br\s*\/?>/gi, '\n')
+          .replace(/<[^>]+>/g, '')
+          .trim();
+      }
+      
+      // Method 3: Use innerText which preserves line breaks
+      if (preEl.innerText) {
+        return preEl.innerText.trim();
+      }
+      
+      // Fallback: textContent
+      return preEl.textContent.trim();
+    }
+
+    // Extract sample test cases from <pre> blocks
+    const examples = [];
+    if (descriptionEl) {
+      // Method 1: Look for Example sections with pre blocks
+      const preBlocks = descriptionEl.querySelectorAll('pre');
+      preBlocks.forEach((pre, index) => {
+        const text = extractPreText(pre);
+        if (text) {
+          // Parse Input/Output format (LeetCode uses "Input: ... Output: ..." format)
+          const inputMatch = text.match(/Input[:\s]*([^\n]*(?:\n(?!Output)[^\n]*)*)/i);
+          const outputMatch = text.match(/Output[:\s]*([^\n]*(?:\n(?!Explanation)[^\n]*)*)/i);
+          const explanationMatch = text.match(/Explanation[:\s]*([\s\S]*)/i);
+          
+          if (inputMatch || outputMatch) {
+            examples.push({
+              index: index + 1,
+              raw: text,
+              input: inputMatch ? inputMatch[1].trim() : '',
+              output: outputMatch ? outputMatch[1].trim() : '',
+              explanation: explanationMatch ? explanationMatch[1].trim() : ''
+            });
+          } else {
+            // Fallback: just capture the raw pre content
+            examples.push({
+              index: index + 1,
+              raw: text,
+              input: '',
+              output: '',
+              explanation: ''
+            });
+          }
+        }
+      });
+
+      // Method 2: Also check for structured example divs (newer LeetCode layout)
+      const exampleDivs = descriptionEl.querySelectorAll('[class*="example"]');
+      exampleDivs.forEach((div, index) => {
+        if (!div.querySelector('pre')) { // Avoid duplicates
+          const text = div.innerText?.trim() || div.textContent.trim();
+          const inputMatch = text.match(/Input[:\s]*([^\n]*(?:\n(?!Output)[^\n]*)*)/i);
+          const outputMatch = text.match(/Output[:\s]*([^\n]*(?:\n(?!Explanation)[^\n]*)*)/i);
+          if (inputMatch || outputMatch) {
+            examples.push({
+              index: examples.length + 1,
+              raw: text,
+              input: inputMatch ? inputMatch[1].trim() : '',
+              output: outputMatch ? outputMatch[1].trim() : '',
+              explanation: ''
+            });
+          }
+        }
+      });
+    }
+
+    // Format examples as string for LLM
+    const examplesText = examples.map(ex => {
+      let str = `Example ${ex.index}:\n`;
+      if (ex.input) str += `  Input: ${ex.input}\n`;
+      if (ex.output) str += `  Output: ${ex.output}\n`;
+      if (ex.explanation) str += `  Explanation: ${ex.explanation}\n`;
+      if (!ex.input && !ex.output && ex.raw) str += `  ${ex.raw}\n`;
+      return str;
+    }).join('\n');
+
+    // Extract description with superscript handling
+    const description = descriptionEl ? extractTextWithSuperscripts(descriptionEl).slice(0, 2000) : '';
+    
     const baseData = {
       title: titleEl?.textContent?.trim() || '',
-      description: descriptionEl?.textContent?.trim().slice(0, 2000) || '', // Limit description length
+      description: description,
       constraints: constraints,
       difficulty: difficulty,
       tags: tags,
+      examples: examplesText,
+      examplesCount: examples.length,
       url: window.location.href
     };
+    
+    // Console log extracted data for accuracy testing
+    console.log('='.repeat(60));
+    console.log('LC Helper - Extracted Problem Data (LeetCode)');
+    console.log('='.repeat(60));
+    console.log('📌 Title:', baseData.title);
+    console.log('📊 Difficulty:', baseData.difficulty);
+    console.log('🏷️ Tags:', baseData.tags || 'None found');
+    console.log('📏 Constraints:', baseData.constraints || 'None found');
+    console.log('-'.repeat(60));
+    console.log('📝 Description (first 500 chars):');
+    console.log(baseData.description.slice(0, 500) + (baseData.description.length > 500 ? '...' : ''));
+    console.log('-'.repeat(60));
+    console.log(`📋 Sample Test Cases (${examples.length} found):`);
+    examples.forEach(ex => {
+      console.log(`  Example ${ex.index}:`);
+      if (ex.input) {
+        console.log(`    Input:`);
+        ex.input.split('\n').forEach(line => console.log(`      ${line}`));
+      }
+      if (ex.output) {
+        console.log(`    Output:`);
+        ex.output.split('\n').forEach(line => console.log(`      ${line}`));
+      }
+      if (ex.explanation) console.log(`    Explanation: ${ex.explanation.slice(0, 100)}...`);
+      if (!ex.input && !ex.output && ex.raw) {
+        console.log(`    Raw:`);
+        ex.raw.slice(0, 200).split('\n').forEach(line => console.log(`      ${line}`));
+      }
+    });
+    console.log('-'.repeat(60));
+    console.log('🔗 URL:', baseData.url);
+    console.log('='.repeat(60));
 
     // Check if problem has images/graphs and capture them
     if (descriptionEl && typeof html2canvas !== 'undefined') {
@@ -650,6 +1018,62 @@
     }
   }
 
+  async function showExplanation(data) {
+    const body = panel.querySelector('.lch-panel-body');
+    
+    // Check if problem is in favorites
+    let isFavorite = false;
+    try {
+      const favResponse = await safeSendMessage({ type: 'IS_FAVORITE', url: window.location.href });
+      isFavorite = favResponse?.isFavorite || false;
+    } catch (e) {}
+
+    const formattedExplanation = parseMarkdown(data.explanation || '');
+
+    body.innerHTML = `
+      <div class="lch-explanation-section">
+        <div class="lch-explanation-header">
+          <span class="lch-explanation-icon">📖</span>
+          <h3 class="lch-explanation-title">Problem Explanation</h3>
+        </div>
+        <div class="lch-explanation-content">${formattedExplanation}</div>
+        ${data.keyPoints ? `
+        <div class="lch-key-points">
+          <h4 class="lch-key-points-title">Key Points:</h4>
+          <ul class="lch-key-points-list">
+            ${data.keyPoints.map(point => `<li>${parseMarkdown(point)}</li>`).join('')}
+          </ul>
+        </div>
+        ` : ''}
+        <div class="lch-explanation-actions">
+          <button class="lch-get-hints-after-explanation" id="getHintsAfterExplanation">
+            💡 Now Get Hints
+          </button>
+        </div>
+      </div>
+      <div class="lch-actions-section">
+        <button class="lch-favorite-btn ${isFavorite ? 'active' : ''}" id="favoriteBtn">
+          ${isFavorite ? '❤️ Favorited' : '🤍 Add to Favorites'}
+        </button>
+      </div>
+    `;
+
+    // Add event listeners
+    const getHintsBtn = body.querySelector('#getHintsAfterExplanation');
+    if (getHintsBtn) {
+      getHintsBtn.addEventListener('click', () => {
+        loadHints();
+      });
+    }
+    
+    const favoriteBtn = body.querySelector('#favoriteBtn');
+    if (favoriteBtn) {
+      favoriteBtn.addEventListener('click', async () => {
+        await toggleFavorite(favoriteBtn);
+      });
+    }
+  }
+
   async function showHints(data) {
     const body = panel.querySelector('.lch-panel-body');
     
@@ -673,11 +1097,11 @@
     } catch (e) {}
 
     body.innerHTML = `
-      <div class="lch-topic-section">
+      ${data.topic ? `<div class="lch-topic-section">
         <div class="lch-topic-label">Problem Topic</div>
         <div class="lch-topic-badge">${escapeHtml(data.topic)}</div>
         ${cacheInfo}
-      </div>
+      </div>` : `<div class="lch-topic-section">${cacheInfo}</div>`}
       <div class="lch-hints-section">
         ${data.hints.map((hint, i) => `
           <div class="lch-hint-card">
@@ -689,7 +1113,7 @@
               <button class="lch-hint-reveal-btn">Reveal</button>
             </div>
             <div class="lch-hint-content" data-hint="${i}">
-              ${escapeHtml(hint)}
+              ${formatHint(hint, i)}
             </div>
           </div>
         `).join('')}
@@ -741,9 +1165,6 @@
         await toggleFavorite(favoriteBtn);
       });
     }
-    
-    // Add solved button
-    addSolvedButton();
   }
   
   // Toggle favorite status
@@ -770,108 +1191,6 @@
     }
   }
 
-  function addSolvedButton() {
-    const body = panel.querySelector('.lch-panel-body');
-    const problemKey = generateCacheKey(window.location.href);
-    
-    safeStorageGet(`solved_${problemKey}`).then((result) => {
-      const isSolved = result[`solved_${problemKey}`];
-      
-      if (!body.querySelector('.lch-solved-section')) {
-        const solvedSection = document.createElement('div');
-        solvedSection.className = 'lch-solved-section';
-        solvedSection.innerHTML = `
-          <button class="lch-mark-solved-btn ${isSolved ? 'solved' : ''}">
-            ${isSolved ? '✓ Solved' : '✓ Mark as Solved'}
-          </button>
-        `;
-        
-        const feedbackSection = body.querySelector('.lch-feedback-section');
-        if (feedbackSection) {
-          body.insertBefore(solvedSection, feedbackSection);
-        } else {
-          body.appendChild(solvedSection);
-        }
-        
-        const solvedBtn = solvedSection.querySelector('.lch-mark-solved-btn');
-        if (!isSolved) {
-          solvedBtn.addEventListener('click', async () => {
-            await markProblemAsSolved(solvedBtn);
-          });
-        } else {
-          solvedBtn.disabled = true;
-        }
-      }
-    });
-  }
-
-  async function markProblemAsSolved(button) {
-    console.log('Mark as Solved button clicked!');
-    
-    try {
-      const problemData = await extractProblemData();
-      const problemKey = generateCacheKey(window.location.href);
-      
-      const saveData = {
-        title: problemData.title,
-        url: window.location.href,
-        difficulty: problemData.difficulty,
-        tags: problemData.tags,
-        solvedAt: Date.now(),
-        platform: 'leetcode'
-      };
-      
-      await safeStorageSet({ [`solved_${problemKey}`]: saveData });
-      console.log('Problem saved to local storage');
-      
-      // Increment daily count
-      await safeSendMessage({
-        type: 'INCREMENT_DAILY_COUNT',
-        problemUrl: window.location.href
-      });
-      
-      // Stop the timer for this problem
-      await safeSendMessage({
-        type: 'STOP_TIMER',
-        url: window.location.href
-      });
-      
-      button.textContent = '✓ Solved';
-      button.classList.add('solved');
-      button.disabled = true;
-      
-      // Show celebration
-      showStreakCelebration({ currentStreak: 1 });
-      
-    } catch (error) {
-      console.error('Error marking problem as solved:', error);
-      button.textContent = '✓ Solved';
-      button.classList.add('solved');
-      button.disabled = true;
-    }
-  }
-
-  function showStreakCelebration(streakData) {
-    const currentStreak = streakData?.currentStreak || 1;
-    
-    const celebration = document.createElement('div');
-    celebration.className = 'lch-celebration';
-    
-    celebration.innerHTML = `
-      <div class="lch-celebration-content">
-        <div class="lch-celebration-icon">🎉</div>
-        <div class="lch-celebration-title">Problem Solved!</div>
-        <div class="lch-celebration-streak">
-          🔥 Keep it up!
-        </div>
-        <div class="lch-celebration-subtitle">Great work on solving this problem!</div>
-      </div>
-    `;
-    document.body.appendChild(celebration);
-    
-    setTimeout(() => celebration.remove(), 3000);
-  }
-  
   function handleFeedback(rating, hintData) {
     const feedbackSection = panel.querySelector('#feedbackSection');
     
@@ -909,10 +1228,169 @@
     }
   }
 
+  // Format hint text professionally
+  function formatHint(hint, hintIndex) {
+    if (!hint) return '';
+    
+    let formatted = hint.trim();
+    
+    // Remove redundant prefixes like "Hint 3:", "Implementation:", "Hint 3: Implementation:"
+    formatted = formatted.replace(/^Hint\s+\d+\s*:?\s*/i, '');
+    formatted = formatted.replace(/^Implementation\s*:?\s*/i, '');
+    formatted = formatted.trim();
+    
+    // Split by numbered list items (1), 2), 3), etc.)
+    // Pattern: number followed by ) and space, capturing everything until next number) or end
+    const parts = [];
+    let currentIndex = 0;
+    
+    // Find all numbered list items
+    const listItemRegex = /(\d+\))\s+/g;
+    const matches = [];
+    let match;
+    
+    while ((match = listItemRegex.exec(formatted)) !== null) {
+      matches.push({
+        index: match.index,
+        number: match[1],
+        length: match[0].length
+      });
+    }
+    
+    // If we found numbered items, process them
+    if (matches.length >= 2) {
+      let htmlList = '<ol class="lch-hint-list">';
+      let lastItemEnd = 0;
+      
+      for (let i = 0; i < matches.length; i++) {
+        const start = matches[i].index + matches[i].length;
+        const end = (i < matches.length - 1) ? matches[i + 1].index : formatted.length;
+        let itemText = formatted.substring(start, end).trim();
+        lastItemEnd = end;
+        
+        // Clean up trailing periods/spaces
+        itemText = itemText.replace(/^[.\s]+|[.\s]+$/g, '');
+        
+        if (itemText) {
+          htmlList += `<li>${escapeHtml(itemText)}</li>`;
+        }
+      }
+      
+      htmlList += '</ol>';
+      
+      // Check for edge cases or additional notes after the last item
+      const remainingText = formatted.substring(lastItemEnd).trim();
+      
+      if (remainingText && !remainingText.match(/^\d+\)/)) {
+        // Check if it starts with "Edge cases" or "Edge case"
+        const edgeCaseMatch = remainingText.match(/^(Edge\s+cases?:?\s*)(.+)$/i);
+        if (edgeCaseMatch) {
+          htmlList += `<div class="lch-hint-edge-cases"><strong>Edge Cases:</strong> ${escapeHtml(edgeCaseMatch[2])}</div>`;
+        } else {
+          htmlList += `<div class="lch-hint-note">${escapeHtml(remainingText)}</div>`;
+        }
+      }
+      
+      return htmlList;
+    }
+    
+    // If not a numbered list, just escape and return
+    return escapeHtml(formatted);
+  }
+
   function escapeHtml(text) {
     const div = document.createElement('div');
     div.textContent = text;
     return div.innerHTML;
+  }
+
+  // Parse markdown to HTML for professional formatting
+  function parseMarkdown(text) {
+    if (!text) return '';
+    
+    // First escape HTML to prevent XSS (but preserve structure)
+    let html = escapeHtml(text);
+    
+    // Split into lines for better processing
+    const lines = html.split('\n');
+    const processedLines = [];
+    let inParagraph = false;
+    
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i].trim();
+      const nextLine = i < lines.length - 1 ? lines[i + 1].trim() : '';
+      
+      // Skip empty lines (they'll create paragraph breaks)
+      if (!line) {
+        if (inParagraph) {
+          processedLines.push('</p>');
+          inParagraph = false;
+        }
+        continue;
+      }
+      
+      // Detect section headers (lines ending with ':' that are short and followed by content)
+      if (line.endsWith(':') && line.length < 60 && nextLine && !nextLine.startsWith('-') && !nextLine.match(/^\d+\./)) {
+        if (inParagraph) {
+          processedLines.push('</p>');
+          inParagraph = false;
+        }
+        // Format as section header
+        const headerText = line.slice(0, -1); // Remove the colon
+        processedLines.push(`<h4 class="lch-explanation-section-header">${headerText}</h4>`);
+        continue;
+      }
+      
+      // Detect list items (lines starting with "- " or numbered)
+      if (line.match(/^[-•]\s+/) || line.match(/^\d+\.\s+/)) {
+        if (inParagraph) {
+          processedLines.push('</p>');
+          inParagraph = false;
+        }
+        const listContent = line.replace(/^[-•]\s+/, '').replace(/^\d+\.\s+/, '');
+        processedLines.push(`<li class="lch-explanation-list-item">${listContent}</li>`);
+        continue;
+      }
+      
+      // Regular paragraph content
+      if (!inParagraph) {
+        processedLines.push('<p class="lch-explanation-paragraph">');
+        inParagraph = true;
+      } else {
+        processedLines.push('<br>');
+      }
+      processedLines.push(line);
+    }
+    
+    // Close any open paragraph
+    if (inParagraph) {
+      processedLines.push('</p>');
+    }
+    
+    html = processedLines.join('');
+    
+    // Now process markdown formatting within the HTML
+    // Convert **bold** to <strong> (handle nested cases)
+    html = html.replace(/\*\*([^*]+?)\*\*/g, '<strong class="lch-markdown-bold">$1</strong>');
+    
+    // Convert *italic* to <em> (but not if it's part of **bold**)
+    html = html.replace(/(?<!\*)\*([^*\s][^*]*?[^*\s])\*(?!\*)/g, '<em class="lch-markdown-italic">$1</em>');
+    
+    // Convert `code` to <code>
+    html = html.replace(/`([^`]+)`/g, '<code class="lch-markdown-code">$1</code>');
+    
+    // Wrap consecutive list items in ul tags
+    // Replace patterns like: <li>...</li><li>...</li> with <ul><li>...</li><li>...</li></ul>
+    html = html.replace(/(<li class="lch-explanation-list-item">[\s\S]*?<\/li>(?:\s*<li class="lch-explanation-list-item">[\s\S]*?<\/li>)*)/g, 
+      (match) => {
+        // Only wrap if not already wrapped
+        if (!match.includes('<ul')) {
+          return `<ul class="lch-explanation-list">${match}</ul>`;
+        }
+        return match;
+      });
+    
+    return html;
   }
 
   function generateCacheKey(url) {

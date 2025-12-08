@@ -18,6 +18,22 @@ chrome.runtime.onInstalled.addListener(async (details) => {
   await ensureStreakDataExists();
 })();
 
+// Handle tab close - stop timer when tab is closed
+chrome.tabs.onRemoved.addListener(async (tabId) => {
+  // Find all active timers and stop the one matching this tab ID
+  const allStorage = await chrome.storage.local.get(null);
+  const timerEntries = Object.entries(allStorage).filter(([key]) => key.startsWith('timer_'));
+  
+  for (const [timerKey, timerData] of timerEntries) {
+    if (timerData.tabId === tabId) {
+      // Stop the timer for this tab
+      await stopProblemTimer(timerData.url);
+      console.log('Timer stopped because tab was closed:', timerData.title);
+      break;
+    }
+  }
+});
+
 // Handle alarms
 chrome.alarms.onAlarm.addListener(async (alarm) => {
   if (alarm.name === 'refreshContests') {
@@ -212,7 +228,12 @@ async function handleMessage(message, sender, sendResponse) {
       const hints = await generateHints(message.problem);
       sendResponse(hints);
       break;
-      
+
+    case 'EXPLAIN_PROBLEM':
+      const explanation = await explainProblem(message.problem);
+      sendResponse(explanation);
+      break;
+
     case 'GET_API_KEY':
       const { apiKey } = await chrome.storage.sync.get('apiKey');
       sendResponse({ apiKey });
@@ -267,7 +288,8 @@ async function handleMessage(message, sender, sendResponse) {
     
     // Timer
     case 'START_TIMER':
-      const timerResult = await startProblemTimer(message.problem);
+      const tabId = sender?.tab?.id;
+      const timerResult = await startProblemTimer(message.problem, tabId);
       sendResponse(timerResult);
       break;
       
@@ -288,8 +310,9 @@ async function handleMessage(message, sender, sendResponse) {
       break;
     
     case 'OPEN_POPUP':
-      // Open extension popup/options page
-      chrome.runtime.openOptionsPage();
+      // Open extension popup/settings
+      // Since we don't have an options page defined, open the popup HTML in a new tab
+      chrome.tabs.create({ url: chrome.runtime.getURL('popup/popup.html') });
       sendResponse({ success: true });
       break;
       
@@ -629,6 +652,19 @@ async function generateHints(problem) {
     }
   }
   
+  // Detect platform from URL
+  let platform = 'codeforces'; // default to CP-focused
+  if (problem.url) {
+    if (problem.url.includes('leetcode.com')) {
+      platform = 'leetcode';
+    } else if (problem.url.includes('codechef.com')) {
+      platform = 'codechef';
+    } else if (problem.url.includes('codeforces.com')) {
+      platform = 'codeforces';
+    }
+    // Future: add more interview-focused platforms (gfg, etc.) here
+  }
+  
   const { apiKey, apiProvider } = await chrome.storage.sync.get(['apiKey', 'apiProvider']);
   
   if (!apiKey) {
@@ -639,9 +675,9 @@ async function generateHints(problem) {
   let result;
   
   if (provider === 'gemini') {
-    result = await generateHintsGemini(problem, apiKey);
+    result = await generateHintsGemini(problem, apiKey, platform);
   } else {
-    result = await generateHintsOpenAI(problem, apiKey);
+    result = await generateHintsOpenAI(problem, apiKey, platform);
   }
   
   // Cache the result if successful
@@ -669,6 +705,703 @@ function generateCacheKey(input) {
     .toLowerCase()
     .slice(0, 100); // Limit length
   return normalized;
+}
+
+// Explain problem in simpler terms
+async function explainProblem(problem) {
+  const cacheKey = `explain_${generateCacheKey(problem.url || problem.title)}`;
+  
+  // Check cache
+  const cached = await chrome.storage.local.get(cacheKey);
+  if (cached[cacheKey]) {
+    console.log('Using cached explanation for:', problem.title);
+    return { ...cached[cacheKey], cached: true };
+  }
+  
+  // Detect platform from URL
+  let platform = 'codeforces'; // default
+  if (problem.url) {
+    if (problem.url.includes('leetcode.com')) {
+      platform = 'leetcode';
+    } else if (problem.url.includes('codechef.com')) {
+      platform = 'codechef';
+    } else if (problem.url.includes('codeforces.com')) {
+      platform = 'codeforces';
+    }
+  }
+  
+  const { apiKey, apiProvider } = await chrome.storage.sync.get(['apiKey', 'apiProvider']);
+  
+  if (!apiKey) {
+    return { error: 'API key not configured. Add your API key in settings.' };
+  }
+  
+  const provider = apiProvider || 'gemini';
+  let result;
+  
+  if (provider === 'gemini') {
+    result = await explainProblemGemini(problem, apiKey, platform);
+  } else {
+    result = await explainProblemOpenAI(problem, apiKey, platform);
+  }
+  
+  // Cache the result if successful
+  if (result && !result.error) {
+    const cacheData = {
+      ...result,
+      cachedAt: Date.now(),
+      problemTitle: problem.title,
+      problemUrl: problem.url
+    };
+    await chrome.storage.local.set({ [cacheKey]: cacheData });
+    console.log('Cached explanation for:', problem.title);
+  }
+  
+  return result;
+}
+
+async function explainProblemGemini(problem, apiKey, platform = 'codeforces') {
+  try {
+    // Log the complete problem object received
+    console.log('='.repeat(80));
+    console.log('LC Helper - EXPLAIN PROBLEM - Received Problem Object:');
+    console.log('='.repeat(80));
+    console.log(JSON.stringify({
+      title: problem.title,
+      difficulty: problem.difficulty,
+      tags: problem.tags,
+      constraints: problem.constraints,
+      description: problem.description,
+      inputFormat: problem.inputFormat,
+      outputFormat: problem.outputFormat,
+      examples: problem.examples,
+      examplesCount: problem.examplesCount,
+      url: problem.url,
+      hasImages: problem.hasImages,
+      platform: platform
+    }, null, 2));
+    console.log('='.repeat(80));
+    
+    const difficulty = problem.difficulty || 'Unknown';
+    const existingTags = problem.tags || '';
+    
+    // Format examples for better context
+    const examplesText = problem.examples ? 
+      `\n\nSAMPLE TEST CASES:\n${problem.examples}\n\nIMPORTANT: Use these exact examples in your explanation. Walk through each example step-by-step to show how the input leads to the output.` : 
+      '\n\nNote: No sample test cases provided. Focus on explaining the problem statement clearly.';
+    
+    // Use LeetCode-specific prompt for LeetCode, competitive programming prompt for others
+    let prompt;
+    if (platform === 'leetcode') {
+      // LeetCode interview-focused prompt
+      prompt = `You are an expert LeetCode tutor.  
+
+Your goal is to help users fully understand the problem before they try to solve it.
+
+═══════════════════════════════════════════════════════════════
+
+PROBLEM INFORMATION
+
+═══════════════════════════════════════════════════════════════
+
+**Title:** ${problem.title}
+
+**Difficulty:** ${difficulty}
+
+${existingTags ? `**Tags:** ${existingTags}` : ''}
+
+${problem.constraints ? `**Constraints:** ${problem.constraints}` : ''}
+
+**Problem Description:**
+
+${problem.description}
+
+${problem.inputFormat ? `**Input Format:**\n${problem.inputFormat}` : ''}
+
+${problem.outputFormat ? `**Output Format:**\n${problem.outputFormat}` : ''}
+
+${examplesText}
+
+═══════════════════════════════════════════════════════════════
+
+YOUR TASK
+
+═══════════════════════════════════════════════════════════════
+
+Explain this problem clearly and simply. Your job is to help the student build the RIGHT mental model using a clean breakdown.
+
+Your explanation must include:
+
+1. **Plain-English restatement**
+
+   - Remove unnecessary wording and restate the core task simply.
+
+   - State the input and output clearly.
+
+2. **What the problem is REALLY asking**
+
+   - Identify the core structure (array/string/tree/graph/set).
+
+   - Clarify the goal in a short, clean way.
+
+   - Explain how data transforms into output.
+
+3. **Constraints and why they matter**
+
+   - Highlight important limits (like n ≤ 1e5, value ranges, etc.).
+
+   - Explain what is *feasible* (e.g., brute force too slow, must be linear or log-linear) WITHOUT naming specific algorithms.
+
+4. **Walk through the examples step-by-step**
+
+   - Show exactly how input leads to output.
+
+   - Emphasize what the example demonstrates about the rules.
+
+5. **Edge cases or tricky points**
+
+   - Mention anything the student must NOT overlook.
+
+   - Clarify weird or ambiguous parts of the statement.
+
+═══════════════════════════════════════════════════════════════
+
+OUTPUT FORMAT (STRICT JSON)
+
+═══════════════════════════════════════════════════════════════
+
+Return ONLY this JSON:
+
+{
+
+  "explanation": "Clear, friendly explanation with **bold** for key terms, *italics* for emphasis, and \`code\` for variables. Break into paragraphs using \\n\\n.",
+
+  "keyPoints": [
+
+    "First key insight about understanding the problem",
+
+    "Second important detail about input/structure",
+
+    "Third clarification from sample walkthrough",
+
+    "Fourth tricky case or rule to remember"
+
+  ]
+
+}
+
+═══════════════════════════════════════════════════════════════
+
+RULES
+
+═══════════════════════════════════════════════════════════════
+
+❌ DO NOT:
+
+- Reveal or hint at a solution approach.
+
+- Mention algorithms (sliding window, DP, etc.).
+
+- Provide code or pseudocode.
+
+- Mention time complexity.
+
+✅ DO:
+
+- Be clear, conversational, beginner-friendly.
+
+- Focus ONLY on understanding the problem.
+
+- Use small examples to clarify behavior.
+
+- Encourage careful reading of constraints.
+
+Now return the JSON explanation.`;
+    } else {
+      // Codeforces/CodeChef competitive programming focused prompt
+      prompt = `You are an expert competitive programming tutor.  
+
+
+
+Your role is to help students TRULY UNDERSTAND the problem before they attempt to solve it.
+
+Your explanation must follow the thought process of a strong competitive programmer:
+
+- Strip away story and rewrite the problem as a clean **math/combinatorial model**.
+
+- Identify the **core objects**, **operations**, and **constraints**.
+
+- Highlight anything "strange" or unusual — these are usually the key insights.
+
+- Use samples to **verify the mental model**.
+
+═══════════════════════════════════════════════════════════════
+
+PROBLEM INFORMATION
+
+═══════════════════════════════════════════════════════════════
+
+**Title:** ${problem.title}
+
+**Difficulty:** ${difficulty}
+
+${existingTags ? `**Tags:** ${existingTags}` : ''}
+
+${problem.constraints ? `**Constraints:** ${problem.constraints}` : ''}
+
+**Problem Description:**
+
+${problem.description}
+
+${problem.inputFormat ? `**Input Format:**\n${problem.inputFormat}` : ''}
+
+${problem.outputFormat ? `**Output Format:**\n${problem.outputFormat}` : ''}
+
+${examplesText}
+
+═══════════════════════════════════════════════════════════════
+
+YOUR TASK
+
+═══════════════════════════════════════════════════════════════
+
+Explain this problem in clear, structured, beginner-friendly language — BUT with the analytical depth of a competitive programmer.
+
+Your explanation must help the student understand:
+
+1. **What the story is actually saying in pure mathematical terms.**
+
+   - Rewrite the problem *without story*, using precise, compact definitions.
+
+   - Identify the true objects (arrays, graphs, strings, sets, paths, trees, etc.).
+
+2. **What exactly needs to be computed.**
+
+   - Clarify the goal in one or two clean sentences.
+
+   - Remove all narrative distractions.
+
+3. **Key constraints and why they matter.**
+
+   - Emphasize ranges like \`N ≤ 14\`, \`N ≤ 1e5\`, etc.
+
+   - Briefly mention what such constraints *usually imply* (e.g., small N → brute force possible), but DO NOT give solution ideas.
+
+4. **Important terminology & concepts.**
+
+   - Define any technical terms used in the problem.
+
+   - Mention familiar CP structures (like "this graph description actually forms a tree") *only when factual*, not as hints.
+
+5. **Walk through the examples in detail.**
+
+   - Step-by-step explain how inputs map to outputs.
+
+   - Use this to confirm the abstract model is correct.
+
+6. **What makes the problem tricky or interesting.**
+
+   - Call out ambiguities, edge cases, restrictions, or unusual conditions.
+
+   - Highlight patterns or structural weirdness, but NOT solution strategies.
+
+═══════════════════════════════════════════════════════════════
+
+OUTPUT FORMAT (STRICT JSON)
+
+═══════════════════════════════════════════════════════════════
+
+Return ONLY valid JSON with this exact structure:
+
+{
+
+  "explanation": "A clear, well-structured explanation. Use **bold** for important terms, *italics* for emphasis, and \`code\` for variables. Break into paragraphs with \\n\\n. Follow the problem-modeling process: story → stripped model → goal → constraints → examples → tricky points.",
+
+  "keyPoints": [
+
+    "First key insight about the model (e.g., what the core object really is)",
+
+    "Second important detail about inputs/constraints",
+
+    "Third clarification from the sample walkthrough",
+
+    "Fourth notable tricky or unusual condition the student must not overlook"
+
+  ]
+
+}
+
+═══════════════════════════════════════════════════════════════
+
+CRITICAL GUIDELINES
+
+═══════════════════════════════════════════════════════════════
+
+✅ DO:
+
+- Think like a problem-setter: what structure the problem is *really* about.
+
+- Rewrite the problem as a minimal, precise mathematical statement.
+
+- Use small phrases like "In plain terms…" or "Stripped of its story…"
+
+- Be friendly, clear, and highly structured.
+
+- Use markdown formatting for readability.
+
+- Validate interpretation using the samples.
+
+❌ DON'T:
+
+- DO NOT provide algorithms, hints, approaches, or solution ideas.
+
+- DO NOT mention complexity, optimality, or algorithmic techniques.
+
+- DO NOT suggest brute force, DP, greedy, graph traversal, etc.
+
+- DO NOT say things like "this can be solved by…"
+
+- DO NOT skip example walkthroughs.
+
+- DO NOT assume missing information.
+
+═══════════════════════════════════════════════════════════════
+
+Now provide your explanation as JSON:`;
+    }
+    
+    // Log the exact prompt being sent to LLM for debugging
+    console.log('='.repeat(80));
+    console.log('LC Helper - EXPLAIN PROBLEM - Prompt sent to LLM:');
+    console.log('='.repeat(80));
+    console.log('Platform:', platform);
+    console.log('Problem Data:', JSON.stringify({
+      title: problem.title,
+      difficulty: difficulty,
+      tags: existingTags,
+      constraints: problem.constraints,
+      description: problem.description?.substring(0, 500) + (problem.description?.length > 500 ? '...' : ''),
+      inputFormat: problem.inputFormat?.substring(0, 200) + (problem.inputFormat?.length > 200 ? '...' : ''),
+      outputFormat: problem.outputFormat?.substring(0, 200) + (problem.outputFormat?.length > 200 ? '...' : ''),
+      examplesLength: problem.examples?.length || 0,
+      hasImages: problem.hasImages || false
+    }, null, 2));
+    console.log('='.repeat(80));
+    console.log('Full Prompt (first 2000 chars):');
+    console.log(prompt.substring(0, 2000) + (prompt.length > 2000 ? '\n... [truncated]' : ''));
+    console.log('='.repeat(80));
+
+    const parts = [{ text: prompt }];
+    
+    if (problem.hasImages && problem.imageData) {
+      const matches = problem.imageData.match(/^data:([^;]+);base64,(.+)$/);
+      const mimeType = matches ? matches[1] : 'image/jpeg';
+      const base64Data = matches ? matches[2] : problem.imageData;
+      
+      parts.push({
+        inline_data: {
+          mime_type: mimeType,
+          data: base64Data
+        }
+      });
+    }
+
+    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        contents: [{ parts }],
+        generationConfig: {
+          temperature: 0.3,
+          maxOutputTokens: 2500,
+          response_mime_type: "application/json"
+        }
+      })
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json();
+      const friendlyError = formatApiError(errorData.error?.message || 'Failed to generate explanation', 'gemini');
+      return { error: friendlyError };
+    }
+
+    const data = await response.json();
+    const content = data.candidates[0].content.parts[0].text;
+    
+    // Parse JSON from response (should be valid JSON due to response_mime_type)
+    try {
+      const parsed = JSON.parse(content);
+      if (parsed.explanation && parsed.keyPoints) {
+        return parsed;
+      }
+    } catch (e) {
+      // Fallback: try to extract JSON if response_mime_type didn't work
+      const jsonMatch = content.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        try {
+          return JSON.parse(jsonMatch[0]);
+        } catch (e2) {
+          console.error('Failed to parse JSON:', e2);
+        }
+      }
+    }
+    
+    // Fallback: return as explanation if JSON parsing fails
+    return {
+      explanation: content,
+      keyPoints: []
+    };
+  } catch (error) {
+    console.error('Error explaining problem with Gemini:', error);
+    const friendlyError = formatApiError(error.message, 'gemini');
+    return { error: friendlyError };
+  }
+}
+
+async function explainProblemOpenAI(problem, apiKey, platform = 'codeforces') {
+  try {
+    const model = (problem.hasImages && problem.imageData) ? 'gpt-4o' : 'gpt-4o-mini';
+    
+    // Format examples for better context
+    const examplesText = problem.examples ? 
+      `\n\n**SAMPLE TEST CASES:**\n${problem.examples}\n\nIMPORTANT: Use these exact examples in your explanation. Walk through each example step-by-step to show how the input leads to the output.` : 
+      '\n\nNote: No sample test cases provided. Focus on explaining the problem statement clearly.';
+
+    // Use LeetCode-specific prompt for LeetCode, competitive programming prompt for others
+    let systemPrompt, userText;
+    if (platform === 'leetcode') {
+      // LeetCode interview-focused prompt
+      systemPrompt = `You are an expert LeetCode tutor. Your goal is to help users fully understand the problem before they try to solve it.
+
+Your explanations should:
+- Be clear, conversational, beginner-friendly
+- Focus ONLY on understanding the problem
+- Use markdown formatting: **bold** for key terms, *italics* for emphasis, \`code\` for variables
+- Walk through sample test cases step-by-step
+- Highlight important constraints and edge cases
+
+CRITICAL: Do NOT reveal or hint at solution approaches. Do NOT mention algorithms. Do NOT provide code or pseudocode. Do NOT mention time complexity.`;
+
+      userText = `Explain this LeetCode problem clearly and simply. Your job is to help the student build the RIGHT mental model using a clean breakdown.
+
+═══════════════════════════════════════════════════════════════
+PROBLEM INFORMATION
+═══════════════════════════════════════════════════════════════
+
+**Title:** ${problem.title}
+${problem.difficulty ? `**Difficulty:** ${problem.difficulty}` : ''}
+${problem.tags ? `**Tags:** ${problem.tags}` : ''}
+${problem.constraints ? `**Constraints:**\n${problem.constraints}` : ''}
+
+**Problem Description:**
+${problem.description}
+
+${problem.inputFormat ? `**Input Format:**\n${problem.inputFormat}` : ''}
+${problem.outputFormat ? `**Output Format:**\n${problem.outputFormat}` : ''}
+${examplesText}
+
+═══════════════════════════════════════════════════════════════
+YOUR TASK
+═══════════════════════════════════════════════════════════════
+
+Your explanation must include:
+
+1. **Plain-English restatement**
+   - Remove unnecessary wording and restate the core task simply.
+   - State the input and output clearly.
+
+2. **What the problem is REALLY asking**
+   - Identify the core structure (array/string/tree/graph/set).
+   - Clarify the goal in a short, clean way.
+   - Explain how data transforms into output.
+
+3. **Constraints and why they matter**
+   - Highlight important limits (like n ≤ 1e5, value ranges, etc.).
+   - Explain what is *feasible* (e.g., brute force too slow, must be linear or log-linear) WITHOUT naming specific algorithms.
+
+4. **Walk through the examples step-by-step**
+   - Show exactly how input leads to output.
+   - Emphasize what the example demonstrates about the rules.
+
+5. **Edge cases or tricky points**
+   - Mention anything the student must NOT overlook.
+   - Clarify weird or ambiguous parts of the statement.
+
+═══════════════════════════════════════════════════════════════
+OUTPUT FORMAT
+═══════════════════════════════════════════════════════════════
+
+Return valid JSON with this structure:
+{
+  "explanation": "Clear, friendly explanation with **bold** for key terms, *italics* for emphasis, and \`code\` for variables. Break into paragraphs using \\n\\n.",
+  "keyPoints": [
+    "First key insight about understanding the problem",
+    "Second important detail about input/structure",
+    "Third clarification from sample walkthrough",
+    "Fourth tricky case or rule to remember"
+  ]
+}`;
+    } else {
+      // Codeforces/CodeChef competitive programming focused prompt
+      systemPrompt = `You are an expert competitive programming tutor. Your role is to help students TRULY UNDERSTAND the problem before they attempt to solve it.
+
+Your explanation must follow the thought process of a strong competitive programmer:
+- Strip away story and rewrite the problem as a clean math/combinatorial model
+- Identify the core objects, operations, and constraints
+- Highlight anything "strange" or unusual — these are usually the key insights
+- Use samples to verify the mental model
+
+Your explanations should:
+- Use simple, conversational language but with analytical depth
+- Define technical terms when first introduced
+- Walk through sample test cases step-by-step
+- Use markdown formatting: **bold** for key terms, *italics* for emphasis, \`code\` for variables
+- Break complex ideas into digestible parts
+- Highlight important constraints and edge cases
+
+CRITICAL: Do NOT provide algorithms, hints, approaches, or solution ideas. Do NOT mention complexity, optimality, or algorithmic techniques. Do NOT suggest brute force, DP, greedy, graph traversal, etc.`;
+
+      userText = `Explain this competitive programming problem in clear, structured, beginner-friendly language — BUT with the analytical depth of a competitive programmer.
+
+═══════════════════════════════════════════════════════════════
+PROBLEM INFORMATION
+═══════════════════════════════════════════════════════════════
+
+**Title:** ${problem.title}
+${problem.difficulty ? `**Difficulty:** ${problem.difficulty}` : ''}
+${problem.tags ? `**Tags:** ${problem.tags}` : ''}
+${problem.constraints ? `**Constraints:**\n${problem.constraints}` : ''}
+
+**Problem Description:**
+${problem.description}
+
+${problem.inputFormat ? `**Input Format:**\n${problem.inputFormat}` : ''}
+${problem.outputFormat ? `**Output Format:**\n${problem.outputFormat}` : ''}
+${examplesText}
+
+═══════════════════════════════════════════════════════════════
+YOUR TASK
+═══════════════════════════════════════════════════════════════
+
+Your explanation must help the student understand:
+
+1. **What the story is actually saying in pure mathematical terms.**
+   - Rewrite the problem *without story*, using precise, compact definitions.
+   - Identify the true objects (arrays, graphs, strings, sets, paths, trees, etc.).
+
+2. **What exactly needs to be computed.**
+   - Clarify the goal in one or two clean sentences.
+   - Remove all narrative distractions.
+
+3. **Key constraints and why they matter.**
+   - Emphasize ranges like \`N ≤ 14\`, \`N ≤ 1e5\`, etc.
+   - Briefly mention what such constraints *usually imply* (e.g., small N → brute force possible), but DO NOT give solution ideas.
+
+4. **Important terminology & concepts.**
+   - Define any technical terms used in the problem.
+   - Mention familiar CP structures (like "this graph description actually forms a tree") *only when factual*, not as hints.
+
+5. **Walk through the examples in detail.**
+   - Step-by-step explain how inputs map to outputs.
+   - Use this to confirm the abstract model is correct.
+
+6. **What makes the problem tricky or interesting.**
+   - Call out ambiguities, edge cases, restrictions, or unusual conditions.
+   - Highlight patterns or structural weirdness, but NOT solution strategies.
+
+═══════════════════════════════════════════════════════════════
+OUTPUT FORMAT
+═══════════════════════════════════════════════════════════════
+
+Return valid JSON with this structure:
+{
+  "explanation": "A clear, well-structured explanation. Use **bold** for important terms, *italics* for emphasis, and \`code\` for variables. Break into paragraphs with \\n\\n. Follow the problem-modeling process: story → stripped model → goal → constraints → examples → tricky points.",
+  "keyPoints": [
+    "First key insight about the model (e.g., what the core object really is)",
+    "Second important detail about inputs/constraints",
+    "Third clarification from the sample walkthrough",
+    "Fourth notable tricky or unusual condition the student must not overlook"
+  ]
+}`;
+    }
+
+    const userContent = [
+      {
+        type: 'text',
+        text: userText
+      }
+    ];
+
+    if (problem.hasImages && problem.imageData) {
+      userContent.push({
+        type: 'image_url',
+        image_url: {
+          url: problem.imageData
+        }
+      });
+    }
+
+    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiKey}`
+      },
+      body: JSON.stringify({
+        model: model,
+        messages: [
+          {
+            role: 'system',
+            content: systemPrompt
+          },
+          {
+            role: 'user',
+            content: userContent
+          }
+        ],
+        temperature: 0.3,
+        max_tokens: 2500,
+        response_format: { type: "json_object" }
+      })
+    });
+    
+    const data = await response.json();
+    
+    if (data.error) {
+      const friendlyError = formatApiError(data.error.message, 'openai');
+      return { error: friendlyError };
+    }
+    
+    const content = data.choices[0].message.content;
+    
+    // Parse JSON from response (should be valid JSON due to response_format)
+    try {
+      const parsed = JSON.parse(content);
+      if (parsed.explanation && parsed.keyPoints) {
+        return parsed;
+      }
+    } catch (e) {
+      // Fallback: try to extract JSON if response_format didn't work
+      const jsonMatch = content.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        try {
+          return JSON.parse(jsonMatch[0]);
+        } catch (e2) {
+          console.error('Failed to parse JSON:', e2);
+        }
+      }
+    }
+    
+    // Fallback: return as explanation
+    return {
+      explanation: content,
+      keyPoints: []
+    };
+  } catch (error) {
+    console.error('Error explaining problem with OpenAI:', error);
+    const friendlyError = formatApiError(error.message, 'openai');
+    return { error: friendlyError };
+  }
 }
 
 // Convert API errors to user-friendly messages
@@ -718,57 +1451,386 @@ function formatApiError(errorMessage, provider = 'gemini') {
   return errorMessage;
 }
 
-async function generateHintsGemini(problem, apiKey) {
+async function generateHintsGemini(problem, apiKey, platform = 'codeforces') {
   try {
+    // Log the complete problem object received
+    console.log('='.repeat(80));
+    console.log('LC Helper - GET HINTS - Received Problem Object:');
+    console.log('='.repeat(80));
+    console.log(JSON.stringify({
+      title: problem.title,
+      difficulty: problem.difficulty,
+      tags: problem.tags,
+      constraints: problem.constraints,
+      description: problem.description,
+      inputFormat: problem.inputFormat,
+      outputFormat: problem.outputFormat,
+      examples: problem.examples,
+      examplesCount: problem.examplesCount,
+      url: problem.url,
+      hasImages: problem.hasImages,
+      platform: platform
+    }, null, 2));
+    console.log('='.repeat(80));
+    
     // Enhanced context extraction
     const difficulty = problem.difficulty || 'Unknown';
     const existingTags = problem.tags || '';
     
-    const prompt = `You are a competitive programming expert providing contest-ready hints.
+    // Use LeetCode interview-focused prompt for LeetCode, CP-focused prompt for others
+    let prompt;
+    if (platform === 'leetcode') {
+      // LeetCode interview-focused prompt
+      prompt = `You are a world-class LeetCode interview coach.  
 
-EXAMPLE OF PERFECT HINTS:
+Your goal is to guide the user toward the solution WITHOUT revealing the full answer.
 
-Problem: Two Sum
-Difficulty: Easy
-Topic: Hash Table - O(n) time, O(n) space
+Provide **three progressively stronger hints**, where each helps the user think more clearly about the structure of the problem.
 
-Hint 1: For each number x, you need to find if (target - x) exists. Checking all pairs takes O(n²). What data structure provides O(1) lookup to reduce this to O(n)?
+═══════════════════════════════════════════════════════════════
 
-Hint 2: Use a hash table (unordered_map in C++, dict in Python) to achieve O(n) time. Store each number with its index as you iterate. Before storing, check if (target - current) exists in the table. This single-pass approach is O(n) vs O(n²) nested loops.
+HOW TO THINK (MANDATORY)
 
-Hint 3: Implementation: 1) Create empty hash table number→index. 2) For each nums[i]: compute complement = target - nums[i]. 3) If complement in table, return [table[complement], i]. 4) Otherwise, insert nums[i]→i into table. Edge cases: duplicate values, negative numbers, ensure i ≠ j.
+═══════════════════════════════════════════════════════════════
 
----
+Base all hints on these reasoning techniques:
+
+1. **Understand the structure of the input**  
+
+   (array, string, tree, graph, intervals, DP states, etc.)
+
+2. **Analyze constraints**  
+
+   (size limits, value ranges, whether brute force is possible)
+
+3. **Try small examples**  
+
+   - Consider edge cases.
+
+   - Observe patterns manually.
+
+4. **Look for the core behavior**  
+
+   - Are we tracking a window? a running sum? a frequency? a state?
+
+   - Does the problem want you to compare, count, merge, search, split, or optimize something?
+
+5. **Spot unusual details**  
+
+   - Special rules often point to the main idea.
+
+Hints must guide, NOT reveal.
+
+═══════════════════════════════════════════════════════════════
+
+WHAT EACH HINT SHOULD DO
+
+═══════════════════════════════════════════════════════════════
+
+### **Hint 1 — Understanding & Key Observations**
+
+- Clarify how to interpret the input.
+
+- Point out what is MOST important.
+
+- Suggest small example testing.
+
+- DO NOT mention algorithms.
+
+### **Hint 2 — Structural Insight**
+
+- Reveal the deeper structure of the problem.
+
+- Reference constraints like "n is large, so we need an efficient way to handle X" WITHOUT naming the technique.
+
+- Highlight relationships or invariants.
+
+- Still DO NOT reveal the exact method.
+
+### **Hint 3 — High-Level Algorithm Direction**
+
+- Now you may mention general algorithm families (e.g., "a two-pointer strategy fits the pattern", "a DFS-style traversal might work", "a DP formulation seems natural").
+
+- DO NOT give recurrences, code, or exact implementation.
+
+═══════════════════════════════════════════════════════════════
+
+OUTPUT FORMAT (STRICT JSON)
+
+═══════════════════════════════════════════════════════════════
+
+Return ONLY:
+
+{
+
+  "hints": [
+
+    "Hint 1 (understanding + observations)...",
+
+    "Hint 2 (structural insight)...",
+
+    "Hint 3 (high-level algorithm family without specifics)..."
+
+  ]
+
+}
+
+═══════════════════════════════════════════════════════════════
+
+RULES
+
+═══════════════════════════════════════════════════════════════
+
+❌ NEVER:
+
+- Reveal the solution.
+
+- Give code or pseudocode.
+
+- Give exact algorithm steps.
+
+- State complexity like O(n log n) unless necessary.
+
+- Use phrases like "the answer is" or "the correct approach is".
+
+✅ ALWAYS:
+
+- Lead the student step by step.
+
+- Encourage careful reasoning.
+
+- Help them uncover the structure on their own.
+
+- Keep hints progressively stronger but never explicit.
+
+═══════════════════════════════════════════════════════════════
 
 NOW ANALYZE THIS ${difficulty.toUpperCase()} PROBLEM:
+
+═══════════════════════════════════════════════════════════════
 
 Title: ${problem.title}
 ${existingTags ? `Platform Tags: ${existingTags}` : ''}
 Constraints: ${problem.constraints || 'Not specified'}
 Description: ${problem.description}
+${problem.examples ? `\n\nSample Test Cases:\n${problem.examples}` : ''}
+${problem.inputFormat ? `\n\nInput Format:\n${problem.inputFormat}` : ''}
+${problem.outputFormat ? `\n\nOutput Format:\n${problem.outputFormat}` : ''}
 
 ${problem.hasImages ? 'Note: This problem includes images/graphs in the problem statement. Analyze them carefully along with the text description.' : ''}
+${problem.examples ? '\nIMPORTANT: Use the sample test cases to verify your understanding. The hints should guide toward a solution that works for these examples.' : ''}
 
-OUTPUT FORMAT (JSON only):
+Now generate the three hints as JSON.`;
+    } else {
+      // Codeforces/CodeChef competitive programming focused prompt
+      prompt = `You are a world-class competitive programming coach.  
+
+Your job is NOT to give the solution.  
+
+Your job is to guide the user toward discovering the solution on their own — using the reasoning techniques of top competitive programmers.
+
+
+
+Hints must be **progressive**, **non-revealing**, and **focused on understanding**, not implementation.
+
+
+
+═══════════════════════════════════════════════════════════════
+
+HOW YOU MUST THINK
+
+═══════════════════════════════════════════════════════════════
+
+
+
+Your hints must follow the structured thought process used by strong competitive programmers:
+
+
+
+1. **Strip story → Identify the pure mathematical model.**
+
+2. **Analyze constraints** (small N → brute force options, large N → linear/logarithmic approaches).
+
+3. **Search for known patterns** (tree, graph, DP state, window, monotonicity, parity, greedy invariants).
+
+4. **Use "specific → general" reasoning.**
+
+   - Try extremely small cases and understand their behavior.
+
+5. **Make testable hypotheses** (e.g., structure, monotonicity, invariants).
+
+6. **Spot unusual / restricting parts of the statement** — these are often the key.
+
+7. **Break the problem into components**, if possible.
+
+
+
+Never jump directly to the algorithm.  
+
+Hints should gradually guide thinking, not reveal.
+
+
+
+═══════════════════════════════════════════════════════════════
+
+WHAT YOU MUST OUTPUT
+
+═══════════════════════════════════════════════════════════════
+
+
+
+Provide THREE HINTS:
+
+
+
+### **Hint 1 — Understanding & Key Observations**
+
+- Help the student build the correct mental model.
+
+- Point out what part of the statement is most important or unusual.
+
+- Suggest examining small cases.
+
+- Suggest what structures/patterns the problem resembles.
+
+- DO NOT mention specific algorithms or data structures yet.
+
+
+
+### **Hint 2 — Structural Insight (Still Non-Solution)**
+
+- Highlight the mathematical/structural property that unlocks the problem.
+
+- Refer to constraint implications.
+
+- Mention categories like "graph problem", "DP-like behavior", "two-pointer-like structure", etc. without naming exact methods.
+
+- Give high-level reasoning direction but NOT the final method.
+
+
+
+### **Hint 3 — Algorithmic Direction (General Approach Only)**
+
+- Now you may hint at possible method families (e.g., "a tree DP might fit", "binary search on the answer is plausible", "greedy structure looks promising").
+
+- DO NOT specify the exact recurrence, data structure, or steps.
+
+- DO NOT provide code, pseudocode, or the full algorithm.
+
+- DO NOT reveal the solution outright.
+
+- Keep hints directional, not explicit.
+
+
+
+═══════════════════════════════════════════════════════════════
+
+OUTPUT FORMAT (STRICT JSON)
+
+═══════════════════════════════════════════════════════════════
+
+
+
+Return ONLY:
+
+
+
 {
-  "topic": "<Algorithm/DS> - O() time, O() space",
+
   "hints": [
-    "<Hint 1: Key observation>",
-    "<Hint 2: Specific algorithm with why>",
-    "<Hint 3: Implementation steps>"
+
+    "Hint 1 (key observations, understanding the model)...",
+
+    "Hint 2 (structural insight, constraint-based reasoning)...",
+
+    "Hint 3 (high-level algorithm family, without giving away the full solution)..."
+
   ]
+
 }
 
-REQUIREMENTS:
-1. Topic MUST include time complexity (e.g., "DP on Trees - O(n)")
-2. Hint 1: State key insight, ask guiding question, NO algorithms yet
-3. Hint 2: Name EXACT algorithm/data structure (e.g., "segment tree", "unordered_map"), explain WHY optimal, compare complexities
-4. Hint 3: List 3-5 numbered steps, mention edge cases, NO actual code
-5. Use specific terminology: "unordered_map in C++", "bisect_left in Python", "lower_bound in C++"
-6. Compare complexities: O(n log n) vs O(n²), explain trade-offs
-${problem.hasImages ? '7. If images/graphs are present, incorporate visual information into your analysis' : ''}
 
-Be specific, concise, and competition-focused.`;
+
+═══════════════════════════════════════════════════════════════
+
+CRITICAL RULES
+
+═══════════════════════════════════════════════════════════════
+
+
+
+❌ DO NOT:
+
+- Do NOT give the solution.
+
+- Do NOT give code or pseudocode.
+
+- Do NOT give exact data structures unless needed conceptually.
+
+- Do NOT reveal formulae, transitions, or constructions.
+
+- Do NOT mention explicit algorithm names in Hints 1–2.
+
+
+
+✅ DO:
+
+- Guide the user's thinking progressively.
+
+- Make them *see* the structure and reach the insight themselves.
+
+- Use language like:
+
+  - "Try examining how this behaves for small inputs…"
+
+  - "Notice that this condition strongly restricts X…"
+
+  - "Think about what the constraint N ≤ ___ implies…"
+
+  - "Consider whether this object behaves like a tree/interval/DP state/etc."
+
+
+
+═══════════════════════════════════════════════════════════════
+
+NOW ANALYZE THIS ${difficulty.toUpperCase()} PROBLEM:
+
+═══════════════════════════════════════════════════════════════
+
+Title: ${problem.title}
+${existingTags ? `Platform Tags: ${existingTags}` : ''}
+Constraints: ${problem.constraints || 'Not specified'}
+Description: ${problem.description}
+${problem.examples ? `\n\nSample Test Cases:\n${problem.examples}` : ''}
+${problem.inputFormat ? `\n\nInput Format:\n${problem.inputFormat}` : ''}
+${problem.outputFormat ? `\n\nOutput Format:\n${problem.outputFormat}` : ''}
+
+${problem.hasImages ? 'Note: This problem includes images/graphs in the problem statement. Analyze them carefully along with the text description.' : ''}
+${problem.examples ? '\nIMPORTANT: Use the sample test cases to verify your understanding. The hints should guide toward a solution that works for these examples.' : ''}
+
+Now generate the hints as JSON.`;
+    }
+    
+    // Log the exact prompt being sent to LLM for debugging
+    console.log('='.repeat(80));
+    console.log('LC Helper - GET HINTS - Prompt sent to LLM:');
+    console.log('='.repeat(80));
+    console.log('Platform:', platform);
+    console.log('Problem Data:', JSON.stringify({
+      title: problem.title,
+      difficulty: difficulty,
+      tags: existingTags,
+      constraints: problem.constraints,
+      description: problem.description?.substring(0, 500) + (problem.description?.length > 500 ? '...' : ''),
+      inputFormat: problem.inputFormat?.substring(0, 200) + (problem.inputFormat?.length > 200 ? '...' : ''),
+      outputFormat: problem.outputFormat?.substring(0, 200) + (problem.outputFormat?.length > 200 ? '...' : ''),
+      examplesLength: problem.examples?.length || 0,
+      hasImages: problem.hasImages || false
+    }, null, 2));
+    console.log('='.repeat(80));
+    console.log('Full Prompt (first 2000 chars):');
+    console.log(prompt.substring(0, 2000) + (prompt.length > 2000 ? '\n... [truncated]' : ''));
+    console.log('='.repeat(80));
 
     // Build parts array - include image if available
     const parts = [{ text: prompt }];
@@ -828,38 +1890,147 @@ Be specific, concise, and competition-focused.`;
   }
 }
 
-async function generateHintsOpenAI(problem, apiKey) {
+async function generateHintsOpenAI(problem, apiKey, platform = 'codeforces') {
   try {
     // Use gpt-4o for vision support if images are present, otherwise use gpt-4o-mini
     const model = (problem.hasImages && problem.imageData) ? 'gpt-4o' : 'gpt-4o-mini';
     
-    const systemPrompt = `You are a world-class competitive programming coach. Provide HIGH-PERFORMANCE, contest-winning insights with focus on:
+    const difficulty = problem.difficulty || 'Unknown';
+    const existingTags = problem.tags || '';
+    
+    // Use LeetCode interview-focused prompt for LeetCode, CP-focused prompt for others
+    let systemPrompt, userText;
+    if (platform === 'leetcode') {
+      // LeetCode interview-focused prompt
+      systemPrompt = `You are a world-class LeetCode interview coach. Your goal is to guide the user toward the solution WITHOUT revealing the full answer.
 
-1. EXACT TOPIC (with time complexity) - Be hyper-specific, e.g. "DP on Trees with Re-rooting O(n)", "Binary Search on Answer O(n log m)", "Monotonic Stack O(n)"
+Provide **three progressively stronger hints**, where each helps the user think more clearly about the structure of the problem.
 
-2. THREE PROGRESSIVE HINTS (PERFORMANCE-FOCUSED):
-   - Hint 1: Key observation - what pattern/property to exploit for optimal solution
-   - Hint 2: Specific algorithm/data structure with WHY it's optimal and complexity analysis
-   - Hint 3: Step-by-step approach with optimizations, edge cases, and full complexity analysis
+Base all hints on these reasoning techniques:
+1. **Understand the structure of the input** (array, string, tree, graph, intervals, DP states, etc.)
+2. **Analyze constraints** (size limits, value ranges, whether brute force is possible)
+3. **Try small examples** - Consider edge cases, observe patterns manually
+4. **Look for the core behavior** - Are we tracking a window? a running sum? a frequency? a state?
+5. **Spot unusual details** - Special rules often point to the main idea
 
-Focus on OPTIMAL solutions, mention specific data structures (Segment Tree, Fenwick Tree, etc.), and consider competitive programming constraints.
-${problem.hasImages ? 'Note: This problem includes images/graphs. Analyze them carefully along with the text description.' : ''}
+Hints must guide, NOT reveal.
+${problem.hasImages ? 'Note: This problem includes images/graphs. Analyze them carefully along with the text description.' : ''}`;
 
-Format as JSON:
+      userText = `Analyze this LeetCode problem and generate three progressive hints:
+
+Title: ${problem.title}
+${existingTags ? `Platform Tags: ${existingTags}` : ''}
+Constraints: ${problem.constraints || 'Not specified'}
+Description: ${problem.description}
+${problem.examples ? `\n\nSample Test Cases:\n${problem.examples}` : ''}
+${problem.inputFormat ? `\n\nInput Format:\n${problem.inputFormat}` : ''}
+${problem.outputFormat ? `\n\nOutput Format:\n${problem.outputFormat}` : ''}
+
+${problem.examples ? 'IMPORTANT: Use the sample test cases to verify your understanding. The hints should guide toward a solution that works for these examples.' : ''}
+
+Generate hints following these guidelines:
+
+**Hint 1 — Understanding & Key Observations**
+- Clarify how to interpret the input
+- Point out what is MOST important
+- Suggest small example testing
+- DO NOT mention algorithms
+
+**Hint 2 — Structural Insight**
+- Reveal the deeper structure of the problem
+- Reference constraints like "n is large, so we need an efficient way to handle X" WITHOUT naming the technique
+- Highlight relationships or invariants
+- Still DO NOT reveal the exact method
+
+**Hint 3 — High-Level Algorithm Direction**
+- Now you may mention general algorithm families (e.g., "a two-pointer strategy fits the pattern", "a DFS-style traversal might work", "a DP formulation seems natural")
+- DO NOT give recurrences, code, or exact implementation
+
+Return JSON with this structure:
 {
-  "topic": "Exact Topic (with Time Complexity)",
   "hints": [
-    "Hint 1 with key insight...",
-    "Hint 2 with algorithm + complexity...",
-    "Hint 3 with implementation strategy..."
+    "Hint 1 (understanding + observations)...",
+    "Hint 2 (structural insight)...",
+    "Hint 3 (high-level algorithm family without specifics)..."
   ]
-}`;
+}
+
+Remember: NEVER reveal the solution, give code, or state exact algorithm steps. Lead the student step by step.`;
+    } else {
+      // Codeforces/CodeChef competitive programming focused prompt
+      systemPrompt = `You are a world-class competitive programming coach.  
+
+Your job is NOT to give the solution.  
+
+Your job is to guide the user toward discovering the solution on their own — using the reasoning techniques of top competitive programmers.
+
+Hints must be **progressive**, **non-revealing**, and **focused on understanding**, not implementation.
+
+Your hints must follow the structured thought process used by strong competitive programmers:
+
+1. **Strip story → Identify the pure mathematical model.**
+2. **Analyze constraints** (small N → brute force options, large N → linear/logarithmic approaches).
+3. **Search for known patterns** (tree, graph, DP state, window, monotonicity, parity, greedy invariants).
+4. **Use "specific → general" reasoning.**
+   - Try extremely small cases and understand their behavior.
+5. **Make testable hypotheses** (e.g., structure, monotonicity, invariants).
+6. **Spot unusual / restricting parts of the statement** — these are often the key.
+7. **Break the problem into components**, if possible.
+
+Never jump directly to the algorithm. Hints should gradually guide thinking, not reveal.
+${problem.hasImages ? 'Note: This problem includes images/graphs. Analyze them carefully along with the text description.' : ''}`;
+
+      userText = `Analyze this competitive programming problem and generate progressive hints:
+
+Title: ${problem.title}
+${existingTags ? `Platform Tags: ${existingTags}` : ''}
+Constraints: ${problem.constraints || 'Not specified'}
+Description: ${problem.description}
+${problem.examples ? `\n\nSample Test Cases:\n${problem.examples}` : ''}
+${problem.inputFormat ? `\n\nInput Format:\n${problem.inputFormat}` : ''}
+${problem.outputFormat ? `\n\nOutput Format:\n${problem.outputFormat}` : ''}
+
+${problem.examples ? 'IMPORTANT: Use the sample test cases to verify your understanding. The hints should guide toward a solution that works for these examples.' : ''}
+
+Generate three hints:
+
+**Hint 1 — Understanding & Key Observations**
+- Help the student build the correct mental model
+- Point out what part of the statement is most important or unusual
+- Suggest examining small cases
+- Suggest what structures/patterns the problem resembles
+- DO NOT mention specific algorithms or data structures yet
+
+**Hint 2 — Structural Insight (Still Non-Solution)**
+- Highlight the mathematical/structural property that unlocks the problem
+- Refer to constraint implications
+- Mention categories like "graph problem", "DP-like behavior", "two-pointer-like structure", etc. without naming exact methods
+- Give high-level reasoning direction but NOT the final method
+
+**Hint 3 — Algorithmic Direction (General Approach Only)**
+- Now you may hint at possible method families (e.g., "a tree DP might fit", "binary search on the answer is plausible", "greedy structure looks promising")
+- DO NOT specify the exact recurrence, data structure, or steps
+- DO NOT provide code, pseudocode, or the full algorithm
+- DO NOT reveal the solution outright
+- Keep hints directional, not explicit
+
+Return JSON with this structure:
+{
+  "hints": [
+    "Hint 1 (key observations, understanding the model)...",
+    "Hint 2 (structural insight, constraint-based reasoning)...",
+    "Hint 3 (high-level algorithm family, without giving away the full solution)..."
+  ]
+}
+
+Remember: DO NOT give the solution, code, or exact data structures. Guide the user's thinking progressively.`;
+    }
 
     // Build user content - include image if available
     const userContent = [
       {
         type: 'text',
-        text: `Analyze for optimal competitive programming solution:\n\nTitle: ${problem.title}\n\nDescription: ${problem.description}\n\nConstraints: ${problem.constraints || 'Not specified'}`
+        text: userText
       }
     ];
 
@@ -1005,9 +2176,12 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
       dailyStats: { date: today, count: 0, problems: [] }
     });
     console.log('Daily stats reset for:', today);
-  } else if (alarm.name.startsWith('timer_')) {
+  } else if (alarm.name.startsWith('timer_') && !alarm.name.startsWith('timerStop_')) {
     // 30-minute timer reminder
     await handleTimerAlarm(alarm.name);
+  } else if (alarm.name.startsWith('timerStop_')) {
+    // 1-hour timer stop
+    await handleTimerStopAlarm(alarm.name);
   } else if (alarm.name === 'refreshTodayCount') {
     // Auto-refresh today's count from APIs
     await syncTodayCountFromAPIs();
@@ -1040,6 +2214,39 @@ async function handleTimerAlarm(alarmName) {
     });
     
     console.log('Timer reminder sent for:', timerData.title);
+  }
+}
+
+// Handle 1-hour timer stop alarm
+async function handleTimerStopAlarm(alarmName) {
+  const cacheKey = alarmName.replace('timerStop_', '');
+  const timerKey = `timer_${cacheKey}`;
+  const result = await chrome.storage.local.get(timerKey);
+  const timerData = result[timerKey];
+  
+  if (timerData) {
+    // Stop the timer
+    await stopProblemTimer(timerData.url);
+    
+    // Try to notify the tab if it's still open
+    if (timerData.tabId) {
+      try {
+        await chrome.tabs.get(timerData.tabId);
+        // Tab still exists, send message to stop timer display
+        chrome.tabs.sendMessage(timerData.tabId, {
+          type: 'TIMER_STOPPED',
+          reason: '1hour'
+        }).catch(() => {
+          // Tab might not have content script loaded
+          console.log('LC Helper: Could not send timer stop message to tab');
+        });
+      } catch (e) {
+        // Tab doesn't exist anymore, that's fine
+        console.log('LC Helper: Timer tab already closed');
+      }
+    }
+    
+    console.log('Timer stopped after 1 hour for:', timerData.title);
   }
 }
 
@@ -1744,13 +2951,18 @@ async function isFavorite(url) {
 // PROBLEM TIMER SYSTEM
 // ============================================
 
-async function startProblemTimer(problem) {
+async function startProblemTimer(problem, tabId) {
   const timerKey = `timer_${generateCacheKey(problem.url)}`;
   const now = Date.now();
   
   // Check if timer already exists for this problem
   const existing = await chrome.storage.local.get(timerKey);
   if (existing[timerKey]) {
+    // Update tab ID if provided (in case tab was refreshed)
+    if (tabId && existing[timerKey].tabId !== tabId) {
+      existing[timerKey].tabId = tabId;
+      await chrome.storage.local.set({ [timerKey]: existing[timerKey] });
+    }
     return { timer: existing[timerKey], isNew: false };
   }
   
@@ -1759,14 +2971,22 @@ async function startProblemTimer(problem) {
     title: problem.title,
     platform: problem.platform,
     startTime: now,
-    reminderSent: false
+    reminderSent: false,
+    tabId: tabId || null
   };
   
   await chrome.storage.local.set({ [timerKey]: timerData });
   
-  // Set 30-minute alarm
-  chrome.alarms.create(`timer_${generateCacheKey(problem.url)}`, {
+  const cacheKey = generateCacheKey(problem.url);
+  
+  // Set 30-minute alarm for reminder
+  chrome.alarms.create(`timer_${cacheKey}`, {
     delayInMinutes: 30
+  });
+  
+  // Set 1-hour alarm to stop timer
+  chrome.alarms.create(`timerStop_${cacheKey}`, {
+    delayInMinutes: 60
   });
   
   console.log('Timer started for:', problem.title);
@@ -1782,10 +3002,13 @@ async function getActiveTimer(url) {
 
 async function stopProblemTimer(url) {
   const timerKey = `timer_${generateCacheKey(url)}`;
-  const alarmName = `timer_${generateCacheKey(url)}`;
+  const cacheKey = generateCacheKey(url);
+  const alarmName = `timer_${cacheKey}`;
+  const stopAlarmName = `timerStop_${cacheKey}`;
   
   await chrome.storage.local.remove(timerKey);
   chrome.alarms.clear(alarmName);
+  chrome.alarms.clear(stopAlarmName);
   
   console.log('Timer stopped for:', url);
 }

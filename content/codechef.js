@@ -69,6 +69,10 @@
       // Test handler to manually show the timer reminder modal
       showTimerReminderModal();
       sendResponse({ success: true });
+    } else if (message.type === 'TIMER_STOPPED') {
+      // Timer was stopped (either after 1 hour or tab closed)
+      stopTimerDisplay();
+      sendResponse({ success: true });
     }
     return true;
   });
@@ -188,11 +192,28 @@
     const minutes = Math.floor(elapsed / 60000);
     const seconds = Math.floor((elapsed % 60000) / 1000);
     
+    // Stop timer if it reaches 1 hour (60 minutes)
+    if (minutes >= 60) {
+      stopTimerDisplay();
+      timerEl.textContent = '60:00';
+      timerEl.classList.add('warning');
+      return;
+    }
+    
     timerEl.textContent = `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
     
     if (minutes >= 30) {
       timerEl.classList.add('warning');
     }
+  }
+
+  // Stop timer display
+  function stopTimerDisplay() {
+    if (timerInterval) {
+      clearInterval(timerInterval);
+      timerInterval = null;
+    }
+    timerStartTime = null;
   }
 
   function showTimerReminderModal() {
@@ -306,23 +327,124 @@
         </div>
       </div>
       <div class="lch-panel-body">
-        <div class="lch-loading">
-          <div class="lch-spinner"></div>
-          <span class="lch-loading-text">Analyzing problem...</span>
-        </div>
+        <div class="lch-quick-actions"></div>
       </div>
     `;
     document.body.appendChild(panel);
     
+    // Prevent clicks inside panel from closing it
+    panel.addEventListener('click', (e) => {
+      e.stopPropagation();
+    });
+    
+    // Close panel when clicking outside (but not on FAB)
+    document.addEventListener('click', handleOutsideClick);
+    
     if (timerStartTime) {
       updateTimerDisplay();
+    }
+    
+    // Show quick actions (favorite, get hints) without auto-loading
+    showQuickActions();
+  }
+
+  function handleOutsideClick(e) {
+    // Don't close if panel doesn't exist or isn't active
+    if (!panel || !panel.classList.contains('active')) {
+      return;
+    }
+    
+    // Don't close if clicking on the FAB (it has its own toggle handler)
+    if (fab && fab.contains(e.target)) {
+      return;
+    }
+    
+    // Don't close if clicking inside the panel
+    if (panel.contains(e.target)) {
+      return;
+    }
+    
+    // Close the panel if clicking outside
+    panel.classList.remove('active');
+  }
+
+  // Show quick actions panel without loading hints
+  async function showQuickActions() {
+    const body = panel.querySelector('.lch-panel-body');
+    
+    // Extract problem data for favorites (lightweight, no API call)
+    if (!currentProblemData) {
+      try {
+        const problemData = await extractProblemData();
+        if (problemData.title) {
+          currentProblemData = {
+            url: window.location.href,
+            title: problemData.title,
+            platform: 'codechef',
+            difficulty: problemData.difficulty
+          };
+        }
+      } catch (e) {
+        console.log('LC Helper: Could not extract problem data:', e.message);
+      }
+    }
+    
+    // Check if problem is in favorites
+    let isFavorite = false;
+    try {
+      const favResponse = await safeSendMessage({ type: 'IS_FAVORITE', url: window.location.href });
+      isFavorite = favResponse?.isFavorite || false;
+    } catch (e) {}
+    
+    body.innerHTML = `
+      <div class="lch-quick-actions">
+        <div class="lch-quick-section">
+          <button class="lch-explain-btn" id="explainBtn">
+            <span class="lch-btn-icon">📖</span>
+            <span class="lch-btn-text">Explain the Problem</span>
+          </button>
+          <p class="lch-quick-hint">Understand the problem statement better</p>
+        </div>
+        <div class="lch-quick-divider"></div>
+        <div class="lch-quick-section">
+          <button class="lch-get-hints-btn" id="getHintsBtn">
+            <span class="lch-btn-icon">💡</span>
+            <span class="lch-btn-text">Get Smart Hints</span>
+          </button>
+          <p class="lch-quick-hint">Uses AI to analyze the problem</p>
+        </div>
+        <div class="lch-quick-divider"></div>
+        <div class="lch-quick-section">
+          <button class="lch-favorite-btn ${isFavorite ? 'active' : ''}" id="favoriteBtn">
+            ${isFavorite ? '❤️ Favorited' : '🤍 Add to Favorites'}
+          </button>
+        </div>
+      </div>
+    `;
+    
+    // Add event listeners
+    body.querySelector('#explainBtn').addEventListener('click', () => {
+      explainProblem();
+    });
+    
+    body.querySelector('#getHintsBtn').addEventListener('click', () => {
+      loadHints();
+    });
+    
+    const favoriteBtn = body.querySelector('#favoriteBtn');
+    if (favoriteBtn) {
+      favoriteBtn.addEventListener('click', async () => {
+        await toggleFavorite(favoriteBtn);
+      });
     }
   }
 
   function togglePanel() {
     if (!panel) createPanel();
     panel.classList.toggle('active');
-    if (panel.classList.contains('active') && !isLoading) loadHints();
+    
+    // Don't auto-load hints - let user click "Get Hints" button
+    // This saves API calls when user just wants to check timer or favorite
   }
 
   async function checkAutoShow() {
@@ -386,21 +508,81 @@
     isLoading = false;
   }
 
-  async function extractProblemData() {
-    const titleEl = document.querySelector('h1') || document.querySelector('.problem-name');
-    const descEl = document.querySelector('.problem-statement') || 
-                   document.querySelector('[class*="problem"]');
+  async function explainProblem() {
+    if (!isExtensionContextValid()) {
+      showError('Extension was reloaded. Please refresh the page.');
+      return;
+    }
     
-    // Extract difficulty
+    try {
+      const { apiKey } = await safeStorageGet('apiKey');
+      if (!apiKey) { showSettingsPrompt(); return; }
+
+      isLoading = true;
+      showLoading();
+
+      const problem = await extractProblemData();
+      if (!problem.title || !problem.description) {
+        showError('Could not extract problem data.');
+        isLoading = false;
+        return;
+      }
+
+      if (!currentProblemData) {
+        currentProblemData = {
+          url: window.location.href,
+          title: problem.title,
+          platform: 'codechef',
+          difficulty: problem.difficulty
+        };
+      }
+
+      const response = await chrome.runtime.sendMessage({
+        type: 'EXPLAIN_PROBLEM',
+        problem
+      });
+
+      if (!response) {
+        showError('Extension was reloaded. Please refresh the page.');
+      } else if (response.error) {
+        showError(response.error);
+      } else {
+        showExplanation(response);
+      }
+    } catch (error) {
+      showError(error.message || 'An error occurred. Please refresh the page.');
+    }
+
+    isLoading = false;
+  }
+
+  async function extractProblemData() {
+    const titleEl = document.querySelector('h1') || document.querySelector('.problem-name') ||
+                    document.querySelector('[class*="problem-title"]');
+    const descEl = document.querySelector('.problem-statement') || 
+                   document.querySelector('[class*="problem"]') ||
+                   document.querySelector('#problem-statement');
+    
+    // Extract difficulty (CodeChef shows stars or difficulty level)
     let difficulty = 'Unknown';
-    const difficultyEl = document.querySelector('.difficulty, [class*="difficulty"]');
+    const difficultyEl = document.querySelector('.difficulty, [class*="difficulty"]') ||
+                         document.querySelector('[class*="star"]');
     if (difficultyEl) {
       difficulty = difficultyEl.textContent.trim();
     }
     
+    // Also check for difficulty in breadcrumbs or sidebar
+    const breadcrumbDifficulty = document.querySelector('[href*="easy"], [href*="medium"], [href*="hard"]');
+    if (breadcrumbDifficulty && difficulty === 'Unknown') {
+      const href = breadcrumbDifficulty.getAttribute('href') || '';
+      if (href.includes('easy')) difficulty = 'Easy';
+      else if (href.includes('medium')) difficulty = 'Medium';
+      else if (href.includes('hard')) difficulty = 'Hard';
+    }
+    
     // Extract tags
     let tags = '';
-    const tagElements = document.querySelectorAll('.tags a, [class*="tag"]');
+    const tagElements = document.querySelectorAll('.tags a, [class*="tag"], [class*="topic"]');
     if (tagElements.length > 0) {
       tags = Array.from(tagElements)
         .map(el => el.textContent.trim())
@@ -409,14 +591,194 @@
         .join(', ');
     }
     
+    // Extract constraints
+    let constraints = '';
+    const constraintsSection = document.querySelector('[class*="constraints"]') ||
+                                Array.from(document.querySelectorAll('h3, h4, strong')).find(el => 
+                                  el.textContent.toLowerCase().includes('constraint'));
+    if (constraintsSection) {
+      const nextEl = constraintsSection.nextElementSibling;
+      if (nextEl) {
+        constraints = nextEl.textContent.trim().slice(0, 500);
+      }
+    }
+    
+    // Extract input/output format
+    let inputFormat = '';
+    let outputFormat = '';
+    
+    const inputHeader = Array.from(document.querySelectorAll('h3, h4, strong, b')).find(el => 
+      el.textContent.toLowerCase().includes('input format') || el.textContent.toLowerCase() === 'input');
+    if (inputHeader) {
+      const nextEl = inputHeader.nextElementSibling;
+      if (nextEl) inputFormat = nextEl.textContent.trim().slice(0, 500);
+    }
+    
+    const outputHeader = Array.from(document.querySelectorAll('h3, h4, strong, b')).find(el => 
+      el.textContent.toLowerCase().includes('output format') || el.textContent.toLowerCase() === 'output');
+    if (outputHeader) {
+      const nextEl = outputHeader.nextElementSibling;
+      if (nextEl) outputFormat = nextEl.textContent.trim().slice(0, 300);
+    }
+    
+    // Helper function to extract text with proper line breaks from pre elements
+    function extractPreText(preEl) {
+      if (!preEl) return '';
+      
+      // Method 1: Check for nested divs
+      const divs = preEl.querySelectorAll('div');
+      if (divs.length > 0) {
+        return Array.from(divs).map(d => d.textContent.trim()).join('\n');
+      }
+      
+      // Method 2: Check for <br> tags
+      const html = preEl.innerHTML;
+      if (html.includes('<br')) {
+        return html
+          .replace(/<br\s*\/?>/gi, '\n')
+          .replace(/<[^>]+>/g, '')
+          .trim();
+      }
+      
+      // Method 3: Use innerText which preserves line breaks
+      if (preEl.innerText) {
+        return preEl.innerText.trim();
+      }
+      
+      // Fallback: textContent
+      return preEl.textContent.trim();
+    }
+
+    // Extract sample test cases
+    const examples = [];
+    
+    // Method 1: Look for "Sample Input" / "Sample Output" sections
+    const sampleInputHeaders = Array.from(document.querySelectorAll('h3, h4, strong, b, p')).filter(el => 
+      el.textContent.toLowerCase().includes('sample input') || 
+      el.textContent.toLowerCase().includes('example input'));
+    
+    sampleInputHeaders.forEach((inputHeader, idx) => {
+      let inputText = '';
+      let outputText = '';
+      
+      // Find the pre/code block after input header
+      let nextEl = inputHeader.nextElementSibling;
+      while (nextEl && !nextEl.textContent.toLowerCase().includes('output')) {
+        if (nextEl.tagName === 'PRE' || nextEl.tagName === 'CODE') {
+          inputText = extractPreText(nextEl);
+          break;
+        }
+        nextEl = nextEl.nextElementSibling;
+      }
+      
+      // Find corresponding output
+      const outputHeader = Array.from(document.querySelectorAll('h3, h4, strong, b, p')).find(el => 
+        el.textContent.toLowerCase().includes('sample output') || 
+        el.textContent.toLowerCase().includes('example output'));
+      
+      if (outputHeader) {
+        let outEl = outputHeader.nextElementSibling;
+        while (outEl) {
+          if (outEl.tagName === 'PRE' || outEl.tagName === 'CODE') {
+            outputText = extractPreText(outEl);
+            break;
+          }
+          outEl = outEl.nextElementSibling;
+        }
+      }
+      
+      if (inputText || outputText) {
+        examples.push({
+          index: idx + 1,
+          input: inputText,
+          output: outputText
+        });
+      }
+    });
+    
+    // Method 2: Fallback - look for all pre blocks in problem statement
+    if (examples.length === 0 && descEl) {
+      const preBlocks = descEl.querySelectorAll('pre');
+      const preArray = Array.from(preBlocks);
+      
+      // Assume alternating input/output pattern
+      for (let i = 0; i < preArray.length - 1; i += 2) {
+        const inputPre = preArray[i];
+        const outputPre = preArray[i + 1];
+        
+        if (inputPre && outputPre) {
+          examples.push({
+            index: Math.floor(i / 2) + 1,
+            input: extractPreText(inputPre),
+            output: extractPreText(outputPre)
+          });
+        }
+      }
+    }
+    
+    // Method 3: Check for table-based examples (some CodeChef problems use tables)
+    if (examples.length === 0) {
+      const exampleTable = document.querySelector('table[class*="sample"], table[class*="example"]');
+      if (exampleTable) {
+        const rows = exampleTable.querySelectorAll('tr');
+        rows.forEach((row, idx) => {
+          if (idx === 0) return; // Skip header row
+          const cells = row.querySelectorAll('td');
+          if (cells.length >= 2) {
+            examples.push({
+              index: idx,
+              input: cells[0].innerText?.trim() || cells[0].textContent.trim(),
+              output: cells[1].innerText?.trim() || cells[1].textContent.trim()
+            });
+          }
+        });
+      }
+    }
+
+    // Format examples as string for LLM
+    const examplesText = examples.map(ex => {
+      return `Example ${ex.index}:\n  Input:\n    ${ex.input.split('\n').join('\n    ')}\n  Output:\n    ${ex.output.split('\n').join('\n    ')}`;
+    }).join('\n\n');
+
     const baseData = {
       title: titleEl?.textContent?.trim() || '',
       description: descEl?.textContent?.trim().slice(0, 2000) || '',
-      constraints: '',
+      constraints: constraints,
       difficulty: difficulty,
       tags: tags,
+      inputFormat: inputFormat,
+      outputFormat: outputFormat,
+      examples: examplesText,
+      examplesCount: examples.length,
       url: window.location.href
     };
+    
+    // Console log extracted data for accuracy testing
+    console.log('='.repeat(60));
+    console.log('LC Helper - Extracted Problem Data (CodeChef)');
+    console.log('='.repeat(60));
+    console.log('📌 Title:', baseData.title);
+    console.log('📊 Difficulty:', baseData.difficulty);
+    console.log('🏷️ Tags:', baseData.tags || 'None found');
+    console.log('-'.repeat(60));
+    console.log('📝 Description (first 500 chars):');
+    console.log(baseData.description.slice(0, 500) + (baseData.description.length > 500 ? '...' : ''));
+    console.log('-'.repeat(60));
+    console.log('📥 Input Format:', inputFormat.slice(0, 200) || 'None found');
+    console.log('📤 Output Format:', outputFormat.slice(0, 200) || 'None found');
+    console.log('📏 Constraints:', baseData.constraints.slice(0, 200) || 'None found');
+    console.log('-'.repeat(60));
+    console.log(`📋 Sample Test Cases (${examples.length} found):`);
+    examples.forEach(ex => {
+      console.log(`  Example ${ex.index}:`);
+      console.log(`    Input:`);
+      ex.input.split('\n').forEach(line => console.log(`      ${line}`));
+      console.log(`    Output:`);
+      ex.output.split('\n').forEach(line => console.log(`      ${line}`));
+    });
+    console.log('-'.repeat(60));
+    console.log('🔗 URL:', baseData.url);
+    console.log('='.repeat(60));
 
     // Check if problem has images/graphs and capture them
     if (descEl && typeof html2canvas !== 'undefined') {
@@ -575,6 +937,60 @@
     }
   }
 
+  async function showExplanation(data) {
+    const body = panel.querySelector('.lch-panel-body');
+    
+    let isFavorite = false;
+    try {
+      const favResponse = await safeSendMessage({ type: 'IS_FAVORITE', url: window.location.href });
+      isFavorite = favResponse?.isFavorite || false;
+    } catch (e) {}
+
+    const formattedExplanation = parseMarkdown(data.explanation || '');
+
+    body.innerHTML = `
+      <div class="lch-explanation-section">
+        <div class="lch-explanation-header">
+          <span class="lch-explanation-icon">📖</span>
+          <h3 class="lch-explanation-title">Problem Explanation</h3>
+        </div>
+        <div class="lch-explanation-content">${formattedExplanation}</div>
+        ${data.keyPoints ? `
+        <div class="lch-key-points">
+          <h4 class="lch-key-points-title">Key Points:</h4>
+          <ul class="lch-key-points-list">
+            ${data.keyPoints.map(point => `<li>${parseMarkdown(point)}</li>`).join('')}
+          </ul>
+        </div>
+        ` : ''}
+        <div class="lch-explanation-actions">
+          <button class="lch-get-hints-after-explanation" id="getHintsAfterExplanation">
+            💡 Now Get Hints
+          </button>
+        </div>
+      </div>
+      <div class="lch-actions-section">
+        <button class="lch-favorite-btn ${isFavorite ? 'active' : ''}" id="favoriteBtn">
+          ${isFavorite ? '❤️ Favorited' : '🤍 Add to Favorites'}
+        </button>
+      </div>
+    `;
+
+    const getHintsBtn = body.querySelector('#getHintsAfterExplanation');
+    if (getHintsBtn) {
+      getHintsBtn.addEventListener('click', () => {
+        loadHints();
+      });
+    }
+    
+    const favoriteBtn = body.querySelector('#favoriteBtn');
+    if (favoriteBtn) {
+      favoriteBtn.addEventListener('click', async () => {
+        await toggleFavorite(favoriteBtn);
+      });
+    }
+  }
+
   async function showHints(data) {
     const body = panel.querySelector('.lch-panel-body');
     const labels = ['Gentle Push', 'Stronger Nudge', 'Almost There'];
@@ -596,11 +1012,11 @@
     } catch (e) {}
 
     body.innerHTML = `
-      <div class="lch-topic-section">
+      ${data.topic ? `<div class="lch-topic-section">
         <div class="lch-topic-label">Problem Topic</div>
         <div class="lch-topic-badge">${escapeHtml(data.topic)}</div>
         ${cacheInfo}
-      </div>
+      </div>` : `<div class="lch-topic-section">${cacheInfo}</div>`}
       <div class="lch-hints-section">
         ${data.hints.map((hint, i) => `
           <div class="lch-hint-card">
@@ -611,7 +1027,7 @@
               </div>
               <button class="lch-hint-reveal-btn">Reveal</button>
             </div>
-            <div class="lch-hint-content" data-hint="${i}">${escapeHtml(hint)}</div>
+            <div class="lch-hint-content" data-hint="${i}">${formatHint(hint, i)}</div>
           </div>
         `).join('')}
       </div>
@@ -657,8 +1073,6 @@
         await toggleFavorite(favoriteBtn);
       });
     }
-    
-    addSolvedButton();
   }
   
   // Toggle favorite status
@@ -710,103 +1124,169 @@
     }
   }
 
+  // Format hint text professionally
+  function formatHint(hint, hintIndex) {
+    if (!hint) return '';
+    
+    let formatted = hint.trim();
+    
+    // Remove redundant prefixes like "Hint 3:", "Implementation:", "Hint 3: Implementation:"
+    formatted = formatted.replace(/^Hint\s+\d+\s*:?\s*/i, '');
+    formatted = formatted.replace(/^Implementation\s*:?\s*/i, '');
+    formatted = formatted.trim();
+    
+    // Split by numbered list items (1), 2), 3), etc.)
+    // Pattern: number followed by ) and space, capturing everything until next number) or end
+    const parts = [];
+    let currentIndex = 0;
+    
+    // Find all numbered list items
+    const listItemRegex = /(\d+\))\s+/g;
+    const matches = [];
+    let match;
+    
+    while ((match = listItemRegex.exec(formatted)) !== null) {
+      matches.push({
+        index: match.index,
+        number: match[1],
+        length: match[0].length
+      });
+    }
+    
+    // If we found numbered items, process them
+    if (matches.length >= 2) {
+      let htmlList = '<ol class="lch-hint-list">';
+      let lastItemEnd = 0;
+      
+      for (let i = 0; i < matches.length; i++) {
+        const start = matches[i].index + matches[i].length;
+        const end = (i < matches.length - 1) ? matches[i + 1].index : formatted.length;
+        let itemText = formatted.substring(start, end).trim();
+        lastItemEnd = end;
+        
+        // Clean up trailing periods/spaces
+        itemText = itemText.replace(/^[.\s]+|[.\s]+$/g, '');
+        
+        if (itemText) {
+          htmlList += `<li>${escapeHtml(itemText)}</li>`;
+        }
+      }
+      
+      htmlList += '</ol>';
+      
+      // Check for edge cases or additional notes after the last item
+      const remainingText = formatted.substring(lastItemEnd).trim();
+      
+      if (remainingText && !remainingText.match(/^\d+\)/)) {
+        // Check if it starts with "Edge cases" or "Edge case"
+        const edgeCaseMatch = remainingText.match(/^(Edge\s+cases?:?\s*)(.+)$/i);
+        if (edgeCaseMatch) {
+          htmlList += `<div class="lch-hint-edge-cases"><strong>Edge Cases:</strong> ${escapeHtml(edgeCaseMatch[2])}</div>`;
+        } else {
+          htmlList += `<div class="lch-hint-note">${escapeHtml(remainingText)}</div>`;
+        }
+      }
+      
+      return htmlList;
+    }
+    
+    // If not a numbered list, just escape and return
+    return escapeHtml(formatted);
+  }
+
   function escapeHtml(text) {
     const div = document.createElement('div');
     div.textContent = text;
     return div.innerHTML;
   }
 
-  function addSolvedButton() {
-    const body = panel.querySelector('.lch-panel-body');
-    const problemKey = generateCacheKey(window.location.href);
+  // Parse markdown to HTML for professional formatting
+  function parseMarkdown(text) {
+    if (!text) return '';
     
-    chrome.storage.local.get(`solved_${problemKey}`, (result) => {
-      const isSolved = result[`solved_${problemKey}`];
+    // First escape HTML to prevent XSS (but preserve structure)
+    let html = escapeHtml(text);
+    
+    // Split into lines for better processing
+    const lines = html.split('\n');
+    const processedLines = [];
+    let inParagraph = false;
+    
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i].trim();
+      const nextLine = i < lines.length - 1 ? lines[i + 1].trim() : '';
       
-      if (!body.querySelector('.lch-solved-section')) {
-        const solvedSection = document.createElement('div');
-        solvedSection.className = 'lch-solved-section';
-        solvedSection.innerHTML = `
-          <button class="lch-mark-solved-btn ${isSolved ? 'solved' : ''}">
-            ${isSolved ? '✓ Solved' : '✓ Mark as Solved'}
-          </button>
-        `;
-        
-        const feedbackSection = body.querySelector('.lch-feedback-section');
-        if (feedbackSection) {
-          body.insertBefore(solvedSection, feedbackSection);
-        } else {
-          body.appendChild(solvedSection);
+      // Skip empty lines (they'll create paragraph breaks)
+      if (!line) {
+        if (inParagraph) {
+          processedLines.push('</p>');
+          inParagraph = false;
         }
-        
-        const solvedBtn = solvedSection.querySelector('.lch-mark-solved-btn');
-        if (!isSolved) {
-          solvedBtn.addEventListener('click', async () => {
-            await markProblemAsSolved(solvedBtn);
-          });
-        } else {
-          solvedBtn.disabled = true;
-        }
+        continue;
       }
-    });
-  }
-
-  async function markProblemAsSolved(button) {
-    console.log('Mark as Solved button clicked!');
-    
-    try {
-      const problemData = extractProblemData();
-      const problemKey = generateCacheKey(window.location.href);
       
-      const saveData = {
-        title: problemData.title,
-        url: window.location.href,
-        difficulty: problemData.difficulty,
-        tags: problemData.tags,
-        solvedAt: Date.now(),
-        platform: 'codechef'
-      };
+      // Detect section headers (lines ending with ':' that are short and followed by content)
+      if (line.endsWith(':') && line.length < 60 && nextLine && !nextLine.startsWith('-') && !nextLine.match(/^\d+\./)) {
+        if (inParagraph) {
+          processedLines.push('</p>');
+          inParagraph = false;
+        }
+        // Format as section header
+        const headerText = line.slice(0, -1); // Remove the colon
+        processedLines.push(`<h4 class="lch-explanation-section-header">${headerText}</h4>`);
+        continue;
+      }
       
-      await chrome.storage.local.set({ [`solved_${problemKey}`]: saveData });
-      console.log('Problem saved to local storage');
+      // Detect list items (lines starting with "- " or numbered)
+      if (line.match(/^[-•]\s+/) || line.match(/^\d+\.\s+/)) {
+        if (inParagraph) {
+          processedLines.push('</p>');
+          inParagraph = false;
+        }
+        const listContent = line.replace(/^[-•]\s+/, '').replace(/^\d+\.\s+/, '');
+        processedLines.push(`<li class="lch-explanation-list-item">${listContent}</li>`);
+        continue;
+      }
       
-      // Increment daily count
-      await safeSendMessage({
-        type: 'INCREMENT_DAILY_COUNT',
-        problemUrl: window.location.href
-      });
-      
-      // Stop the timer for this problem
-      await safeSendMessage({
-        type: 'STOP_TIMER',
-        url: window.location.href
-      });
-      
-      console.log('Sending MARK_SOLVED message to background...');
-      const response = await chrome.runtime.sendMessage({
-        type: 'MARK_SOLVED',
-        problemData: saveData
-      });
-      
-      console.log('Response from background:', response);
-      
-      if (response && response.success) {
-        button.textContent = '✓ Solved';
-        button.classList.add('solved');
-        button.disabled = true;
-        showStreakCelebration(response.streakData);
+      // Regular paragraph content
+      if (!inParagraph) {
+        processedLines.push('<p class="lch-explanation-paragraph">');
+        inParagraph = true;
       } else {
-        console.error('Failed to update streak:', response);
-        button.textContent = '✓ Solved';
-        button.classList.add('solved');
-        button.disabled = true;
+        processedLines.push('<br>');
       }
-    } catch (error) {
-      console.error('Error marking problem as solved:', error);
-      button.textContent = '✓ Solved';
-      button.classList.add('solved');
-      button.disabled = true;
+      processedLines.push(line);
     }
+    
+    // Close any open paragraph
+    if (inParagraph) {
+      processedLines.push('</p>');
+    }
+    
+    html = processedLines.join('');
+    
+    // Now process markdown formatting within the HTML
+    // Convert **bold** to <strong> (handle nested cases)
+    html = html.replace(/\*\*([^*]+?)\*\*/g, '<strong class="lch-markdown-bold">$1</strong>');
+    
+    // Convert *italic* to <em> (but not if it's part of **bold**)
+    html = html.replace(/(?<!\*)\*([^*\s][^*]*?[^*\s])\*(?!\*)/g, '<em class="lch-markdown-italic">$1</em>');
+    
+    // Convert `code` to <code>
+    html = html.replace(/`([^`]+)`/g, '<code class="lch-markdown-code">$1</code>');
+    
+    // Wrap consecutive list items in ul tags
+    // Replace patterns like: <li>...</li><li>...</li> with <ul><li>...</li><li>...</li></ul>
+    html = html.replace(/(<li class="lch-explanation-list-item">[\s\S]*?<\/li>(?:\s*<li class="lch-explanation-list-item">[\s\S]*?<\/li>)*)/g, 
+      (match) => {
+        // Only wrap if not already wrapped
+        if (!match.includes('<ul')) {
+          return `<ul class="lch-explanation-list">${match}</ul>`;
+        }
+        return match;
+      });
+    
+    return html;
   }
 
   function generateCacheKey(url) {
@@ -816,85 +1296,5 @@
       .slice(0, 100);
   }
 
-  function showStreakCelebration(streakData) {
-    const currentStreak = streakData?.currentStreak || 1;
-    
-    const celebration = document.createElement('div');
-    celebration.className = 'lch-celebration';
-    
-    const { icon, title, subtitle } = getCelebrationContent(currentStreak);
-    
-    celebration.innerHTML = `
-      <div class="lch-celebration-content">
-        <div class="lch-celebration-icon">${icon}</div>
-        <div class="lch-celebration-title">${title}</div>
-        <div class="lch-celebration-streak">
-          🔥 ${currentStreak} Day Streak
-        </div>
-        <div class="lch-celebration-subtitle">${subtitle}</div>
-      </div>
-    `;
-    document.body.appendChild(celebration);
-    
-    setTimeout(() => celebration.remove(), 3000);
-  }
-
-  function getCelebrationContent(streak) {
-    if (streak === 1) {
-      return {
-        icon: '🎉',
-        title: 'Awesome Start!',
-        subtitle: 'First step to greatness! Come back tomorrow!'
-      };
-    } else if (streak === 7) {
-      return {
-        icon: '🏅',
-        title: 'Week Warrior!',
-        subtitle: 'You\'ve built an amazing 7-day habit!'
-      };
-    } else if (streak === 30) {
-      return {
-        icon: '🏆',
-        title: 'Month Master!',
-        subtitle: '30 days of dedication! You\'re unstoppable!'
-      };
-    } else if (streak === 50) {
-      return {
-        icon: '💎',
-        title: 'Elite Status!',
-        subtitle: '50 days! You\'re in the top 1%!'
-      };
-    } else if (streak === 100) {
-      return {
-        icon: '👑',
-        title: 'CENTURY LEGEND!',
-        subtitle: '100 days! You\'re absolutely incredible!'
-      };
-    } else if (streak < 7) {
-      return {
-        icon: '🌟',
-        title: 'Problem Solved!',
-        subtitle: `${streak} days and counting! Keep going!`
-      };
-    } else if (streak < 30) {
-      return {
-        icon: '🔥',
-        title: 'On Fire!',
-        subtitle: `${streak} days! You\'re building something special!`
-      };
-    } else if (streak < 100) {
-      return {
-        icon: '⚡',
-        title: 'Crushing It!',
-        subtitle: `${streak} days of pure dedication!`
-      };
-    } else {
-      return {
-        icon: '🚀',
-        title: 'LEGENDARY!',
-        subtitle: `${streak} days! You\'re a coding machine!`
-      };
-    }
-  }
 })();
 
