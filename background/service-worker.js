@@ -47,11 +47,13 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
     if (contest) {
       chrome.notifications.create(contestId, {
         type: 'basic',
-        iconUrl: 'assets/icon128.png',
+        iconUrl: chrome.runtime.getURL('assets/icon128.png'),
         title: '🏁 Contest Starting Soon!',
         message: `${contest.name} starts in ${await getReminderTime()} minutes!`,
         buttons: [{ title: 'Open Contest' }],
         priority: 2
+      }).catch((error) => {
+        console.error('LC Helper: Failed to create contest notification:', error);
       });
     }
   }
@@ -255,11 +257,6 @@ async function handleMessage(message, sender, sendResponse) {
       sendResponse({ dailyStats });
       break;
       
-    case 'INCREMENT_DAILY_COUNT':
-      const updatedStats = await incrementDailyCount(message.problemUrl);
-      sendResponse({ dailyStats: updatedStats });
-      break;
-    
     case 'SYNC_TODAY_COUNT_FROM_APIS':
       const syncResult = await syncTodayCountFromAPIs();
       sendResponse({ success: true, dailyStats: syncResult });
@@ -2142,9 +2139,9 @@ async function initializeStreakSystem() {
     periodInMinutes: 1440
   });
   
-  // Set up daily stats reset alarm (midnight)
+  // Set up daily stats reset alarm (4 AM)
   chrome.alarms.create('dailyStatsReset', {
-    when: getNextMidnight(),
+    when: getNextResetTime(),
     periodInMinutes: 1440 // 24 hours
   });
   
@@ -2170,7 +2167,7 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
   } else if (alarm.name === 'dailyStreakReminder') {
     await sendStreakReminder();
   } else if (alarm.name === 'dailyStatsReset') {
-    // Reset daily stats at midnight
+    // Reset daily stats at 4 AM
     const today = getTodayDateString();
     await chrome.storage.local.set({ 
       dailyStats: { date: today, count: 0, problems: [] }
@@ -2202,7 +2199,7 @@ async function handleTimerAlarm(alarmName) {
     // Send notification
     chrome.notifications.create(`timerReminder_${Date.now()}`, {
       type: 'basic',
-      iconUrl: 'assets/icon128.png',
+      iconUrl: chrome.runtime.getURL('assets/icon128.png'),
       title: '⏰ 30 Minutes Elapsed!',
       message: `You've been working on "${timerData.title}" for 30 minutes. Consider taking a hint or watching the solution.`,
       buttons: [
@@ -2211,6 +2208,8 @@ async function handleTimerAlarm(alarmName) {
       ],
       priority: 2,
       requireInteraction: true
+    }).catch((error) => {
+      console.error('LC Helper: Failed to create timer notification:', error);
     });
     
     console.log('Timer reminder sent for:', timerData.title);
@@ -2583,11 +2582,13 @@ async function sendStreakReminder() {
     
     chrome.notifications.create('dailyReminder', {
       type: 'basic',
-      iconUrl: 'assets/icon128.png',
+      iconUrl: chrome.runtime.getURL('assets/icon128.png'),
       title: '⏰ Daily Coding Reminder',
       message: message,
       priority: 2,
       requireInteraction: false
+    }).catch((error) => {
+      console.error('LC Helper: Failed to create daily reminder notification:', error);
     });
   }
 }
@@ -2626,11 +2627,18 @@ function formatDateToYYYYMMDD(date) {
   return `${year}-${month}-${day}`;
 }
 
-function getNextMidnight() {
+function getNextResetTime() {
+  // Reset at 4 AM instead of midnight
   const now = new Date();
-  const midnight = new Date(now);
-  midnight.setHours(24, 0, 0, 0);
-  return midnight.getTime();
+  const resetTime = new Date(now);
+  resetTime.setHours(4, 0, 0, 0);
+  
+  // If it's already past 4 AM today, schedule for tomorrow 4 AM
+  if (resetTime <= now) {
+    resetTime.setDate(resetTime.getDate() + 1);
+  }
+  
+  return resetTime.getTime();
 }
 
 function getDailyReminderTime() {
@@ -2663,26 +2671,7 @@ async function getDailyStats() {
   return dailyStats;
 }
 
-async function incrementDailyCount(problemUrl) {
-  const today = getTodayDateString();
-  let { dailyStats } = await chrome.storage.local.get('dailyStats');
-  
-  // Reset if from different day
-  if (!dailyStats || dailyStats.date !== today) {
-    dailyStats = { date: today, count: 0, problems: [], apiSynced: false };
-  }
-  
-  // Check if already counted this problem today
-  if (!dailyStats.problems.includes(problemUrl)) {
-    dailyStats.count++;
-    dailyStats.problems.push(problemUrl);
-    await chrome.storage.local.set({ dailyStats });
-  }
-  
-  return dailyStats;
-}
-
-// Sync today's count from APIs
+// Sync today's count from APIs (fully API-based)
 async function syncTodayCountFromAPIs() {
   const today = getTodayDateString();
   let { dailyStats } = await chrome.storage.local.get('dailyStats');
@@ -2723,7 +2712,9 @@ async function syncTodayCountFromAPIs() {
   
   // Update daily stats with API data
   const existingProblems = new Set(dailyStats.problems || []);
-  let newCount = dailyStats.count || 0;
+  // Start count from existing problems size to ensure consistency
+  // This fixes potential mismatch between count and problems array
+  let newCount = existingProblems.size;
   
   allTodayProblems.forEach(problemUrl => {
     if (!existingProblems.has(problemUrl)) {
@@ -2890,14 +2881,14 @@ async function fetchCodeChefTodaySubmissions(username) {
   }
 }
 
-// Set up midnight reset alarm
+// Set up 4 AM reset alarm
 async function setupDailyResetAlarm() {
-  const midnight = getNextMidnight();
+  const resetTime = getNextResetTime();
   chrome.alarms.create('dailyStatsReset', {
-    when: midnight,
+    when: resetTime,
     periodInMinutes: 1440 // 24 hours
   });
-  console.log('Daily reset alarm set for:', new Date(midnight));
+  console.log('Daily reset alarm set for:', new Date(resetTime));
 }
 
 // ============================================
@@ -3022,6 +3013,10 @@ async function testTimerNotification(url) {
   if (!timerData) {
     return { success: false, error: 'No active timer found for this problem. Please start a timer first.' };
   }
+  
+  // Reset reminderSent flag so we can test the notification multiple times
+  timerData.reminderSent = false;
+  await chrome.storage.local.set({ [timerKey]: timerData });
   
   // Manually trigger the notification
   await handleTimerAlarm(`timer_${generateCacheKey(url)}`);

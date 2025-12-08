@@ -646,143 +646,101 @@
 }
 
 /* ============================================
-   30-MINUTE REMINDER MODAL
+   30-MINUTE REMINDER TOAST NOTIFICATION
    ============================================ */
 
-.lch-timer-modal {
+.lch-timer-toast {
   position: fixed;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.7);
-  backdrop-filter: blur(4px);
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  top: 20px;
+  right: 20px;
   z-index: 100001;
-  animation: modalFadeIn 0.3s ease;
+  max-width: 360px;
+  width: calc(100% - 40px);
+  transform: translateX(calc(100% + 40px));
+  opacity: 0;
+  transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.3s ease;
+  pointer-events: none;
 }
 
-@keyframes modalFadeIn {
-  from {
-    opacity: 0;
-  }
-  to {
-    opacity: 1;
-  }
+.lch-timer-toast.show {
+  transform: translateX(0);
+  opacity: 1;
+  pointer-events: all;
 }
 
-.lch-timer-modal-content {
+.lch-timer-toast-content {
   background: linear-gradient(135deg, var(--lch-bg-primary) 0%, var(--lch-bg-secondary) 100%);
   border: 1px solid var(--lch-border);
-  border-radius: 24px;
-  padding: 40px;
-  text-align: center;
-  max-width: 400px;
-  width: 90%;
+  border-radius: 16px;
+  padding: 16px;
   box-shadow: 
-    0 24px 80px rgba(0, 0, 0, 0.5),
-    0 0 0 1px rgba(255, 255, 255, 0.05) inset;
+    0 12px 40px rgba(0, 0, 0, 0.4),
+    0 0 0 1px rgba(255, 255, 255, 0.05) inset,
+    0 0 0 2px rgba(245, 158, 11, 0.2);
   font-family: var(--lch-font-main);
-  animation: modalPop 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+  backdrop-filter: blur(10px);
 }
 
-@keyframes modalPop {
-  from {
-    opacity: 0;
-    transform: scale(0.9) translateY(20px);
-  }
-  to {
-    opacity: 1;
-    transform: scale(1) translateY(0);
-  }
+.lch-timer-toast-header {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
 }
 
-.lch-timer-modal-icon {
-  font-size: 64px;
-  margin-bottom: 16px;
-  animation: alarmShake 0.5s ease-in-out infinite;
-  filter: drop-shadow(0 0 20px rgba(245, 158, 11, 0.5));
+.lch-timer-toast-icon {
+  font-size: 24px;
+  animation: alarmShake 2s ease-in-out infinite;
+  filter: drop-shadow(0 0 8px rgba(245, 158, 11, 0.4));
+  flex-shrink: 0;
+  margin-top: 2px;
 }
 
 @keyframes alarmShake {
-  0%, 100% { transform: rotate(-5deg); }
-  50% { transform: rotate(5deg); }
+  0%, 100% { transform: rotate(-3deg); }
+  50% { transform: rotate(3deg); }
 }
 
-.lch-timer-modal-title {
-  font-size: 24px;
+.lch-timer-toast-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.lch-timer-toast-title {
+  font-size: 16px;
   font-weight: 700;
   color: var(--lch-warning);
-  margin: 0 0 12px 0;
-  text-shadow: 0 0 20px rgba(245, 158, 11, 0.3);
+  line-height: 1.3;
+  margin: 0 0 4px 0;
 }
 
-.lch-timer-modal-text {
-  font-size: 15px;
+.lch-timer-toast-text {
+  font-size: 13px;
   color: var(--lch-text-secondary);
-  margin: 0 0 24px 0;
-  line-height: 1.6;
+  margin: 0;
+  line-height: 1.5;
 }
 
-.lch-timer-modal-buttons {
-  display: flex;
-  gap: 12px;
-  justify-content: center;
-  margin-bottom: 20px;
-}
-
-.lch-timer-modal-btn {
-  padding: 14px 24px;
+.lch-timer-toast-close-btn {
+  background: transparent;
   border: none;
-  border-radius: 12px;
-  font-size: 14px;
-  font-weight: 700;
+  color: var(--lch-text-muted);
+  font-size: 20px;
+  line-height: 1;
   cursor: pointer;
-  transition: all 0.2s ease;
+  padding: 0;
+  width: 24px;
+  height: 24px;
   display: flex;
   align-items: center;
-  gap: 8px;
-  font-family: var(--lch-font-main);
-}
-
-.lch-timer-modal-btn.hint {
-  background: linear-gradient(135deg, var(--lch-accent) 0%, #8b5cf6 100%);
-  color: white;
-  box-shadow: 0 4px 16px rgba(99, 102, 241, 0.4);
-}
-
-.lch-timer-modal-btn.hint:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 6px 24px rgba(99, 102, 241, 0.5);
-}
-
-.lch-timer-modal-btn.solution {
-  background: linear-gradient(135deg, var(--lch-success) 0%, #059669 100%);
-  color: white;
-  box-shadow: 0 4px 16px rgba(16, 185, 129, 0.4);
-}
-
-.lch-timer-modal-btn.solution:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 6px 24px rgba(16, 185, 129, 0.5);
-}
-
-.lch-timer-modal-close {
-  background: transparent;
-  border: 1px solid var(--lch-border);
-  border-radius: 8px;
-  padding: 10px 20px;
-  font-size: 13px;
-  font-weight: 500;
-  color: var(--lch-text-muted);
-  cursor: pointer;
+  justify-content: center;
+  border-radius: 4px;
   transition: all 0.2s ease;
-  font-family: var(--lch-font-main);
+  flex-shrink: 0;
 }
 
-.lch-timer-modal-close:hover {
-  border-color: var(--lch-text-secondary);
-  color: var(--lch-text-secondary);
+.lch-timer-toast-close-btn:hover {
   background: var(--lch-bg-tertiary);
+  color: var(--lch-text-primary);
 }
 
 /* ============================================

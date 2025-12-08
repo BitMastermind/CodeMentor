@@ -125,14 +125,6 @@ function initTabs() {
     });
   });
 
-  // Settings button opens settings tab
-  document.getElementById('settingsBtn').addEventListener('click', () => {
-    tabs.forEach(t => t.classList.remove('active'));
-    tabContents.forEach(c => c.classList.remove('active'));
-
-    document.querySelector('[data-tab="settings"]').classList.add('active');
-    document.getElementById('settings-tab').classList.add('active');
-  });
 }
 
 // Settings Management

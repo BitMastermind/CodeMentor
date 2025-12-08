@@ -100,6 +100,23 @@
           error: error.message
         }, '*');
       }
+    } else if (event.data && event.data.type === 'LCH_FORWARD_MESSAGE' && event.data.originalMessage) {
+      // Forward any message from page to background script
+      try {
+        const response = await safeSendMessage(event.data.originalMessage);
+        
+        // Send response back to page
+        window.postMessage({
+          type: 'LCH_TEST_RESPONSE',
+          ...response
+        }, '*');
+      } catch (error) {
+        window.postMessage({
+          type: 'LCH_TEST_RESPONSE',
+          success: false,
+          error: error.message
+        }, '*');
+      }
     }
   });
 
@@ -217,44 +234,58 @@
   }
 
   function showTimerReminderModal() {
-    if (document.querySelector('.lch-timer-modal')) return;
+    // Check if toast already exists
+    const existingToast = document.querySelector('.lch-timer-toast');
+    if (existingToast) {
+      existingToast.remove();
+    }
     
-    const modal = document.createElement('div');
-    modal.className = 'lch-timer-modal';
-    modal.innerHTML = `
-      <div class="lch-timer-modal-content">
-        <div class="lch-timer-modal-icon">⏰</div>
-        <h3 class="lch-timer-modal-title">30 Minutes Elapsed!</h3>
-        <p class="lch-timer-modal-text">You've been working on this problem for a while. Consider:</p>
-        <div class="lch-timer-modal-buttons">
-          <button class="lch-timer-modal-btn hint" id="timerHintBtn">💡 Take a Hint</button>
-          <button class="lch-timer-modal-btn solution" id="timerSolutionBtn">📺 Watch Solution</button>
+    const toast = document.createElement('div');
+    toast.className = 'lch-timer-toast';
+    toast.innerHTML = `
+      <div class="lch-timer-toast-content">
+        <div class="lch-timer-toast-header">
+          <div class="lch-timer-toast-icon">⏰</div>
+          <div class="lch-timer-toast-info">
+            <div class="lch-timer-toast-title">30 Minutes Elapsed!</div>
+            <p class="lch-timer-toast-text">Consider taking a hint or viewing the solution</p>
+          </div>
+          <button class="lch-timer-toast-close-btn" id="timerToastClose">×</button>
         </div>
-        <button class="lch-timer-modal-close" id="timerModalClose">Keep Trying</button>
       </div>
     `;
     
-    document.body.appendChild(modal);
+    document.body.appendChild(toast);
     
-    document.getElementById('timerHintBtn').addEventListener('click', () => {
-      modal.remove();
-      if (!panel) createPanel();
-      panel.classList.add('active');
-      loadHints();
+    // Trigger slide-in animation
+    setTimeout(() => {
+      toast.classList.add('show');
+    }, 10);
+    
+    // Auto-dismiss after 8 seconds
+    const autoDismiss = setTimeout(() => {
+      dismissToast();
+    }, 8000);
+    
+    const dismissToast = () => {
+      toast.classList.remove('show');
+      setTimeout(() => {
+        toast.remove();
+      }, 300);
+    };
+    
+    // Add close button listener
+    document.getElementById('timerToastClose').addEventListener('click', () => {
+      clearTimeout(autoDismiss);
+      dismissToast();
     });
     
-    document.getElementById('timerSolutionBtn').addEventListener('click', () => {
-      modal.remove();
-      // Open CodeChef discussions/editorials
-      window.open('https://discuss.codechef.com/', '_blank');
-    });
-    
-    document.getElementById('timerModalClose').addEventListener('click', () => {
-      modal.remove();
-    });
-    
-    modal.addEventListener('click', (e) => {
-      if (e.target === modal) modal.remove();
+    // Click anywhere on toast to dismiss
+    toast.addEventListener('click', (e) => {
+      if (e.target === toast || e.target.closest('.lch-timer-toast-content')) {
+        clearTimeout(autoDismiss);
+        dismissToast();
+      }
     });
   }
 
@@ -857,11 +888,9 @@
     const isQuotaError = message.toLowerCase().includes('quota') || message.toLowerCase().includes('exhausted');
     const isApiKeyError = message.toLowerCase().includes('api key') || message.toLowerCase().includes('not configured');
     
-    let actionButton = '';
-    if (isQuotaError) {
-      actionButton = '<button class="lch-settings-btn" style="margin-top: 8px;">Get New API Key</button>';
-    } else if (isApiKeyError) {
-      actionButton = '<button class="lch-settings-btn" style="margin-top: 8px;">Open Settings</button>';
+    // Make error messages more suggestive without buttons
+    if (isApiKeyError) {
+      message = 'API key not configured. Configure it via the extension icon → Settings tab.';
     }
     
     body.innerHTML = `
@@ -869,17 +898,9 @@
         <div class="lch-error-icon">${isQuotaError ? '⚠️' : '😕'}</div>
         <p class="lch-error-message">${escapeHtml(message)}</p>
         <button class="lch-retry-btn">Try Again</button>
-        ${actionButton}
       </div>`;
     
     body.querySelector('.lch-retry-btn').addEventListener('click', loadHints);
-    
-    if (actionButton) {
-      const actionBtn = body.querySelector('.lch-settings-btn');
-      actionBtn.addEventListener('click', () => {
-        chrome.runtime.sendMessage({ type: 'OPEN_POPUP' });
-      });
-    }
   }
 
   async function showSettingsPrompt() {
@@ -912,8 +933,9 @@
     body.innerHTML = `
       <div class="lch-settings-prompt">
         <div class="lch-settings-icon">🔑</div>
-        <p class="lch-settings-message">Add your OpenAI API key in extension settings.</p>
-        <button class="lch-settings-btn">Open Settings</button>
+        <p class="lch-settings-message">
+          Smart hints require an API key. You can configure it by clicking the extension icon in your browser toolbar and navigating to the Settings tab.
+        </p>
       </div>
       ${currentProblemData ? `
       <div class="lch-actions-section">
@@ -923,10 +945,6 @@
       </div>
       ` : ''}
     `;
-
-    body.querySelector('.lch-settings-btn').addEventListener('click', () => {
-      chrome.runtime.sendMessage({ type: 'OPEN_POPUP' });
-    });
     
     // Add favorite button handler if button exists
     const favoriteBtn = body.querySelector('#favoriteBtn');
