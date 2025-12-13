@@ -16,6 +16,11 @@ chrome.runtime.onInstalled.addListener(async (details) => {
 (async () => {
   console.log('Service worker starting...');
   await ensureStreakDataExists();
+  // Restore contest alarms if contests are already cached
+  const { contests } = await chrome.storage.local.get('contests');
+  if (contests && contests.length > 0) {
+    await updateContestAlarms();
+  }
 })();
 
 // Handle tab close - stop timer when tab is closed
@@ -41,20 +46,32 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
   } else if (alarm.name.startsWith('contest_')) {
     // Contest reminder notification
     const contestId = alarm.name.replace('contest_', '');
+    
+    // Check if notifications are enabled
+    const { notifyContests } = await chrome.storage.sync.get('notifyContests');
+    if (notifyContests === false) {
+      console.log('LC Helper: Contest notifications are disabled');
+      return;
+    }
+    
     const { contests } = await chrome.storage.local.get('contests');
     const contest = contests?.find(c => c.id === contestId);
     
     if (contest) {
+      const reminderMinutes = await getReminderTime();
       chrome.notifications.create(contestId, {
         type: 'basic',
         iconUrl: chrome.runtime.getURL('assets/icon128.png'),
         title: '🏁 Contest Starting Soon!',
-        message: `${contest.name} starts in ${await getReminderTime()} minutes!`,
+        message: `${contest.name} starts in ${reminderMinutes} minutes!`,
         buttons: [{ title: 'Open Contest' }],
         priority: 2
       }).catch((error) => {
         console.error('LC Helper: Failed to create contest notification:', error);
       });
+      console.log('LC Helper: Contest reminder sent for:', contest.name);
+    } else {
+      console.log('LC Helper: Contest not found for reminder:', contestId);
     }
   }
 });
@@ -237,8 +254,12 @@ async function handleMessage(message, sender, sendResponse) {
       break;
 
     case 'GET_API_KEY':
-      const { apiKey } = await chrome.storage.sync.get('apiKey');
-      sendResponse({ apiKey });
+      // Never return the actual API key - only indicate if it exists
+      const { key: apiKeyCheck, error: apiKeyError } = await getApiKeySafely();
+      sendResponse({ 
+        hasApiKey: !!apiKeyCheck,
+        error: apiKeyError || null
+      });
       break;
       
     case 'GET_STREAK_DATA':
@@ -305,7 +326,13 @@ async function handleMessage(message, sender, sendResponse) {
       const testTimerResult = await testTimerNotification(message.url);
       sendResponse(testTimerResult);
       break;
-    
+
+    case 'TEST_SCRAPING_ACCURACY':
+      // Test handler to verify scraping accuracy by asking LLM to reconstruct the problem
+      const testResult = await testScrapingAccuracy(message.problem);
+      sendResponse(testResult);
+      break;
+
     case 'OPEN_POPUP':
       // Open extension popup/settings
       // Since we don't have an options page defined, open the popup HTML in a new tab
@@ -472,7 +499,7 @@ async function fetchLeetCodeContests() {
     
     return [{
       id: 'lc_weekly_mock',
-      name: 'Weekly Contest (Check LeetCode for exact time)',
+      name: 'Weekly Contest',
       platform: 'leetcode',
       url: 'https://leetcode.com/contest/',
       startTime: nextWeekly.toISOString(),
@@ -587,14 +614,18 @@ function parseDuration(durationStr) {
 // Notification management
 async function toggleContestNotification(contestId, enabled) {
   const { notifiedContests = [] } = await chrome.storage.local.get('notifiedContests');
+  const { contests } = await chrome.storage.local.get('contests');
+  const contest = contests?.find(c => c.id === contestId);
   
   let updated;
   if (enabled) {
     updated = [...new Set([...notifiedContests, contestId])];
+    console.log('LC Helper: Enabling reminder for contest:', contest?.name || contestId);
   } else {
     updated = notifiedContests.filter(id => id !== contestId);
     // Remove alarm if disabled
-    chrome.alarms.clear(`contest_${contestId}`);
+    await chrome.alarms.clear(`contest_${contestId}`);
+    console.log('LC Helper: Disabling reminder for contest:', contest?.name || contestId);
   }
   
   await chrome.storage.local.set({ notifiedContests: updated });
@@ -608,16 +639,27 @@ async function setContestAlarm(contestId) {
   const { contests } = await chrome.storage.local.get('contests');
   const contest = contests?.find(c => c.id === contestId);
   
-  if (!contest) return;
+  if (!contest) {
+    console.log('LC Helper: Contest not found for alarm:', contestId);
+    return;
+  }
   
   const reminderMinutes = await getReminderTime();
   const startTime = new Date(contest.startTime).getTime();
   const alarmTime = startTime - (reminderMinutes * 60 * 1000);
   
   if (alarmTime > Date.now()) {
-    chrome.alarms.create(`contest_${contestId}`, {
-      when: alarmTime
-    });
+    try {
+      await chrome.alarms.create(`contest_${contestId}`, {
+        when: alarmTime
+      });
+      const alarmDate = new Date(alarmTime);
+      console.log('LC Helper: Contest alarm set for', contest.name, 'at', alarmDate.toLocaleString());
+    } catch (error) {
+      console.error('LC Helper: Failed to create contest alarm:', error);
+    }
+  } else {
+    console.log('LC Helper: Cannot set alarm for', contest.name, '- alarm time is in the past');
   }
 }
 
@@ -634,7 +676,78 @@ async function getReminderTime() {
   return parseInt(reminderTime) || 30;
 }
 
-// AI Hints Generation with Caching
+// Backend API Configuration
+// Update this to your production backend URL when deploying
+const API_BASE_URL = 'http://localhost:3000/api/v1'; // Change to https://api.lchelper.com/api/v1 for production
+
+// Generate hints via backend service
+async function generateHintsViaService(problem, platform) {
+  try {
+    const { authToken } = await chrome.storage.sync.get('authToken');
+    
+    if (!authToken) {
+      return { 
+        error: 'Not authenticated. Please login in settings.',
+        requiresAuth: true 
+      };
+    }
+    
+    const response = await fetch(`${API_BASE_URL}/hints/generate`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${authToken}`
+      },
+      body: JSON.stringify({
+        problem: problem,
+        platform: platform
+      })
+    });
+    
+    if (response.status === 401) {
+      // Token expired or invalid
+      await chrome.storage.sync.remove('authToken');
+      return { 
+        error: 'Session expired. Please login again.',
+        requiresAuth: true 
+      };
+    }
+    
+    if (response.status === 402) {
+      // Subscription expired
+      return { 
+        error: 'Subscription expired. Please renew your subscription.',
+        requiresPayment: true 
+      };
+    }
+    
+    if (response.status === 429) {
+      // Rate limited
+      const retryAfter = response.headers.get('Retry-After') || '60';
+      return { 
+        error: 'Rate limit exceeded. Please try again later.',
+        retryAfter: parseInt(retryAfter)
+      };
+    }
+    
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      return { 
+        error: errorData.message || 'Service unavailable. Please try again later.'
+      };
+    }
+    
+    const data = await response.json();
+    return data;
+  } catch (error) {
+    console.error('LC Helper: Service error:', error);
+    return { 
+      error: 'Service unavailable. Please check your connection or try again later.'
+    };
+  }
+}
+
+// AI Hints Generation with Caching and Hybrid Mode
 async function generateHints(problem) {
   // Generate cache key from problem URL or title
   const cacheKey = `hints_${generateCacheKey(problem.url || problem.title)}`;
@@ -662,34 +775,85 @@ async function generateHints(problem) {
     // Future: add more interview-focused platforms (gfg, etc.) here
   }
   
-  const { apiKey, apiProvider } = await chrome.storage.sync.get(['apiKey', 'apiProvider']);
+  // Check service mode
+  const { serviceMode } = await chrome.storage.sync.get('serviceMode');
   
-  if (!apiKey) {
-    return { error: 'API key not configured. Add your API key in settings.' };
-  }
-  
-  const provider = apiProvider || 'gemini';
-  let result;
-  
-  if (provider === 'gemini') {
-    result = await generateHintsGemini(problem, apiKey, platform);
+  if (serviceMode === 'lch-service') {
+    // Use backend service
+    const result = await generateHintsViaService(problem, platform);
+    
+    // Cache the result if successful
+    if (result && !result.error) {
+      const cacheData = {
+        ...result,
+        cachedAt: Date.now(),
+        problemTitle: problem.title,
+        problemUrl: problem.url
+      };
+      await chrome.storage.local.set({ [cacheKey]: cacheData });
+      console.log('Cached hints from service for:', problem.title);
+    }
+    
+    return result;
   } else {
-    result = await generateHintsOpenAI(problem, apiKey, platform);
+    // Use BYOK (Bring Your Own Key) mode
+    const { key: apiKey, provider: apiProvider, error } = await getApiKeySafely();
+    
+    if (error || !apiKey) {
+      return { error: error || 'API key not configured. Add your API key in settings.' };
+    }
+    
+    const provider = apiProvider;
+    let result;
+    
+    if (provider === 'gemini') {
+      result = await generateHintsGemini(problem, apiKey, platform);
+    } else if (provider === 'claude') {
+      result = await generateHintsClaude(problem, apiKey, platform);
+    } else if (provider === 'groq') {
+      result = await generateHintsGroq(problem, apiKey, platform);
+    } else if (provider === 'together') {
+      result = await generateHintsTogether(problem, apiKey, platform);
+    } else if (provider === 'huggingface') {
+      result = await generateHintsHuggingFace(problem, apiKey, platform);
+    } else {
+      // Default to OpenAI
+      result = await generateHintsOpenAI(problem, apiKey, platform);
+    }
+    
+    // Cache the result if successful
+    if (result && !result.error) {
+      const cacheData = {
+        ...result,
+        cachedAt: Date.now(),
+        problemTitle: problem.title,
+        problemUrl: problem.url
+      };
+      await chrome.storage.local.set({ [cacheKey]: cacheData });
+      console.log('Cached hints for:', problem.title);
+    }
+    
+    return result;
   }
-  
-  // Cache the result if successful
-  if (result && !result.error) {
-    const cacheData = {
-      ...result,
-      cachedAt: Date.now(),
-      problemTitle: problem.title,
-      problemUrl: problem.url
-    };
-    await chrome.storage.local.set({ [cacheKey]: cacheData });
-    console.log('Cached hints for:', problem.title);
+}
+
+// Safe API Key Retrieval - Never logs the actual key
+async function getApiKeySafely() {
+  try {
+    const { apiKey, apiProvider } = await chrome.storage.sync.get(['apiKey', 'apiProvider']);
+    
+    if (!apiKey) {
+      return { key: null, provider: null, error: 'API key not configured. Add your API key in settings.' };
+    }
+    
+    // Never log the actual key - only log that it exists and its length
+    console.log('LC Helper: Using API key (provider: ' + (apiProvider || 'gemini') + ', length: ' + apiKey.length + ')');
+    
+    return { key: apiKey, provider: apiProvider || 'gemini' };
+  } catch (error) {
+    console.error('LC Helper: Error retrieving API key:', error.message);
+    return { key: null, provider: null, error: 'Failed to retrieve API key' };
   }
-  
-  return result;
 }
 
 // Generate consistent cache key from URL or title
@@ -702,6 +866,70 @@ function generateCacheKey(input) {
     .toLowerCase()
     .slice(0, 100); // Limit length
   return normalized;
+}
+
+// Explain problem via backend service
+async function explainProblemViaService(problem, platform) {
+  try {
+    const { authToken } = await chrome.storage.sync.get('authToken');
+    
+    if (!authToken) {
+      return { 
+        error: 'Not authenticated. Please login in settings.',
+        requiresAuth: true 
+      };
+    }
+    
+    const response = await fetch(`${API_BASE_URL}/hints/explain`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${authToken}`
+      },
+      body: JSON.stringify({
+        problem: problem,
+        platform: platform
+      })
+    });
+    
+    if (response.status === 401) {
+      await chrome.storage.sync.remove('authToken');
+      return { 
+        error: 'Session expired. Please login again.',
+        requiresAuth: true 
+      };
+    }
+    
+    if (response.status === 402) {
+      return { 
+        error: 'Subscription expired. Please renew your subscription.',
+        requiresPayment: true 
+      };
+    }
+    
+    if (response.status === 429) {
+      const retryAfter = response.headers.get('Retry-After') || '60';
+      return { 
+        error: 'Rate limit exceeded. Please try again later.',
+        retryAfter: parseInt(retryAfter)
+      };
+    }
+    
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      return { 
+        error: errorData.message || 'Service unavailable. Please try again later.'
+      };
+    }
+    
+    const data = await response.json();
+    return data;
+  } catch (error) {
+    console.error('LC Helper: Service error:', error);
+    return { 
+      error: 'Service unavailable. Please check your connection or try again later.'
+    };
+  }
 }
 
 // Explain problem in simpler terms
@@ -727,34 +955,66 @@ async function explainProblem(problem) {
     }
   }
   
-  const { apiKey, apiProvider } = await chrome.storage.sync.get(['apiKey', 'apiProvider']);
+  // Check service mode
+  const { serviceMode } = await chrome.storage.sync.get('serviceMode');
   
-  if (!apiKey) {
-    return { error: 'API key not configured. Add your API key in settings.' };
-  }
-  
-  const provider = apiProvider || 'gemini';
-  let result;
-  
-  if (provider === 'gemini') {
-    result = await explainProblemGemini(problem, apiKey, platform);
+  if (serviceMode === 'lch-service') {
+    // Use backend service
+    const result = await explainProblemViaService(problem, platform);
+    
+    // Cache the result if successful
+    if (result && !result.error) {
+      const cacheData = {
+        ...result,
+        cachedAt: Date.now(),
+        problemTitle: problem.title,
+        problemUrl: problem.url
+      };
+      await chrome.storage.local.set({ [cacheKey]: cacheData });
+      console.log('Cached explanation from service for:', problem.title);
+    }
+    
+    return result;
   } else {
-    result = await explainProblemOpenAI(problem, apiKey, platform);
+    // Use BYOK mode
+    const { key: apiKey, provider: apiProvider, error } = await getApiKeySafely();
+    
+    if (error || !apiKey) {
+      return { error: error || 'API key not configured. Add your API key in settings.' };
+    }
+    
+    const provider = apiProvider;
+    let result;
+    
+    if (provider === 'gemini') {
+      result = await explainProblemGemini(problem, apiKey, platform);
+    } else if (provider === 'claude') {
+      result = await explainProblemClaude(problem, apiKey, platform);
+    } else if (provider === 'groq') {
+      result = await explainProblemGroq(problem, apiKey, platform);
+    } else if (provider === 'together') {
+      result = await explainProblemTogether(problem, apiKey, platform);
+    } else if (provider === 'huggingface') {
+      result = await explainProblemHuggingFace(problem, apiKey, platform);
+    } else {
+      // Default to OpenAI
+      result = await explainProblemOpenAI(problem, apiKey, platform);
+    }
+    
+    // Cache the result if successful
+    if (result && !result.error) {
+      const cacheData = {
+        ...result,
+        cachedAt: Date.now(),
+        problemTitle: problem.title,
+        problemUrl: problem.url
+      };
+      await chrome.storage.local.set({ [cacheKey]: cacheData });
+      console.log('Cached explanation for:', problem.title);
+    }
+    
+    return result;
   }
-  
-  // Cache the result if successful
-  if (result && !result.error) {
-    const cacheData = {
-      ...result,
-      cachedAt: Date.now(),
-      problemTitle: problem.title,
-      problemUrl: problem.url
-    };
-    await chrome.storage.local.set({ [cacheKey]: cacheData });
-    console.log('Cached explanation for:', problem.title);
-  }
-  
-  return result;
 }
 
 async function explainProblemGemini(problem, apiKey, platform = 'codeforces') {
@@ -946,13 +1206,19 @@ ${existingTags ? `**Tags:** ${existingTags}` : ''}
 
 ${problem.constraints ? `**Constraints:** ${problem.constraints}` : ''}
 
-**Problem Description:**
+${problem.html ? `**Problem Statement (HTML with LaTeX math notation):**
+
+The problem statement is provided as HTML below. It contains LaTeX mathematical notation embedded in <script type="math/tex"> tags. Modern LLMs can parse this HTML and LaTeX notation naturally.
+
+${problem.html}
+
+**Note:** The HTML above contains the complete problem statement with all formatting and mathematical notation preserved. Parse the LaTeX math expressions (in <script type="math/tex"> tags) to understand the mathematical content.` : `**Problem Description:**
 
 ${problem.description}
 
 ${problem.inputFormat ? `**Input Format:**\n${problem.inputFormat}` : ''}
 
-${problem.outputFormat ? `**Output Format:**\n${problem.outputFormat}` : ''}
+${problem.outputFormat ? `**Output Format:**\n${problem.outputFormat}` : ''}`}
 
 ${examplesText}
 
@@ -1090,17 +1356,48 @@ Now provide your explanation as JSON:`;
 
     const parts = [{ text: prompt }];
     
-    if (problem.hasImages && problem.imageData) {
-      const matches = problem.imageData.match(/^data:([^;]+);base64,(.+)$/);
-      const mimeType = matches ? matches[1] : 'image/jpeg';
-      const base64Data = matches ? matches[2] : problem.imageData;
+    // Handle images - support both imageData (base64) and imageUrls (URLs)
+    if (problem.hasImages) {
+      let base64Data = null;
+      let mimeType = 'image/jpeg';
       
-      parts.push({
-        inline_data: {
-          mime_type: mimeType,
-          data: base64Data
+      // Priority 1: Use imageData (base64 from DOM scraping) if available
+      if (problem.imageData) {
+        const matches = problem.imageData.match(/^data:([^;]+);base64,(.+)$/);
+        mimeType = matches ? matches[1] : 'image/jpeg';
+        base64Data = matches ? matches[2] : problem.imageData;
+      }
+      // Priority 2: Fetch image URLs and convert to base64
+      else if (problem.imageUrls && problem.imageUrls.length > 0) {
+        // Use the first image URL (Gemini can handle multiple, but we'll start with one)
+        try {
+          const imageUrl = problem.imageUrls[0].url;
+          const imageResponse = await fetch(imageUrl);
+          const imageBlob = await imageResponse.blob();
+          mimeType = imageBlob.type || 'image/jpeg';
+          base64Data = await new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onloadend = () => {
+              const base64 = reader.result.split(',')[1]; // Remove data URL prefix
+              resolve(base64);
+            };
+            reader.onerror = reject;
+            reader.readAsDataURL(imageBlob);
+          });
+        } catch (e) {
+          console.error('LC Helper: Failed to fetch image for Gemini:', e);
+          // Continue without image if fetch fails
         }
-      });
+      }
+      
+      if (base64Data) {
+        parts.push({
+          inline_data: {
+            mime_type: mimeType,
+            data: base64Data
+          }
+        });
+      }
     }
 
     const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`, {
@@ -1269,11 +1566,18 @@ ${problem.difficulty ? `**Difficulty:** ${problem.difficulty}` : ''}
 ${problem.tags ? `**Tags:** ${problem.tags}` : ''}
 ${problem.constraints ? `**Constraints:**\n${problem.constraints}` : ''}
 
-**Problem Description:**
+${problem.html ? `**Problem Statement (HTML with LaTeX math notation):**
+
+The problem statement is provided as HTML below. It contains LaTeX mathematical notation embedded in <script type="math/tex"> tags. Modern LLMs can parse this HTML and LaTeX notation naturally.
+
+${problem.html}
+
+**Note:** The HTML above contains the complete problem statement with all formatting and mathematical notation preserved. Parse the LaTeX math expressions (in <script type="math/tex"> tags) to understand the mathematical content.` : `**Problem Description:**
 ${problem.description}
 
 ${problem.inputFormat ? `**Input Format:**\n${problem.inputFormat}` : ''}
-${problem.outputFormat ? `**Output Format:**\n${problem.outputFormat}` : ''}
+${problem.outputFormat ? `**Output Format:**\n${problem.outputFormat}` : ''}`}
+
 ${examplesText}
 
 ═══════════════════════════════════════════════════════════════
@@ -1769,7 +2073,7 @@ CRITICAL RULES
 
 - Do NOT reveal formulae, transitions, or constructions.
 
-- Do NOT mention explicit algorithm names in Hints 1–2.
+- Do NOT mention explicit algorithm names in Hints 1,2.
 
 
 
@@ -1800,10 +2104,18 @@ NOW ANALYZE THIS ${difficulty.toUpperCase()} PROBLEM:
 Title: ${problem.title}
 ${existingTags ? `Platform Tags: ${existingTags}` : ''}
 Constraints: ${problem.constraints || 'Not specified'}
-Description: ${problem.description}
-${problem.examples ? `\n\nSample Test Cases:\n${problem.examples}` : ''}
+
+${problem.html ? `**Problem Statement (HTML with LaTeX math notation):**
+
+The problem statement is provided as HTML below. It contains LaTeX mathematical notation embedded in <script type="math/tex"> tags. Modern LLMs can parse this HTML and LaTeX notation naturally.
+
+${problem.html}
+
+**Note:** The HTML above contains the complete problem statement with all formatting and mathematical notation preserved. Parse the LaTeX math expressions (in <script type="math/tex"> tags) to understand the mathematical content.` : `Description: ${problem.description}
 ${problem.inputFormat ? `\n\nInput Format:\n${problem.inputFormat}` : ''}
-${problem.outputFormat ? `\n\nOutput Format:\n${problem.outputFormat}` : ''}
+${problem.outputFormat ? `\n\nOutput Format:\n${problem.outputFormat}` : ''}`}
+
+${problem.examples ? `\n\nSample Test Cases:\n${problem.examples}` : ''}
 
 ${problem.hasImages ? 'Note: This problem includes images/graphs in the problem statement. Analyze them carefully along with the text description.' : ''}
 ${problem.examples ? '\nIMPORTANT: Use the sample test cases to verify your understanding. The hints should guide toward a solution that works for these examples.' : ''}
@@ -1835,18 +2147,49 @@ Now generate the hints as JSON.`;
     // Build parts array - include image if available
     const parts = [{ text: prompt }];
     
-    if (problem.hasImages && problem.imageData) {
-      // Extract base64 data and mime type from data URL
-      const matches = problem.imageData.match(/^data:([^;]+);base64,(.+)$/);
-      const mimeType = matches ? matches[1] : 'image/jpeg';
-      const base64Data = matches ? matches[2] : problem.imageData;
+    // Handle images - support both imageData (base64) and imageUrls (URLs)
+    if (problem.hasImages) {
+      let base64Data = null;
+      let mimeType = 'image/jpeg';
       
-      parts.push({
-        inline_data: {
-          mime_type: mimeType,
-          data: base64Data
+      // Priority 1: Use imageData (base64 from DOM scraping) if available
+      if (problem.imageData) {
+        // Extract base64 data and mime type from data URL
+        const matches = problem.imageData.match(/^data:([^;]+);base64,(.+)$/);
+        mimeType = matches ? matches[1] : 'image/jpeg';
+        base64Data = matches ? matches[2] : problem.imageData;
+      }
+      // Priority 2: Fetch image URLs and convert to base64
+      else if (problem.imageUrls && problem.imageUrls.length > 0) {
+        // Use the first image URL (Gemini can handle multiple, but we'll start with one)
+        try {
+          const imageUrl = problem.imageUrls[0].url;
+          const imageResponse = await fetch(imageUrl);
+          const imageBlob = await imageResponse.blob();
+          mimeType = imageBlob.type || 'image/jpeg';
+          base64Data = await new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onloadend = () => {
+              const base64 = reader.result.split(',')[1]; // Remove data URL prefix
+              resolve(base64);
+            };
+            reader.onerror = reject;
+            reader.readAsDataURL(imageBlob);
+          });
+        } catch (e) {
+          console.error('LC Helper: Failed to fetch image for Gemini:', e);
+          // Continue without image if fetch fails
         }
-      });
+      }
+      
+      if (base64Data) {
+        parts.push({
+          inline_data: {
+            mime_type: mimeType,
+            data: base64Data
+          }
+        });
+      }
     }
 
     const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`, {
@@ -1892,8 +2235,9 @@ Now generate the hints as JSON.`;
 
 async function generateHintsOpenAI(problem, apiKey, platform = 'codeforces') {
   try {
-    // Use gpt-4o for vision support if images are present, otherwise use gpt-4o-mini
-    const model = (problem.hasImages && problem.imageData) ? 'gpt-4o' : 'gpt-4o-mini';
+    // Use gpt-4o for vision support if images are present (either imageData or imageUrls), otherwise use gpt-4o-mini
+    const hasImages = (problem.hasImages && (problem.imageData || (problem.imageUrls && problem.imageUrls.length > 0)));
+    const model = hasImages ? 'gpt-4o' : 'gpt-4o-mini';
     
     const difficulty = problem.difficulty || 'Unknown';
     const existingTags = problem.tags || '';
@@ -1990,10 +2334,18 @@ ${problem.hasImages ? 'Note: This problem includes images/graphs. Analyze them c
 Title: ${problem.title}
 ${existingTags ? `Platform Tags: ${existingTags}` : ''}
 Constraints: ${problem.constraints || 'Not specified'}
-Description: ${problem.description}
-${problem.examples ? `\n\nSample Test Cases:\n${problem.examples}` : ''}
+
+${problem.html ? `**Problem Statement (HTML with LaTeX math notation):**
+
+The problem statement is provided as HTML below. It contains LaTeX mathematical notation embedded in <script type="math/tex"> tags. Modern LLMs can parse this HTML and LaTeX notation naturally.
+
+${problem.html}
+
+**Note:** The HTML above contains the complete problem statement with all formatting and mathematical notation preserved. Parse the LaTeX math expressions (in <script type="math/tex"> tags) to understand the mathematical content.` : `Description: ${problem.description}
 ${problem.inputFormat ? `\n\nInput Format:\n${problem.inputFormat}` : ''}
-${problem.outputFormat ? `\n\nOutput Format:\n${problem.outputFormat}` : ''}
+${problem.outputFormat ? `\n\nOutput Format:\n${problem.outputFormat}` : ''}`}
+
+${problem.examples ? `\n\nSample Test Cases:\n${problem.examples}` : ''}
 
 ${problem.examples ? 'IMPORTANT: Use the sample test cases to verify your understanding. The hints should guide toward a solution that works for these examples.' : ''}
 
@@ -2039,15 +2391,30 @@ Remember: DO NOT give the solution, code, or exact data structures. Guide the us
       }
     ];
 
-    // Add image if present
-    if (problem.hasImages && problem.imageData) {
-      // OpenAI accepts the full data URL directly
-      userContent.push({
-        type: 'image_url',
-        image_url: {
-          url: problem.imageData
+    // Add images if present - support both imageData (base64) and imageUrls (URLs)
+    if (problem.hasImages) {
+      // Priority 1: Use imageData (base64 from DOM scraping) if available
+      if (problem.imageData) {
+        // OpenAI accepts the full data URL directly
+        userContent.push({
+          type: 'image_url',
+          image_url: {
+            url: problem.imageData
+          }
+        });
+      }
+      // Priority 2: Use imageUrls (from GraphQL API) if available
+      else if (problem.imageUrls && problem.imageUrls.length > 0) {
+        // Add all image URLs to the content
+        for (const img of problem.imageUrls) {
+          userContent.push({
+            type: 'image_url',
+            image_url: {
+              url: img.url
+            }
+          });
         }
-      });
+      }
     }
 
     const response = await fetch('https://api.openai.com/v1/chat/completions', {
@@ -2093,6 +2460,467 @@ Remember: DO NOT give the solution, code, or exact data structures. Guide the us
     console.error('Error generating hints with OpenAI:', error);
     const friendlyError = formatApiError(error.message, 'openai');
     return { error: friendlyError };
+  }
+}
+
+// ============================================
+// CLAUDE (ANTHROPIC) HINTS GENERATION
+// ============================================
+
+async function generateHintsClaude(problem, apiKey, platform = 'codeforces') {
+  try {
+    const difficulty = problem.difficulty || 'Unknown';
+    const existingTags = problem.tags || '';
+    
+    const systemPrompt = platform === 'leetcode' 
+      ? 'You are a world-class LeetCode interview coach. Provide three progressive hints without revealing the solution.'
+      : 'You are a world-class competitive programming coach. Provide three progressive hints without revealing the solution.';
+    
+    const userPrompt = `Analyze this problem and generate three progressive hints:
+
+Title: ${problem.title}
+${existingTags ? `Tags: ${existingTags}` : ''}
+Difficulty: ${difficulty}
+Constraints: ${problem.constraints || 'Not specified'}
+Description: ${problem.description}
+${problem.examples ? `\n\nExamples:\n${problem.examples}` : ''}
+
+Return JSON:
+{
+  "hints": {
+    "gentle": "Hint 1 (understanding + observations)...",
+    "stronger": "Hint 2 (structural insight)...",
+    "almost": "Hint 3 (high-level direction)..."
+  },
+  "topic": "Topic classification",
+  "timeComplexity": "Time complexity analysis",
+  "spaceComplexity": "Space complexity analysis"
+}`;
+
+    const response = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01'
+      },
+      body: JSON.stringify({
+        model: 'claude-3-5-sonnet-20241022',
+        max_tokens: 2048,
+        system: systemPrompt,
+        messages: [{
+          role: 'user',
+          content: userPrompt
+        }]
+      })
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData.error?.message || `HTTP ${response.status}`);
+    }
+
+    const data = await response.json();
+    const content = data.content[0].text;
+    
+    const jsonMatch = content.match(/\{[\s\S]*\}/);
+    if (jsonMatch) {
+      return JSON.parse(jsonMatch[0]);
+    }
+    
+    return { error: 'Failed to parse response. Please try again.' };
+  } catch (error) {
+    console.error('Error generating hints with Claude:', error);
+    const friendlyError = formatApiError(error.message, 'claude');
+    return { error: friendlyError };
+  }
+}
+
+async function explainProblemClaude(problem, apiKey, platform = 'codeforces') {
+  try {
+    const prompt = `Explain this problem in simpler terms:
+
+Title: ${problem.title}
+Description: ${problem.description}
+${problem.examples ? `\nExamples:\n${problem.examples}` : ''}
+
+Provide a clear explanation with key concepts and approach.`;
+
+    const response = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01'
+      },
+      body: JSON.stringify({
+        model: 'claude-3-5-sonnet-20241022',
+        max_tokens: 2048,
+        messages: [{
+          role: 'user',
+          content: prompt
+        }]
+      })
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData.error?.message || `HTTP ${response.status}`);
+    }
+
+    const data = await response.json();
+    const explanation = data.content[0].text;
+    
+    return {
+      explanation: explanation,
+      keyConcepts: [],
+      examples: [],
+      approach: ''
+    };
+  } catch (error) {
+    console.error('Error explaining problem with Claude:', error);
+    return { error: formatApiError(error.message, 'claude') };
+  }
+}
+
+// ============================================
+// GROQ (FREE TIER) HINTS GENERATION
+// ============================================
+
+async function generateHintsGroq(problem, apiKey, platform = 'codeforces') {
+  try {
+    const difficulty = problem.difficulty || 'Unknown';
+    const existingTags = problem.tags || '';
+    
+    const systemPrompt = platform === 'leetcode' 
+      ? 'You are a world-class LeetCode interview coach. Provide three progressive hints without revealing the solution.'
+      : 'You are a world-class competitive programming coach. Provide three progressive hints without revealing the solution.';
+    
+    const userPrompt = `Analyze this problem and generate three progressive hints:
+
+Title: ${problem.title}
+${existingTags ? `Tags: ${existingTags}` : ''}
+Difficulty: ${difficulty}
+Description: ${problem.description}
+${problem.examples ? `\n\nExamples:\n${problem.examples}` : ''}
+
+Return JSON:
+{
+  "hints": {
+    "gentle": "Hint 1...",
+    "stronger": "Hint 2...",
+    "almost": "Hint 3..."
+  },
+  "topic": "Topic",
+  "timeComplexity": "Time complexity",
+  "spaceComplexity": "Space complexity"
+}`;
+
+    const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiKey}`
+      },
+      body: JSON.stringify({
+        model: 'llama-3.1-70b-versatile',
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: userPrompt }
+        ],
+        temperature: 0.7,
+        max_tokens: 2048
+      })
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData.error?.message || `HTTP ${response.status}`);
+    }
+
+    const data = await response.json();
+    const content = data.choices[0].message.content;
+    
+    const jsonMatch = content.match(/\{[\s\S]*\}/);
+    if (jsonMatch) {
+      return JSON.parse(jsonMatch[0]);
+    }
+    
+    return { error: 'Failed to parse response. Please try again.' };
+  } catch (error) {
+    console.error('Error generating hints with Groq:', error);
+    return { error: formatApiError(error.message, 'groq') };
+  }
+}
+
+async function explainProblemGroq(problem, apiKey, platform = 'codeforces') {
+  try {
+    const prompt = `Explain this problem in simpler terms:
+
+Title: ${problem.title}
+Description: ${problem.description}
+${problem.examples ? `\nExamples:\n${problem.examples}` : ''}`;
+
+    const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiKey}`
+      },
+      body: JSON.stringify({
+        model: 'llama-3.1-70b-versatile',
+        messages: [
+          { role: 'user', content: prompt }
+        ],
+        temperature: 0.7,
+        max_tokens: 2048
+      })
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData.error?.message || `HTTP ${response.status}`);
+    }
+
+    const data = await response.json();
+    const explanation = data.choices[0].message.content;
+    
+    return {
+      explanation: explanation,
+      keyConcepts: [],
+      examples: [],
+      approach: ''
+    };
+  } catch (error) {
+    console.error('Error explaining problem with Groq:', error);
+    return { error: formatApiError(error.message, 'groq') };
+  }
+}
+
+// ============================================
+// TOGETHER AI (FREE TIER) HINTS GENERATION
+// ============================================
+
+async function generateHintsTogether(problem, apiKey, platform = 'codeforces') {
+  try {
+    const difficulty = problem.difficulty || 'Unknown';
+    const existingTags = problem.tags || '';
+    
+    const systemPrompt = platform === 'leetcode' 
+      ? 'You are a world-class LeetCode interview coach. Provide three progressive hints without revealing the solution.'
+      : 'You are a world-class competitive programming coach. Provide three progressive hints without revealing the solution.';
+    
+    const userPrompt = `Analyze this problem and generate three progressive hints:
+
+Title: ${problem.title}
+${existingTags ? `Tags: ${existingTags}` : ''}
+Difficulty: ${difficulty}
+Description: ${problem.description}
+${problem.examples ? `\n\nExamples:\n${problem.examples}` : ''}
+
+Return JSON:
+{
+  "hints": {
+    "gentle": "Hint 1...",
+    "stronger": "Hint 2...",
+    "almost": "Hint 3..."
+  },
+  "topic": "Topic",
+  "timeComplexity": "Time complexity",
+  "spaceComplexity": "Space complexity"
+}`;
+
+    const response = await fetch('https://api.together.xyz/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiKey}`
+      },
+      body: JSON.stringify({
+        model: 'meta-llama/Llama-3.1-70B-Instruct-Turbo',
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: userPrompt }
+        ],
+        temperature: 0.7,
+        max_tokens: 2048
+      })
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData.error?.message || `HTTP ${response.status}`);
+    }
+
+    const data = await response.json();
+    const content = data.choices[0].message.content;
+    
+    const jsonMatch = content.match(/\{[\s\S]*\}/);
+    if (jsonMatch) {
+      return JSON.parse(jsonMatch[0]);
+    }
+    
+    return { error: 'Failed to parse response. Please try again.' };
+  } catch (error) {
+    console.error('Error generating hints with Together AI:', error);
+    return { error: formatApiError(error.message, 'together') };
+  }
+}
+
+async function explainProblemTogether(problem, apiKey, platform = 'codeforces') {
+  try {
+    const prompt = `Explain this problem in simpler terms:
+
+Title: ${problem.title}
+Description: ${problem.description}
+${problem.examples ? `\nExamples:\n${problem.examples}` : ''}`;
+
+    const response = await fetch('https://api.together.xyz/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiKey}`
+      },
+      body: JSON.stringify({
+        model: 'meta-llama/Llama-3.1-70B-Instruct-Turbo',
+        messages: [
+          { role: 'user', content: prompt }
+        ],
+        temperature: 0.7,
+        max_tokens: 2048
+      })
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData.error?.message || `HTTP ${response.status}`);
+    }
+
+    const data = await response.json();
+    const explanation = data.choices[0].message.content;
+    
+    return {
+      explanation: explanation,
+      keyConcepts: [],
+      examples: [],
+      approach: ''
+    };
+  } catch (error) {
+    console.error('Error explaining problem with Together AI:', error);
+    return { error: formatApiError(error.message, 'together') };
+  }
+}
+
+// ============================================
+// HUGGING FACE (FREE TIER) HINTS GENERATION
+// ============================================
+
+async function generateHintsHuggingFace(problem, apiKey, platform = 'codeforces') {
+  try {
+    const difficulty = problem.difficulty || 'Unknown';
+    const existingTags = problem.tags || '';
+    
+    const systemPrompt = platform === 'leetcode' 
+      ? 'You are a world-class LeetCode interview coach. Provide three progressive hints without revealing the solution.'
+      : 'You are a world-class competitive programming coach. Provide three progressive hints without revealing the solution.';
+    
+    const userPrompt = `Analyze this problem and generate three progressive hints:
+
+Title: ${problem.title}
+${existingTags ? `Tags: ${existingTags}` : ''}
+Difficulty: ${difficulty}
+Description: ${problem.description}
+${problem.examples ? `\n\nExamples:\n${problem.examples}` : ''}
+
+Return JSON:
+{
+  "hints": {
+    "gentle": "Hint 1...",
+    "stronger": "Hint 2...",
+    "almost": "Hint 3..."
+  },
+  "topic": "Topic",
+  "timeComplexity": "Time complexity",
+  "spaceComplexity": "Space complexity"
+}`;
+
+    const response = await fetch('https://api-inference.huggingface.co/models/meta-llama/Meta-Llama-3.1-70B-Instruct', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiKey}`
+      },
+      body: JSON.stringify({
+        inputs: `<|system|>\n${systemPrompt}\n<|user|>\n${userPrompt}\n<|assistant|>\n`,
+        parameters: {
+          temperature: 0.7,
+          max_new_tokens: 2048,
+          return_full_text: false
+        }
+      })
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData.error || `HTTP ${response.status}`);
+    }
+
+    const data = await response.json();
+    const content = Array.isArray(data) ? data[0].generated_text : data.generated_text;
+    
+    const jsonMatch = content.match(/\{[\s\S]*\}/);
+    if (jsonMatch) {
+      return JSON.parse(jsonMatch[0]);
+    }
+    
+    return { error: 'Failed to parse response. Please try again.' };
+  } catch (error) {
+    console.error('Error generating hints with Hugging Face:', error);
+    return { error: formatApiError(error.message, 'huggingface') };
+  }
+}
+
+async function explainProblemHuggingFace(problem, apiKey, platform = 'codeforces') {
+  try {
+    const prompt = `Explain this problem in simpler terms:
+
+Title: ${problem.title}
+Description: ${problem.description}
+${problem.examples ? `\nExamples:\n${problem.examples}` : ''}`;
+
+    const response = await fetch('https://api-inference.huggingface.co/models/meta-llama/Meta-Llama-3.1-70B-Instruct', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiKey}`
+      },
+      body: JSON.stringify({
+        inputs: `<|user|>\n${prompt}\n<|assistant|>\n`,
+        parameters: {
+          temperature: 0.7,
+          max_new_tokens: 2048,
+          return_full_text: false
+        }
+      })
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData.error || `HTTP ${response.status}`);
+    }
+
+    const data = await response.json();
+    const explanation = Array.isArray(data) ? data[0].generated_text : data.generated_text;
+    
+    return {
+      explanation: explanation,
+      keyConcepts: [],
+      examples: [],
+      approach: ''
+    };
+  } catch (error) {
+    console.error('Error explaining problem with Hugging Face:', error);
+    return { error: formatApiError(error.message, 'huggingface') };
   }
 }
 
@@ -2900,21 +3728,88 @@ async function setupDailyResetAlarm() {
 }
 
 // ============================================
-// FAVORITES SYSTEM
+// FAVORITES SYSTEM (Hybrid: Backend + Local)
 // ============================================
 
 async function getFavorites() {
+  const { authToken } = await chrome.storage.sync.get('authToken');
+  
+  // If authenticated, try to get from backend first
+  if (authToken) {
+    try {
+      const response = await fetch(`${API_BASE_URL}/favorites`, {
+        headers: { 'Authorization': `Bearer ${authToken}` }
+      });
+      
+      if (response.ok) {
+        const data = await response.json();
+        // Sync to local storage for offline access
+        await chrome.storage.local.set({ favorites: data.favorites || [] });
+        return data.favorites || [];
+      } else if (response.status === 401) {
+        // Token expired, remove it
+        await chrome.storage.sync.remove('authToken');
+      }
+    } catch (error) {
+      console.log('LC Helper: Failed to fetch favorites from backend, using local:', error.message);
+    }
+  }
+  
+  // Fallback to local storage
   const { favorites } = await chrome.storage.local.get('favorites');
   return favorites || [];
 }
 
 async function addFavorite(problem) {
-  const { favorites = [] } = await chrome.storage.local.get('favorites');
+  const { authToken } = await chrome.storage.sync.get('authToken');
   
-  // Generate unique ID
+  // Generate ID
   const id = `${problem.platform}_${generateCacheKey(problem.url)}`;
   
-  // Check if already exists
+  // If authenticated, save to backend
+  if (authToken) {
+    try {
+      const response = await fetch(`${API_BASE_URL}/favorites`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${authToken}`
+        },
+        body: JSON.stringify({
+          url: problem.url,
+          title: problem.title,
+          platform: problem.platform,
+          difficulty: problem.difficulty
+        })
+      });
+      
+      if (response.ok) {
+        const data = await response.json();
+        // Also save locally for offline access
+        const { favorites = [] } = await chrome.storage.local.get('favorites');
+        if (!favorites.some(f => f.id === id)) {
+          favorites.push(data.favorite);
+          await chrome.storage.local.set({ favorites });
+        }
+        return { success: true, favorite: data.favorite };
+      } else if (response.status === 401) {
+        // Token expired, remove it
+        await chrome.storage.sync.remove('authToken');
+      } else if (response.status === 403) {
+        // Limit exceeded
+        const errorData = await response.json().catch(() => ({}));
+        return { success: false, error: errorData.message || 'Favorite limit exceeded' };
+      } else {
+        const errorData = await response.json().catch(() => ({}));
+        return { success: false, error: errorData.message || 'Failed to save favorite' };
+      }
+    } catch (error) {
+      console.log('LC Helper: Failed to save favorite to backend, saving locally:', error.message);
+    }
+  }
+  
+  // Fallback to local storage
+  const { favorites = [] } = await chrome.storage.local.get('favorites');
   if (favorites.some(f => f.id === id)) {
     return { success: false, error: 'Already in favorites' };
   }
@@ -2930,11 +3825,36 @@ async function addFavorite(problem) {
   
   favorites.push(newFavorite);
   await chrome.storage.local.set({ favorites });
-  
   return { success: true, favorite: newFavorite };
 }
 
 async function removeFavorite(id) {
+  const { authToken } = await chrome.storage.sync.get('authToken');
+  
+  // If authenticated, remove from backend
+  if (authToken) {
+    try {
+      const response = await fetch(`${API_BASE_URL}/favorites/${encodeURIComponent(id)}`, {
+        method: 'DELETE',
+        headers: { 'Authorization': `Bearer ${authToken}` }
+      });
+      
+      if (response.ok || response.status === 404) {
+        // Also remove from local
+        const { favorites = [] } = await chrome.storage.local.get('favorites');
+        const updated = favorites.filter(f => f.id !== id);
+        await chrome.storage.local.set({ favorites: updated });
+        return { success: true };
+      } else if (response.status === 401) {
+        // Token expired, remove it
+        await chrome.storage.sync.remove('authToken');
+      }
+    } catch (error) {
+      console.log('LC Helper: Failed to remove favorite from backend, removing locally:', error.message);
+    }
+  }
+  
+  // Fallback to local storage
   const { favorites = [] } = await chrome.storage.local.get('favorites');
   const updated = favorites.filter(f => f.id !== id);
   await chrome.storage.local.set({ favorites: updated });
@@ -2942,6 +3862,28 @@ async function removeFavorite(id) {
 }
 
 async function isFavorite(url) {
+  const { authToken } = await chrome.storage.sync.get('authToken');
+  
+  // If authenticated, check backend
+  if (authToken) {
+    try {
+      const response = await fetch(`${API_BASE_URL}/favorites/check?url=${encodeURIComponent(url)}`, {
+        headers: { 'Authorization': `Bearer ${authToken}` }
+      });
+      
+      if (response.ok) {
+        const data = await response.json();
+        return data.isFavorite;
+      } else if (response.status === 401) {
+        // Token expired, remove it
+        await chrome.storage.sync.remove('authToken');
+      }
+    } catch (error) {
+      console.log('LC Helper: Failed to check favorite on backend, checking local:', error.message);
+    }
+  }
+  
+  // Fallback to local storage
   const { favorites = [] } = await chrome.storage.local.get('favorites');
   return favorites.some(f => f.url === url);
 }
@@ -3055,5 +3997,241 @@ async function testTimerNotification(url) {
   }
   
   return { success: true, message: 'Notification and modal triggered successfully!' };
+}
+
+// Test function to verify scraping accuracy by asking LLM to reconstruct the problem
+async function testScrapingAccuracy(problem) {
+  try {
+    const { key: apiKey, provider: apiProvider, error } = await getApiKeySafely();
+    
+    if (error || !apiKey) {
+      return { 
+        success: false, 
+        error: error || 'API key not configured. Add your API key in settings to test scraping accuracy.' 
+      };
+    }
+
+    const provider = apiProvider;
+    
+
+    // Build the test prompt - ask LLM to convert scraped data to human-readable format
+    let testPrompt;
+    
+    if (problem.html) {
+      testPrompt = `Convert the following Codeforces problem statement from HTML with LaTeX notation into a clean, human-readable format.
+
+The HTML contains LaTeX mathematical notation embedded in <script type="math/tex"> tags. Convert all LaTeX to readable mathematical notation.
+
+**HTML Problem Statement:**
+${problem.html}
+
+**Your Task:**
+Convert the above HTML problem statement into a clean, human-readable format. Render all LaTeX math properly. Keep the exact same content, just make it readable.
+
+Return your response as a structured JSON object:
+{
+  "title": "Problem title",
+  "description": "Full problem description in human-readable format with proper math notation",
+  "inputFormat": "Input format description",
+  "outputFormat": "Output format description",
+  "constraints": "Constraints description",
+  "examples": [
+    {
+      "input": "Example 1 input",
+      "output": "Example 1 output"
+    }
+  ],
+  "notes": "Any notes if present"
+}`;
+    } else {
+      testPrompt = `Convert the following scraped problem statement into a clean, human-readable format.
+
+**Problem Title:** ${problem.title || 'Not provided'}
+
+**Problem Description:**
+${problem.description || 'Not provided'}
+
+**Input Format:**
+${problem.inputFormat || 'Not provided'}
+
+**Output Format:**
+${problem.outputFormat || 'Not provided'}
+
+**Constraints:**
+${problem.constraints || 'Not provided'}
+
+**Sample Test Cases:**
+${problem.examples || 'Not provided'}
+
+**Your Task:**
+Convert the above scraped problem data into a clean, human-readable format. Clean up any LaTeX notation, formatting issues, or rendering artifacts. Keep the exact same content, just make it readable.
+
+Return your response as a structured JSON object:
+{
+  "title": "Problem title",
+  "description": "Full problem description in human-readable format",
+  "inputFormat": "Input format description",
+  "outputFormat": "Output format description",
+  "constraints": "Constraints description",
+  "examples": [
+    {
+      "input": "Example 1 input",
+      "output": "Example 1 output"
+    }
+  ],
+  "notes": "Any notes if present"
+}`;
+    }
+
+    let llmResponse;
+    
+    if (provider === 'gemini') {
+      llmResponse = await testScrapingAccuracyGemini(problem, apiKey, testPrompt);
+    } else {
+      llmResponse = await testScrapingAccuracyOpenAI(problem, apiKey, testPrompt);
+    }
+
+    // Compare original with LLM's interpretation
+    const comparison = {
+      original: {
+        title: problem.title,
+        description: problem.description,
+        inputFormat: problem.inputFormat,
+        outputFormat: problem.outputFormat,
+        constraints: problem.constraints,
+        examples: problem.examples,
+        examplesCount: problem.examplesCount,
+        hasHTML: !!problem.html,
+        htmlLength: problem.html?.length || 0
+      },
+      llmInterpretation: llmResponse,
+      accuracy: {
+        titleMatch: problem.title?.toLowerCase().trim() === llmResponse.title?.toLowerCase().trim(),
+        examplesCountMatch: problem.examplesCount === (llmResponse.examples?.length || 0),
+        hasCompleteInfo: !!(llmResponse.description && (llmResponse.inputFormat || llmResponse.inputDescription) && (llmResponse.outputFormat || llmResponse.outputDescription))
+      }
+    };
+
+
+    return {
+      success: true,
+      comparison: comparison,
+      message: 'Test completed. Check console for detailed results.'
+    };
+
+  } catch (error) {
+    console.error('LC Helper: Scraping accuracy test failed:', error);
+    return {
+      success: false,
+      error: error.message || 'Failed to test scraping accuracy'
+    };
+  }
+}
+
+// Helper function to test with Gemini
+async function testScrapingAccuracyGemini(problem, apiKey, testPrompt) {
+  try {
+    const parts = [{ text: testPrompt }];
+    
+    // Add image if available
+    if (problem.hasImages && problem.imageData) {
+      const matches = problem.imageData.match(/^data:([^;]+);base64,(.+)$/);
+      const mimeType = matches ? matches[1] : 'image/jpeg';
+      const base64Data = matches ? matches[2] : problem.imageData;
+      
+      parts.push({
+        inline_data: {
+          mime_type: mimeType,
+          data: base64Data
+        }
+      });
+    }
+
+    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        contents: [{ parts }],
+        generationConfig: {
+          temperature: 0.1,
+          topK: 1,
+          topP: 0.8,
+          maxOutputTokens: 2048
+        }
+      })
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(errorData.error?.message || `API error: ${response.status}`);
+    }
+
+    const data = await response.json();
+    const text = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+    
+    // Try to parse JSON from response
+    const jsonMatch = text.match(/\{[\s\S]*\}/);
+    if (jsonMatch) {
+      return JSON.parse(jsonMatch[0]);
+    }
+    
+    // If no JSON found, return the text as-is
+    return { rawResponse: text };
+  } catch (error) {
+    throw new Error(`Gemini API error: ${error.message}`);
+  }
+}
+
+// Helper function to test with OpenAI
+async function testScrapingAccuracyOpenAI(problem, apiKey, testPrompt) {
+  try {
+    const userContent = [{ type: 'text', text: testPrompt }];
+    
+    // Add image if available
+    if (problem.hasImages && problem.imageData) {
+      userContent.push({
+        type: 'image_url',
+        image_url: { url: problem.imageData }
+      });
+    }
+
+    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiKey}`
+      },
+      body: JSON.stringify({
+        model: 'gpt-4o-mini',
+        messages: [
+          {
+            role: 'user',
+            content: userContent
+          }
+        ],
+        temperature: 0.1,
+        max_tokens: 2048
+      })
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(errorData.error?.message || `API error: ${response.status}`);
+    }
+
+    const data = await response.json();
+    const text = data.choices?.[0]?.message?.content || '';
+    
+    // Try to parse JSON from response
+    const jsonMatch = text.match(/\{[\s\S]*\}/);
+    if (jsonMatch) {
+      return JSON.parse(jsonMatch[0]);
+    }
+    
+    // If no JSON found, return the text as-is
+    return { rawResponse: text };
+  } catch (error) {
+    throw new Error(`OpenAI API error: ${error.message}`);
+  }
 }
 

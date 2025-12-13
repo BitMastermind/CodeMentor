@@ -18,7 +18,13 @@
     "https://kontests.net/*",
     "https://clist.by/*",
     "https://api.openai.com/*",
-    "https://generativelanguage.googleapis.com/*"
+    "https://generativelanguage.googleapis.com/*",
+    "https://api.anthropic.com/*",
+    "https://api.groq.com/*",
+    "https://api.together.xyz/*",
+    "https://api-inference.huggingface.co/*",
+    "http://localhost:3000/*",
+    "https://*.lchelper.com/*"
   ],
   "background": {
     "service_worker": "background/service-worker.js",

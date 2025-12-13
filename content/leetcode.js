@@ -23,27 +23,23 @@
   // Safe wrapper for chrome.storage.local operations
   async function safeStorageGet(key) {
     if (!isExtensionContextValid()) {
-      console.log('LC Helper: Extension context invalidated, using fallback');
       return {};
     }
     try {
       return await chrome.storage.local.get(key);
     } catch (e) {
-      console.log('LC Helper: Storage access failed:', e.message);
       return {};
     }
   }
 
   async function safeStorageSet(data) {
     if (!isExtensionContextValid()) {
-      console.log('LC Helper: Extension context invalidated, cannot save');
       return false;
     }
     try {
       await chrome.storage.local.set(data);
       return true;
     } catch (e) {
-      console.log('LC Helper: Storage save failed:', e.message);
       return false;
     }
   }
@@ -51,13 +47,11 @@
   // Safe wrapper for chrome.runtime.sendMessage
   async function safeSendMessage(message) {
     if (!isExtensionContextValid()) {
-      console.log('LC Helper: Extension context invalidated, cannot send message');
       return null;
     }
     try {
       return await chrome.runtime.sendMessage(message);
     } catch (e) {
-      console.log('LC Helper: Message send failed:', e.message);
       return null;
     }
   }
@@ -207,7 +201,6 @@
         }
       }
     } catch (e) {
-      console.log('LC Helper: Timer init failed:', e.message);
     }
   }
 
@@ -356,9 +349,8 @@
 
     try {
       document.body.appendChild(fab);
-      console.log('LC Helper: FAB created and appended to body');
     } catch (e) {
-      console.error('LC Helper: Failed to append FAB:', e);
+      console.log('LC Helper: Failed to append FAB:', e);
       // Retry after a delay
       setTimeout(createFAB, 200);
     }
@@ -443,7 +435,6 @@
           };
         }
       } catch (e) {
-        console.log('LC Helper: Could not extract problem data:', e.message);
       }
     }
     
@@ -519,20 +510,22 @@
         loadHints();
       }
     } catch (e) {
-      console.log('LC Helper: Could not check auto-show setting');
     }
   }
 
   async function loadHints(forceRefresh = false) {
     if (!isExtensionContextValid()) {
+      console.log('[LC Helper] loadHints: Extension context invalidated');
       showError('Extension was reloaded. Please refresh the page.');
       return;
     }
     
     try {
+      console.log('[LC Helper] loadHints: Starting hint generation');
       const { apiKey } = await chrome.storage.sync.get('apiKey');
 
       if (!apiKey) {
+        console.log('[LC Helper] loadHints: No API key configured');
         showSettingsPrompt();
         return;
       }
@@ -540,10 +533,13 @@
       isLoading = true;
       showLoading();
 
+      console.log('[LC Helper] loadHints: Extracting problem data...');
       const problem = await extractProblemData();
 
       if (!problem.title || !problem.description) {
-        showError('Could not extract problem data. Please refresh the page.');
+        console.log('LC Helper: Failed to extract problem data (GET_HINTS)');
+        console.log('Problem object:', problem);
+        showError('Could not extract problem data. Please refresh the page and try again.');
         isLoading = false;
         return;
       }
@@ -565,13 +561,17 @@
       });
 
       if (!response) {
+        console.log('[LC Helper] loadHints: No response from background script');
         showError('Extension was reloaded. Please refresh the page.');
       } else if (response.error) {
+        console.log('[LC Helper] loadHints: Error from background script:', response.error);
         showError(response.error);
       } else {
+        console.log('[LC Helper] loadHints: Successfully received hints');
         await showHints(response);
       }
     } catch (error) {
+      console.log('[LC Helper] loadHints: Exception occurred:', error);
       showError(error.message || 'An error occurred. Please refresh the page.');
     }
 
@@ -580,14 +580,17 @@
 
   async function explainProblem() {
     if (!isExtensionContextValid()) {
+      console.log('[LC Helper] explainProblem: Extension context invalidated');
       showError('Extension was reloaded. Please refresh the page.');
       return;
     }
     
     try {
+      console.log('[LC Helper] explainProblem: Starting problem explanation');
       const { apiKey } = await chrome.storage.sync.get('apiKey');
 
       if (!apiKey) {
+        console.log('[LC Helper] explainProblem: No API key configured');
         showSettingsPrompt();
         return;
       }
@@ -595,10 +598,13 @@
       isLoading = true;
       showLoading();
 
+      console.log('[LC Helper] explainProblem: Extracting problem data...');
       const problem = await extractProblemData();
 
       if (!problem.title || !problem.description) {
-        showError('Could not extract problem data. Please refresh the page.');
+        console.log('LC Helper: Failed to extract problem data (EXPLAIN_PROBLEM)');
+        console.log('Problem object:', problem);
+        showError('Could not extract problem data. Please refresh the page and try again.');
         isLoading = false;
         return;
       }
@@ -619,13 +625,17 @@
       });
 
       if (!response) {
+        console.log('[LC Helper] explainProblem: No response from background script');
         showError('Extension was reloaded. Please refresh the page.');
       } else if (response.error) {
+        console.log('[LC Helper] explainProblem: Error from background script:', response.error);
         showError(response.error);
       } else {
+        console.log('[LC Helper] explainProblem: Successfully received explanation');
         showExplanation(response);
       }
     } catch (error) {
+      console.log('[LC Helper] explainProblem: Exception occurred:', error);
       showError(error.message || 'An error occurred. Please refresh the page.');
     }
 
@@ -753,9 +763,45 @@
         return match[1];
       }
     } catch (e) {
-      console.log('LC Helper: Failed to parse LeetCode URL:', e.message);
     }
     return null;
+  }
+
+  // Extract image URLs from HTML content
+  function extractImagesFromHTML(htmlString) {
+    if (!htmlString) return [];
+    
+    try {
+      const parser = new DOMParser();
+      const doc = parser.parseFromString(htmlString, 'text/html');
+      const images = doc.querySelectorAll('img');
+      
+      return Array.from(images).map(img => {
+        // Get src - handle both absolute and relative URLs
+        let src = img.src || img.getAttribute('src') || '';
+        
+        // Convert relative URLs to absolute
+        if (src && !src.startsWith('http')) {
+          if (src.startsWith('//')) {
+            src = 'https:' + src;
+          } else if (src.startsWith('/')) {
+            src = 'https://leetcode.com' + src;
+          } else {
+            src = 'https://leetcode.com/' + src;
+          }
+        }
+        
+        return {
+          url: src,
+          alt: img.alt || img.getAttribute('alt') || 'Problem diagram',
+          width: img.width || img.getAttribute('width') || null,
+          height: img.height || img.getAttribute('height') || null
+        };
+      }).filter(img => img.url && img.url.length > 0); // Filter out empty URLs
+    } catch (e) {
+      console.log('[LC Helper] extractImagesFromHTML: Error parsing HTML:', e);
+      return [];
+    }
   }
 
   // Fetch problem data from LeetCode GraphQL API
@@ -803,18 +849,24 @@
       });
 
       if (!response.ok) {
-        console.log('LC Helper: LeetCode GraphQL API request failed:', response.status);
+        console.log('[LC Helper] fetchProblemFromGraphQL: API request failed with status:', response.status);
         return null;
       }
 
       const data = await response.json();
       
       if (data.errors || !data.data || !data.data.question) {
-        console.log('LC Helper: LeetCode GraphQL API returned error:', data.errors || 'No question data');
+        console.log('[LC Helper] fetchProblemFromGraphQL: API returned error or no question data:', data.errors || 'No question data');
         return null;
       }
 
       const question = data.data.question;
+      
+      // Extract images from HTML content first (before text extraction)
+      let imageUrls = [];
+      if (question.content) {
+        imageUrls = extractImagesFromHTML(question.content);
+      }
       
       // Parse HTML content to extract text
       // The content field contains HTML, so we need to extract text from it
@@ -911,10 +963,12 @@
         url: window.location.href,
         questionId: question.questionId,
         questionFrontendId: question.questionFrontendId,
-        fromAPI: true // Flag to indicate this came from API
+        fromAPI: true, // Flag to indicate this came from API
+        imageUrls: imageUrls, // Array of image URL objects
+        hasImages: imageUrls.length > 0 // Boolean flag for easy checking
       };
     } catch (error) {
-      console.log('LC Helper: Error fetching from LeetCode GraphQL API:', error.message);
+      console.log('[LC Helper] fetchProblemFromGraphQL: Exception occurred:', error);
       return null;
     }
   }
@@ -958,45 +1012,157 @@
     return preEl.textContent.trim();
   }
 
-  async function extractProblemData() {
-    // First, try to fetch from GraphQL API if we can parse the URL
-    const titleSlug = parseTitleSlugFromUrl(window.location.href);
-    if (titleSlug) {
-      const apiData = await fetchProblemFromGraphQL(titleSlug);
-      if (apiData) {
-        // Log API fetch success
-        console.log('='.repeat(60));
-        console.log('LC Helper - Problem Data from GraphQL API (LeetCode)');
-        console.log('='.repeat(60));
-        console.log('📌 Title:', apiData.title);
-        console.log('📊 Difficulty:', apiData.difficulty);
-        console.log('🏷️ Tags:', apiData.tags || 'None');
-        console.log('📏 Constraints:', apiData.constraints || 'None found');
-        console.log('-'.repeat(60));
-        console.log('📝 Description (first 500 chars):');
-        console.log(apiData.description.slice(0, 500) + (apiData.description.length > 500 ? '...' : ''));
-        console.log('-'.repeat(60));
-        console.log(`📋 Sample Test Cases (${apiData.examplesCount} found)`);
-        console.log('-'.repeat(60));
-        console.log('🔗 URL:', apiData.url);
-        console.log('='.repeat(60));
-        return apiData;
+
+  // Wait for LeetCode content to load dynamically
+  async function waitForLeetCodeContent() {
+    return new Promise((resolve) => {
+      // Check if already loaded
+      const description = document.querySelector('[data-track-load="description_content"]') ||
+                         document.querySelector('[data-cy="question-content"]') ||
+                         document.querySelector('.elfjS');
+      
+      if (description && description.textContent && description.textContent.length > 100) {
+        resolve();
+        return;
       }
+
+      // Wait for content to load
+      const observer = new MutationObserver((mutations, obs) => {
+        const desc = document.querySelector('[data-track-load="description_content"]') ||
+                     document.querySelector('[data-cy="question-content"]') ||
+                     document.querySelector('.elfjS');
+        
+        if (desc && desc.textContent && desc.textContent.length > 100) {
+          obs.disconnect();
+          resolve();
+        }
+      });
+
+      observer.observe(document.body, {
+        childList: true,
+        subtree: true
+      });
+
+      // Timeout after 5 seconds
+      setTimeout(() => {
+        observer.disconnect();
+        resolve();
+      }, 5000);
+    });
+  }
+
+  async function extractProblemData() {
+    try {
+      // Method 1: Try GraphQL API (most reliable)
+      const titleSlug = parseTitleSlugFromUrl(window.location.href);
+      if (titleSlug) {
+        const apiData = await fetchProblemFromGraphQL(titleSlug);
+        if (apiData && apiData.title && apiData.description) {
+          return apiData;
+        } else {
+          console.log('[LC Helper] extractProblemData: GraphQL API returned incomplete data');
+        }
+      } else {
+        console.log('[LC Helper] extractProblemData: Could not parse title slug from URL:', window.location.href);
+      }
+      
+      // Method 2: Fallback to DOM scraping with MutationObserver
+      console.log('[LC Helper] extractProblemData: Falling back to DOM scraping...');
+      await waitForLeetCodeContent();
+      
+      // Wait a bit more to ensure content is fully loaded
+      await new Promise(resolve => setTimeout(resolve, 500));
+      
+      const domData = await scrapeLeetCodeDOM();
+      
+      // Debug: Log what we found
+      if (!domData.title || !domData.description) {
+        console.log('[LC Helper] extractProblemData: DOM scraping failed - Title found:', !!domData.title, 'Description found:', !!domData.description);
+        console.log('[LC Helper] extractProblemData: Title value:', domData.title?.substring(0, 50) || 'empty');
+        console.log('[LC Helper] extractProblemData: Description length:', domData.description?.length || 0);
+        console.log('[LC Helper] extractProblemData: Current URL:', window.location.href);
+        console.log('[LC Helper] extractProblemData: Page ready state:', document.readyState);
+        
+        // Try one more time with additional wait
+        console.log('[LC Helper] extractProblemData: Retrying DOM scraping after 1 second...');
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        const retryData = await scrapeLeetCodeDOM();
+        if (retryData.title && retryData.description) {
+          return retryData;
+        } else {
+          console.log('[LC Helper] extractProblemData: Retry also failed');
+        }
+      }
+      
+      return domData;
+    } catch (error) {
+      console.log('[LC Helper] extractProblemData: Exception occurred:', error);
+      console.log('[LC Helper] extractProblemData: Stack trace:', error.stack);
+      // Return empty object structure so calling code can handle it
+      return {
+        title: '',
+        description: '',
+        difficulty: 'Unknown',
+        tags: '',
+        examples: '',
+        examplesCount: 0,
+        constraints: '',
+        url: window.location.href
+      };
+    }
+  }
+
+  // DOM scraping function (extracted for reuse)
+  async function scrapeLeetCodeDOM() {
+    // LeetCode problem page selectors - try multiple selectors
+    let titleEl = document.querySelector('[data-cy="question-title"]') || 
+                  document.querySelector('h1[data-cy="question-title"]') ||
+                  document.querySelector('h4[data-cy="question-title"]') ||
+                  document.querySelector('.text-title-large') ||
+                  document.querySelector('h1.text-title-large') ||
+                  document.querySelector('[class*="question-title"]');
+    
+    // If still not found, try finding any heading with reasonable length
+    if (!titleEl) {
+      const headings = Array.from(document.querySelectorAll('h1, h2, h3, h4'));
+      titleEl = headings.find(h => {
+        const text = h.textContent?.trim() || '';
+        return text.length > 5 && text.length < 100;
+      });
     }
     
-    // Fallback to DOM scraping if API fails
-    console.log('LC Helper: Falling back to DOM scraping for LeetCode problem');
+    // Last resort: any element with title-like class
+    if (!titleEl) {
+      titleEl = document.querySelector('[class*="title"]');
+    }
     
-    // LeetCode problem page selectors
-    const titleEl = document.querySelector('[data-cy="question-title"]') || 
-                    document.querySelector('.text-title-large') ||
-                    document.querySelector('h4[data-cy="question-title"]') ||
-                    document.querySelector('[class*="title"]');
+    // Try multiple description selectors
+    let descriptionEl = document.querySelector('[data-track-load="description_content"]') ||
+                         document.querySelector('[data-cy="question-content"]') ||
+                         document.querySelector('.elfjS') ||
+                         document.querySelector('[class*="question-content"]') ||
+                         document.querySelector('[class*="description"]');
     
-    const descriptionEl = document.querySelector('[data-cy="question-content"]') ||
-                          document.querySelector('.elfjS') ||
-                          document.querySelector('[class*="question-content"]') ||
-                          document.querySelector('[class*="description"]');
+    // If still not found, try more generic selectors
+    if (!descriptionEl) {
+      // Try to find the main content area
+      const possibleSelectors = [
+        'div[class*="content"]',
+        'div[class*="problem"]',
+        'div[class*="statement"]',
+        'main div[class*="content"]',
+        '#question-detail-main-content',
+        '[role="main"]'
+      ];
+      
+      for (const selector of possibleSelectors) {
+        const el = document.querySelector(selector);
+        if (el && el.textContent && el.textContent.length > 200) {
+          descriptionEl = el;
+          break;
+        }
+      }
+    }
 
     // Extract difficulty
     let difficulty = 'Unknown';
@@ -1095,7 +1261,25 @@
     }).join('\n');
 
     // Extract description with superscript handling
-    const description = descriptionEl ? extractTextWithSuperscripts(descriptionEl).slice(0, 2000) : '';
+    let description = '';
+    if (descriptionEl) {
+      try {
+        description = extractTextWithSuperscripts(descriptionEl).slice(0, 5000);
+      } catch (e) {
+        // Fallback to simple text extraction
+        description = descriptionEl.textContent || descriptionEl.innerText || '';
+      }
+    }
+    
+    // If description is still empty, try to get from page text
+    if (!description || description.length < 50) {
+      const bodyText = document.body.innerText || document.body.textContent || '';
+      // Try to extract problem description from body (look for common patterns)
+      const problemMatch = bodyText.match(/(?:Problem|Description|Statement)[\s\S]{50,2000}/i);
+      if (problemMatch) {
+        description = problemMatch[0].slice(0, 5000);
+      }
+    }
     
     const baseData = {
       title: titleEl?.textContent?.trim() || '',
@@ -1108,44 +1292,11 @@
       url: window.location.href
     };
     
-    // Console log extracted data for accuracy testing
-    console.log('='.repeat(80));
-    console.log('LC Helper - DOM Scraped Problem Data (LeetCode)');
-    console.log('='.repeat(80));
-    console.log('📡 Data Source: DOM Scraping (GraphQL API was unavailable or failed)');
-    console.log('📌 Title:', baseData.title);
-    console.log('📊 Difficulty:', baseData.difficulty);
-    console.log('🏷️ Tags:', baseData.tags || 'None found');
-    console.log('📏 Constraints:', baseData.constraints || 'None found');
-    console.log('-'.repeat(80));
-    console.log('📝 FULL DESCRIPTION (' + baseData.description.length + ' chars):');
-    console.log(baseData.description);
-    console.log('-'.repeat(80));
-    console.log(`📋 Sample Test Cases (${examples.length} found):`);
-    examples.forEach(ex => {
-      console.log(`  Example ${ex.index}:`);
-      if (ex.input) {
-        console.log(`    Input:`);
-        ex.input.split('\n').forEach(line => console.log(`      ${line}`));
-      }
-      if (ex.output) {
-        console.log(`    Output:`);
-        ex.output.split('\n').forEach(line => console.log(`      ${line}`));
-      }
-      if (ex.explanation) {
-        console.log(`    Explanation:`);
-        console.log(ex.explanation);
-      }
-      if (!ex.input && !ex.output && ex.raw) {
-        console.log(`    Raw:`);
-        ex.raw.split('\n').forEach(line => console.log(`      ${line}`));
-      }
-    });
-    console.log('-'.repeat(80));
-    console.log('🔗 URL:', baseData.url);
-    console.log('='.repeat(80));
-    console.log('\n📦 COMPLETE EXTRACTED DATA OBJECT:');
-    console.log(JSON.stringify(baseData, null, 2));
+    // Only log if extraction failed
+    if (!baseData.title || !baseData.description) {
+      console.log('[LC Helper] scrapeLeetCodeDOM: Extraction incomplete - Title:', !!baseData.title, 'Description length:', baseData.description?.length || 0);
+    }
+    
 
     // Check if problem has images/graphs and capture them
     if (descriptionEl && typeof html2canvas !== 'undefined') {
@@ -1171,7 +1322,7 @@
             imageData: optimizedImage // Base64 encoded image
           };
         } catch (error) {
-          console.error('LC Helper: Failed to capture image:', error);
+          console.log('LC Helper: Failed to capture image:', error);
           // Fall back to text-only if image capture fails
         }
       }
@@ -1259,7 +1410,6 @@
           };
         }
       } catch (e) {
-        console.log('LC Helper: Could not extract problem data for favorites:', e.message);
       }
     }
     
@@ -1305,7 +1455,27 @@
       isFavorite = favResponse?.isFavorite || false;
     } catch (e) {}
 
-    const formattedExplanation = parseMarkdown(data.explanation || '');
+    // Parse response if it's a JSON string
+    let explanationData = data;
+    if (typeof data === 'string') {
+      try {
+        explanationData = JSON.parse(data);
+      } catch (e) {
+        // If parsing fails, treat the whole string as explanation
+        explanationData = { explanation: data };
+      }
+    } else if (data.explanation && typeof data.explanation === 'string' && data.explanation.trim().startsWith('{')) {
+      // If explanation field itself is a JSON string, parse it
+      try {
+        const parsed = JSON.parse(data.explanation);
+        explanationData = { ...data, ...parsed };
+      } catch (e) {
+        // If parsing fails, use as is
+        explanationData = data;
+      }
+    }
+
+    const formattedExplanation = parseMarkdown(explanationData.explanation || '');
 
     body.innerHTML = `
       <div class="lch-explanation-section">
@@ -1314,11 +1484,11 @@
           <h3 class="lch-explanation-title">Problem Explanation</h3>
         </div>
         <div class="lch-explanation-content">${formattedExplanation}</div>
-        ${data.keyPoints ? `
+        ${explanationData.keyPoints && Array.isArray(explanationData.keyPoints) && explanationData.keyPoints.length > 0 ? `
         <div class="lch-key-points">
           <h4 class="lch-key-points-title">Key Points:</h4>
           <ul class="lch-key-points-list">
-            ${data.keyPoints.map(point => `<li>${parseMarkdown(point)}</li>`).join('')}
+            ${explanationData.keyPoints.map(point => `<li>${parseMarkdown(point)}</li>`).join('')}
           </ul>
         </div>
         ` : ''}
@@ -1454,17 +1624,24 @@
       if (isCurrentlyFavorite) {
         // Remove from favorites
         const id = `leetcode_${generateCacheKey(currentProblemData.url)}`;
-        await safeSendMessage({ type: 'REMOVE_FAVORITE', id });
-        btn.classList.remove('active');
-        btn.innerHTML = '🤍 Add to Favorites';
+        const response = await safeSendMessage({ type: 'REMOVE_FAVORITE', id });
+        if (response && response.success) {
+          btn.classList.remove('active');
+          btn.innerHTML = '🤍 Add to Favorites';
+        }
       } else {
         // Add to favorites
-        await safeSendMessage({ type: 'ADD_FAVORITE', problem: currentProblemData });
-        btn.classList.add('active');
-        btn.innerHTML = '❤️ Favorited';
+        const response = await safeSendMessage({ type: 'ADD_FAVORITE', problem: currentProblemData });
+        if (response && response.success) {
+          btn.classList.add('active');
+          btn.innerHTML = '❤️ Favorited';
+        } else if (response && response.error) {
+          // Show error message for limit exceeded or other errors
+          alert(response.error);
+        }
       }
     } catch (e) {
-      console.log('LC Helper: Favorite toggle failed:', e.message);
+      console.error('LC Helper: Error toggling favorite:', e);
     }
   }
 
@@ -1482,7 +1659,6 @@
       `;
       
       // Log feedback (could be sent to analytics)
-      console.log('Positive feedback for hints:', hintData.topic);
       
     } else {
       // Negative feedback - offer to regenerate
@@ -1496,7 +1672,6 @@
       `;
       
       // Log feedback
-      console.log('Negative feedback for hints:', hintData.topic);
       
       // Add regenerate handler
       feedbackSection.querySelector('.lch-feedback-regenerate-btn').addEventListener('click', () => {
@@ -1549,7 +1724,8 @@
         itemText = itemText.replace(/^[.\s]+|[.\s]+$/g, '');
         
         if (itemText) {
-          htmlList += `<li>${escapeHtml(itemText)}</li>`;
+          // Parse markdown in list items
+          htmlList += `<li>${parseMarkdown(itemText)}</li>`;
         }
       }
       
@@ -1562,17 +1738,17 @@
         // Check if it starts with "Edge cases" or "Edge case"
         const edgeCaseMatch = remainingText.match(/^(Edge\s+cases?:?\s*)(.+)$/i);
         if (edgeCaseMatch) {
-          htmlList += `<div class="lch-hint-edge-cases"><strong>Edge Cases:</strong> ${escapeHtml(edgeCaseMatch[2])}</div>`;
+          htmlList += `<div class="lch-hint-edge-cases"><strong>Edge Cases:</strong> ${parseMarkdown(edgeCaseMatch[2])}</div>`;
         } else {
-          htmlList += `<div class="lch-hint-note">${escapeHtml(remainingText)}</div>`;
+          htmlList += `<div class="lch-hint-note">${parseMarkdown(remainingText)}</div>`;
         }
       }
       
       return htmlList;
     }
     
-    // If not a numbered list, just escape and return
-    return escapeHtml(formatted);
+    // If not a numbered list, parse markdown and return
+    return parseMarkdown(formatted);
   }
 
   function escapeHtml(text) {
@@ -1675,6 +1851,59 @@
       .replace(/^https?:\/\//, '')
       .replace(/[^a-zA-Z0-9]/g, '_')
       .slice(0, 100);
+  }
+
+  // Intercept GraphQL requests as a backup method (optional enhancement)
+  // This can capture problem data when LeetCode makes its own GraphQL calls
+  function setupGraphQLInterceptor() {
+    if (window.__lch_graphql_intercepted) return; // Already set up
+    window.__lch_graphql_intercepted = true;
+
+    const originalFetch = window.fetch;
+    
+    window.fetch = function(...args) {
+      const promise = originalFetch.apply(this, args);
+      
+      // Check if it's a GraphQL request
+      if (args[0] && typeof args[0] === 'string' && args[0].includes('graphql')) {
+        promise.then(response => {
+          // Clone response to read it without consuming it
+          const clonedResponse = response.clone();
+          
+          clonedResponse.json().then(data => {
+            // Check if it contains question data
+            if (data.data?.question) {
+              
+              // Store intercepted data for potential use
+              if (!window.__lch_intercepted_data) {
+                window.__lch_intercepted_data = data.data.question;
+                
+                // Send to extension if needed
+                if (isExtensionContextValid()) {
+                  safeSendMessage({
+                    type: 'LEETCODE_PROBLEM_DATA_INTERCEPTED',
+                    data: data.data.question
+                  }).catch(() => {});
+                }
+              }
+            }
+          }).catch(() => {
+            // Ignore JSON parse errors
+          });
+        }).catch(() => {
+          // Ignore fetch errors
+        });
+      }
+      
+      return promise;
+    };
+  }
+
+  // Initialize GraphQL interceptor on page load
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', setupGraphQLInterceptor);
+  } else {
+    setupGraphQLInterceptor();
   }
 
 })();

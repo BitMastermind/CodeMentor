@@ -1239,16 +1239,23 @@
     try {
       if (isCurrentlyFavorite) {
         const id = `codechef_${generateCacheKey(currentProblemData.url)}`;
-        await safeSendMessage({ type: 'REMOVE_FAVORITE', id });
-        btn.classList.remove('active');
-        btn.innerHTML = '🤍 Add to Favorites';
+        const response = await safeSendMessage({ type: 'REMOVE_FAVORITE', id });
+        if (response && response.success) {
+          btn.classList.remove('active');
+          btn.innerHTML = '🤍 Add to Favorites';
+        }
       } else {
-        await safeSendMessage({ type: 'ADD_FAVORITE', problem: currentProblemData });
-        btn.classList.add('active');
-        btn.innerHTML = '❤️ Favorited';
+        const response = await safeSendMessage({ type: 'ADD_FAVORITE', problem: currentProblemData });
+        if (response && response.success) {
+          btn.classList.add('active');
+          btn.innerHTML = '❤️ Favorited';
+        } else if (response && response.error) {
+          // Show error message for limit exceeded or other errors
+          alert(response.error);
+        }
       }
     } catch (e) {
-      console.log('LC Helper: Favorite toggle failed:', e.message);
+      console.error('LC Helper: Error toggling favorite:', e);
     }
   }
   

@@ -41,8 +41,8 @@
           <div class="stat-label">Today</div>
         </div>
         <div class="stat-item">
-          <div class="stat-value" id="freezeTokens">1</div>
-          <div class="stat-label">Freezes</div>
+          <div class="stat-value" id="longestStreak">0</div>
+          <div class="stat-label">Best Streak</div>
         </div>
       </div>
     </section>
@@ -106,7 +106,16 @@
     <section class="tab-content" id="favorites-tab">
       <div class="section-header">
         <h2>Favorite Problems</h2>
-        <span class="favorites-count" id="favoritesCount">0 saved</span>
+        <div class="favorites-header-actions">
+          <span class="favorites-count" id="favoritesCount">0 saved</span>
+          <button class="pick-one-btn" id="pickOneBtn" title="Pick a random favorite">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M2 18h1.4c1.3 0 2.5-.6 3.3-1.7l6.1-8.6c.8-1.1 2-1.7 3.3-1.7H22"></path>
+              <path d="M18 2h3.4c1.3 0 2.5.6 3.3 1.7l1.4 2M16 8h-4.2c-1.3 0-2.5.6-3.3 1.7L2.4 18.3c-.8 1.1-.8 2.5 0 3.6l1.4 2c.8 1.1 2 1.7 3.3 1.7H9"></path>
+            </svg>
+            Pick One
+          </button>
+        </div>
       </div>
       <div class="favorites-list" id="favoritesList">
         <div class="empty-state">
@@ -136,13 +145,31 @@
       </div>
 
       <div class="settings-group">
-        <h3>🔑 API Configuration</h3>
-        <p class="settings-desc">Choose your AI provider and enter the API key to enable smart hints.</p>
+        <h3>🔑 Service Mode</h3>
+        <p class="settings-desc">Choose how you want to use LC Helper - bring your own API key (free) or use our premium service.</p>
         <div class="input-group">
-          <label for="apiProvider">AI Provider</label>
+          <label for="serviceMode">Service Mode</label>
+          <select id="serviceMode">
+            <option value="byok">Bring Your Own Key (Free)</option>
+            <option value="lch-service">LC Helper Service (Premium)</option>
+          </select>
+        </div>
+        
+        <!-- BYOK Configuration (shown when BYOK is selected) -->
+        <div id="byokConfig" class="service-config">
+          <div class="input-group">
+            <label for="apiProvider">AI Provider</label>
           <select id="apiProvider">
+              <optgroup label="Premium Models">
             <option value="openai">OpenAI (GPT-4o-mini)</option>
+                <option value="claude">Anthropic Claude (Claude 3.5 Sonnet)</option>
             <option value="gemini">Google Gemini (Gemini 2.0 Flash)</option>
+              </optgroup>
+              <optgroup label="Free Models">
+                <option value="groq">Groq (Llama 3.1 70B) - Free Tier</option>
+                <option value="together">Together AI (Llama 3.1 70B) - Free Tier</option>
+                <option value="huggingface">Hugging Face (Meta Llama 3) - Free Tier</option>
+              </optgroup>
           </select>
         </div>
         <div class="input-group">
@@ -157,6 +184,36 @@
             </button>
           </div>
           <a href="#" target="_blank" class="help-link" id="apiKeyLink">Get your API key →</a>
+          </div>
+          <div class="security-notice">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink: 0;">
+              <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
+              <path d="M9 12l2 2 4-4"></path>
+            </svg>
+            <div>
+              <strong>Security Note:</strong> Your API key is stored locally in your browser and never sent to our servers. 
+              Keep your API key private and never share it with anyone.
+            </div>
+          </div>
+        </div>
+
+        <!-- Premium Service Configuration (shown when service mode is selected) -->
+        <div id="serviceConfig" class="service-config" style="display: none;">
+          <div class="service-status-card">
+            <div class="service-status-header">
+              <span id="subscriptionStatus">Not subscribed</span>
+              <span id="subscriptionTier" class="tier-badge"></span>
+            </div>
+            <div id="subscriptionInfo" class="subscription-info">
+              <p>Subscribe to use our premium service with unlimited hints!</p>
+            </div>
+            <div class="service-actions">
+              <button id="loginBtn" class="btn-secondary">Login</button>
+              <button id="registerBtn" class="btn-secondary">Register</button>
+              <button id="subscribeBtn" class="btn-primary" style="display: none;">Subscribe</button>
+              <button id="logoutBtn" class="btn-secondary" style="display: none;">Logout</button>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -201,6 +258,60 @@
         Save Settings
       </button>
     </section>
+  </div>
+
+  <!-- Login Modal -->
+  <div id="loginModal" class="modal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3>Login</h3>
+        <button class="modal-close" id="closeLoginModal">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="input-group">
+          <label for="loginEmail">Email</label>
+          <input type="email" id="loginEmail" placeholder="your@email.com" autocomplete="email">
+        </div>
+        <div class="input-group">
+          <label for="loginPassword">Password</label>
+          <input type="password" id="loginPassword" placeholder="Enter your password" autocomplete="current-password">
+        </div>
+        <div id="loginError" class="error-message" style="display: none;"></div>
+        <button class="btn-primary" id="submitLogin" style="width: 100%; margin-top: 16px;">Login</button>
+        <p style="text-align: center; margin-top: 12px; font-size: 12px; color: var(--text-muted);">
+          Don't have an account? <a href="#" id="showRegister" style="color: var(--accent);">Register</a>
+        </p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Register Modal -->
+  <div id="registerModal" class="modal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3>Register</h3>
+        <button class="modal-close" id="closeRegisterModal">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="input-group">
+          <label for="registerEmail">Email</label>
+          <input type="email" id="registerEmail" placeholder="your@email.com" autocomplete="email">
+        </div>
+        <div class="input-group">
+          <label for="registerPassword">Password</label>
+          <input type="password" id="registerPassword" placeholder="At least 8 characters" autocomplete="new-password">
+        </div>
+        <div class="input-group">
+          <label for="registerPasswordConfirm">Confirm Password</label>
+          <input type="password" id="registerPasswordConfirm" placeholder="Confirm your password" autocomplete="new-password">
+        </div>
+        <div id="registerError" class="error-message" style="display: none;"></div>
+        <button class="btn-primary" id="submitRegister" style="width: 100%; margin-top: 16px;">Register</button>
+        <p style="text-align: center; margin-top: 12px; font-size: 12px; color: var(--text-muted);">
+          Already have an account? <a href="#" id="showLogin" style="color: var(--accent);">Login</a>
+        </p>
+      </div>
+    </div>
   </div>
 
   <script src="popup.js"></script>
