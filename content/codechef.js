@@ -587,12 +587,143 @@
     isLoading = false;
   }
 
+  // Extract problem code from CodeChef URL
+  // Examples:
+  // - https://www.codechef.com/problems/FLOW001
+  // - https://www.codechef.com/START51D/problems/FLOW001
+  // - https://www.codechef.com/practice/problems/FLOW001
+  function parseProblemCodeFromUrl(url) {
+    try {
+      const urlObj = new URL(url);
+      const pathParts = urlObj.pathname.split('/').filter(p => p);
+      
+      // Pattern: /problems/{CODE} or /{CONTEST}/problems/{CODE} or /practice/problems/{CODE}
+      const problemsIndex = pathParts.indexOf('problems');
+      if (problemsIndex >= 0 && problemsIndex < pathParts.length - 1) {
+        return pathParts[problemsIndex + 1];
+      }
+      
+      // Pattern: /problemset/{CODE}
+      const problemsetIndex = pathParts.indexOf('problemset');
+      if (problemsetIndex >= 0 && problemsetIndex < pathParts.length - 1) {
+        return pathParts[problemsetIndex + 1];
+      }
+    } catch (e) {
+      console.log('LC Helper: Failed to parse CodeChef URL:', e.message);
+    }
+    return null;
+  }
+
   async function extractProblemData() {
-    const titleEl = document.querySelector('h1') || document.querySelector('.problem-name') ||
-                    document.querySelector('[class*="problem-title"]');
+    // Extract problem code from URL (for potential future API use or logging)
+    const problemCode = parseProblemCodeFromUrl(window.location.href);
+    if (problemCode) {
+      console.log('LC Helper: CodeChef problem code:', problemCode);
+    }
+    
+    // Note: CodeChef does not have an official API for problem statements
+    // All community APIs only provide user statistics, not problem content
+    // Therefore, we must rely on DOM scraping
+    
+    const titleEl = document.querySelector('h1') || 
+                    document.querySelector('.problem-name') ||
+                    document.querySelector('[class*="problem-title"]') ||
+                    document.querySelector('[class*="ProblemHeader"] h1') ||
+                    document.querySelector('[data-testid="problem-title"]');
+                    
     const descEl = document.querySelector('.problem-statement') || 
+                   document.querySelector('[class*="problem-statement"]') ||
                    document.querySelector('[class*="problem"]') ||
-                   document.querySelector('#problem-statement');
+                   document.querySelector('#problem-statement') ||
+                   document.querySelector('[data-testid="problem-statement"]') ||
+                   document.querySelector('.problem-body');
+    
+    // Helper function to clean mathematical notation and remove duplication
+    function cleanMathNotation(text) {
+      if (!text) return '';
+      
+      // Remove leading "ss" prefix (common HTML artifact)
+      text = text.replace(/^ss\s*/i, '');
+      text = text.replace(/([.!?]\s*)ss\s+/gi, '$1');
+      
+      // Map Unicode subscript characters
+      const subscriptMap = {
+        '𝑖': 'i', '₁': '1', '₂': '2', '₃': '3', '₄': '4', '₅': '5',
+        '₆': '6', '₇': '7', '₈': '8', '₉': '9', '₀': '0',
+        'ₐ': 'a', 'ₑ': 'e', 'ₕ': 'h', 'ᵢ': 'i', 'ⱼ': 'j', 'ₖ': 'k',
+        'ₗ': 'l', 'ₘ': 'm', 'ₙ': 'n', 'ₒ': 'o', 'ₚ': 'p', 'ᵣ': 'r',
+        'ₛ': 's', 'ₜ': 't', 'ᵤ': 'u', 'ᵥ': 'v', 'ₓ': 'x'
+      };
+      
+      // Map Unicode superscript characters
+      const superscriptMap = {
+        '¹': '1', '²': '2', '³': '3', '⁴': '4', '⁵': '5', 
+        '⁶': '6', '⁷': '7', '⁸': '8', '⁹': '9', '⁰': '0',
+        '⁺': '+', '⁻': '-', '⁼': '=', '⁽': '(', '⁾': ')',
+        'ⁿ': 'n', 'ⁱ': 'i', 'ᵏ': 'k'
+      };
+      
+      // Handle subscript duplication (e.g., "𝑠𝑖si" -> "s_i")
+      Object.keys(subscriptMap).forEach(subUnicode => {
+        const ascii = subscriptMap[subUnicode];
+        // Escape special regex characters in ascii value
+        const escapedAscii = ascii.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        text = text.replace(new RegExp(`([a-zA-Z])(${subUnicode})\\1(${escapedAscii})(?![a-z0-9₀-₉ᵢ-ₓ])`, 'gi'), `$1_${ascii}`);
+        text = text.replace(new RegExp(`(${subUnicode})(${escapedAscii})(?![a-z0-9₀-₉])`, 'gi'), `_${ascii}`);
+      });
+      
+      // Handle superscript duplication (e.g., "2𝑘k" -> "2^k")
+      Object.keys(superscriptMap).forEach(supUnicode => {
+        const ascii = superscriptMap[supUnicode];
+        // Escape special regex characters in ascii value
+        const escapedAscii = ascii.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        text = text.replace(new RegExp(`([a-zA-Z0-9])(${supUnicode})\\1(${escapedAscii})(?![a-z0-9⁰-⁹ᵃ-ᶻ])`, 'gi'), `$1^${ascii}`);
+      });
+      
+      return text;
+    }
+    
+    // Helper function to extract text with proper handling of subscripts and superscripts
+    function extractCleanText(element) {
+      if (!element) return '';
+      
+      const clone = element.cloneNode(true);
+      
+      // Remove script and style tags
+      clone.querySelectorAll('script, style').forEach(el => el.remove());
+      
+      // Process <sub> and <sup> tags BEFORE extracting text
+      clone.querySelectorAll('sub').forEach(sub => {
+        const subText = sub.textContent.trim();
+        const replacement = document.createTextNode('_' + subText);
+        if (sub.parentNode) {
+          sub.parentNode.replaceChild(replacement, sub);
+        }
+      });
+      
+      clone.querySelectorAll('sup').forEach(sup => {
+        const supText = sup.textContent.trim();
+        const replacement = document.createTextNode('^' + supText);
+        if (sup.parentNode) {
+          sup.parentNode.replaceChild(replacement, sup);
+        }
+      });
+      
+      // Remove empty or hidden spans
+      clone.querySelectorAll('span:empty, span[style*="display:none"]').forEach(el => {
+        if (!el.textContent.trim() || el.style.display === 'none') {
+          el.remove();
+        }
+      });
+      
+      // Extract text
+      let text = clone.innerText || clone.textContent || '';
+      
+      // Clean mathematical notation
+      text = cleanMathNotation(text);
+      
+      return text.trim();
+    }
     
     // Extract difficulty (CodeChef shows stars or difficulty level)
     let difficulty = 'Unknown';
@@ -630,7 +761,7 @@
     if (constraintsSection) {
       const nextEl = constraintsSection.nextElementSibling;
       if (nextEl) {
-        constraints = nextEl.textContent.trim().slice(0, 500);
+        constraints = extractCleanText(nextEl).slice(0, 500);
       }
     }
     
@@ -642,14 +773,14 @@
       el.textContent.toLowerCase().includes('input format') || el.textContent.toLowerCase() === 'input');
     if (inputHeader) {
       const nextEl = inputHeader.nextElementSibling;
-      if (nextEl) inputFormat = nextEl.textContent.trim().slice(0, 500);
+      if (nextEl) inputFormat = extractCleanText(nextEl).slice(0, 500);
     }
     
     const outputHeader = Array.from(document.querySelectorAll('h3, h4, strong, b')).find(el => 
       el.textContent.toLowerCase().includes('output format') || el.textContent.toLowerCase() === 'output');
     if (outputHeader) {
       const nextEl = outputHeader.nextElementSibling;
-      if (nextEl) outputFormat = nextEl.textContent.trim().slice(0, 300);
+      if (nextEl) outputFormat = extractCleanText(nextEl).slice(0, 300);
     }
     
     // Helper function to extract text with proper line breaks from pre elements
@@ -772,8 +903,8 @@
     }).join('\n\n');
 
     const baseData = {
-      title: titleEl?.textContent?.trim() || '',
-      description: descEl?.textContent?.trim().slice(0, 2000) || '',
+      title: titleEl ? extractCleanText(titleEl) : '',
+      description: descEl ? extractCleanText(descEl).slice(0, 5000) : '',
       constraints: constraints,
       difficulty: difficulty,
       tags: tags,
@@ -785,20 +916,24 @@
     };
     
     // Console log extracted data for accuracy testing
-    console.log('='.repeat(60));
-    console.log('LC Helper - Extracted Problem Data (CodeChef)');
-    console.log('='.repeat(60));
+    console.log('='.repeat(80));
+    console.log('LC Helper - DOM Scraped Problem Data (CodeChef)');
+    console.log('='.repeat(80));
+    console.log('📡 Data Source: DOM Scraping (CodeChef has no official API for problem statements)');
+    if (problemCode) {
+      console.log('📋 Problem Code:', problemCode);
+    }
     console.log('📌 Title:', baseData.title);
     console.log('📊 Difficulty:', baseData.difficulty);
     console.log('🏷️ Tags:', baseData.tags || 'None found');
-    console.log('-'.repeat(60));
-    console.log('📝 Description (first 500 chars):');
-    console.log(baseData.description.slice(0, 500) + (baseData.description.length > 500 ? '...' : ''));
-    console.log('-'.repeat(60));
-    console.log('📥 Input Format:', inputFormat.slice(0, 200) || 'None found');
-    console.log('📤 Output Format:', outputFormat.slice(0, 200) || 'None found');
-    console.log('📏 Constraints:', baseData.constraints.slice(0, 200) || 'None found');
-    console.log('-'.repeat(60));
+    console.log('-'.repeat(80));
+    console.log('📝 FULL DESCRIPTION (' + baseData.description.length + ' chars):');
+    console.log(baseData.description);
+    console.log('-'.repeat(80));
+    console.log('📥 Input Format (' + inputFormat.length + ' chars):', inputFormat || 'None found');
+    console.log('📤 Output Format (' + outputFormat.length + ' chars):', outputFormat || 'None found');
+    console.log('📏 Constraints (' + baseData.constraints.length + ' chars):', baseData.constraints || 'None found');
+    console.log('-'.repeat(80));
     console.log(`📋 Sample Test Cases (${examples.length} found):`);
     examples.forEach(ex => {
       console.log(`  Example ${ex.index}:`);
@@ -807,9 +942,11 @@
       console.log(`    Output:`);
       ex.output.split('\n').forEach(line => console.log(`      ${line}`));
     });
-    console.log('-'.repeat(60));
+    console.log('-'.repeat(80));
     console.log('🔗 URL:', baseData.url);
-    console.log('='.repeat(60));
+    console.log('='.repeat(80));
+    console.log('\n📦 COMPLETE EXTRACTED DATA OBJECT:');
+    console.log(JSON.stringify(baseData, null, 2));
 
     // Check if problem has images/graphs and capture them
     if (descEl && typeof html2canvas !== 'undefined') {

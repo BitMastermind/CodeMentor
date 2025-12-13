@@ -1666,7 +1666,10 @@ Never jump directly to the algorithm.
 
 Hints should gradually guide thinking, not reveal.
 
-
+**Mathematical Notation**: The problem statement uses standard mathematical notation where:
+- Subscripts are indicated with underscores: "s_i" means s subscript i, "a_1" means a subscript 1
+- Superscripts are indicated with carets: "2^k" means 2 to the power of k, "10^n" means 10 to the power of n
+- Variable names follow standard mathematical conventions (single letters like n, k, m, i, j, etc.)
 
 ═══════════════════════════════════════════════════════════════
 
@@ -1975,6 +1978,11 @@ Your hints must follow the structured thought process used by strong competitive
 7. **Break the problem into components**, if possible.
 
 Never jump directly to the algorithm. Hints should gradually guide thinking, not reveal.
+
+**Mathematical Notation**: The problem statement uses standard mathematical notation where:
+- Subscripts are indicated with underscores: "s_i" means s subscript i, "a_1" means a subscript 1
+- Superscripts are indicated with carets: "2^k" means 2 to the power of k, "10^n" means 10 to the power of n
+- Variable names follow standard mathematical conventions (single letters like n, k, m, i, j, etc.)
 ${problem.hasImages ? 'Note: This problem includes images/graphs. Analyze them carefully along with the text description.' : ''}`;
 
       userText = `Analyze this competitive programming problem and generate progressive hints:

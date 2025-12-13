@@ -632,20 +632,49 @@
     isLoading = false;
   }
 
-  // Helper function to extract text with superscript handling
+  // Helper function to extract text with superscript and subscript handling
   function extractTextWithSuperscripts(element) {
     if (!element) return '';
     
     // Clone the element to avoid modifying the original
     const clone = element.cloneNode(true);
     
+    // Remove empty or hidden spans that might contain MathML artifacts
+    clone.querySelectorAll('span:empty, span[style*="display:none"], span[class*="math"]').forEach(el => {
+      if (!el.textContent.trim() || el.style.display === 'none') {
+        el.remove();
+      }
+    });
+    
     // Map Unicode superscript characters to their numeric equivalents
     const superscriptMap = {
       '¹': '1', '²': '2', '³': '3', '⁴': '4', '⁵': '5', 
       '⁶': '6', '⁷': '7', '⁸': '8', '⁹': '9', '⁰': '0',
       '⁺': '+', '⁻': '-', '⁼': '=', '⁽': '(', '⁾': ')',
-      'ⁿ': 'n', 'ⁱ': 'i'
+      'ⁿ': 'n', 'ⁱ': 'i', 'ᵏ': 'k'
     };
+    
+    // Map Unicode subscript characters
+    const subscriptMap = {
+      '𝑖': 'i', '₁': '1', '₂': '2', '₃': '3', '₄': '4', '₅': '5',
+      '₆': '6', '₇': '7', '₈': '8', '₉': '9', '₀': '0',
+      'ₐ': 'a', 'ₑ': 'e', 'ₕ': 'h', 'ᵢ': 'i', 'ⱼ': 'j', 'ₖ': 'k',
+      'ₗ': 'l', 'ₘ': 'm', 'ₙ': 'n', 'ₒ': 'o', 'ₚ': 'p', 'ᵣ': 'r',
+      'ₛ': 's', 'ₜ': 't', 'ᵤ': 'u', 'ᵥ': 'v', 'ₓ': 'x'
+    };
+    
+    // Convert all <sub> tags to _ notation FIRST (process in reverse order)
+    const subElements = Array.from(clone.querySelectorAll('sub')).reverse();
+    subElements.forEach(sub => {
+      const subText = sub.textContent.trim();
+      // Convert Unicode subscripts to regular characters if needed
+      const normalizedText = subText.split('').map(char => subscriptMap[char] || char).join('');
+      // Replace <sub>content</sub> with _content
+      const replacement = document.createTextNode('_' + normalizedText);
+      if (sub.parentNode) {
+        sub.parentNode.replaceChild(replacement, sub);
+      }
+    });
     
     // Convert all <sup> tags to ^ notation
     // Process in reverse order to avoid index issues when replacing
@@ -683,10 +712,281 @@
       text = text.replace(regex, `$1^${num}`);
     });
     
+    // Handle subscript duplication: unicode subscript + ASCII equivalent (e.g., "𝑠𝑖si" -> "s_i")
+    const subscriptChars = Object.keys(subscriptMap).join('').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    Object.keys(subscriptMap).forEach(subUnicode => {
+      const ascii = subscriptMap[subUnicode];
+      // Escape special regex characters in ascii value
+      const escapedAscii = ascii.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      // Pattern: letter + unicode subscript + same letter + same ascii (e.g., "s𝑖si" -> "s_i")
+      text = text.replace(new RegExp(`([a-zA-Z])(${subUnicode})\\1(${escapedAscii})(?![a-z0-9₀-₉ᵢ-ₓ])`, 'gi'), `$1_${ascii}`);
+      // Pattern: just unicode subscript + ascii (e.g., "𝑖i" -> "_i")
+      text = text.replace(new RegExp(`(${subUnicode})(${escapedAscii})(?![a-z0-9₀-₉])`, 'gi'), `_${ascii}`);
+    });
+    
+    // Handle superscript duplication: unicode superscript + ASCII equivalent (e.g., "2𝑘k" -> "2^k")
+    Object.keys(superscriptMap).forEach(supUnicode => {
+      const ascii = superscriptMap[supUnicode];
+      // Escape special regex characters in ascii value
+      const escapedAscii = ascii.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      // Pattern: number/letter + unicode superscript + same number/letter + same ascii (e.g., "2𝑘k" -> "2^k")
+      text = text.replace(new RegExp(`([a-zA-Z0-9])(${supUnicode})\\1(${escapedAscii})(?![a-z0-9⁰-⁹ᵃ-ᶻ])`, 'gi'), `$1^${ascii}`);
+    });
+    
+    // Remove leading "ss" prefix (common HTML artifact)
+    text = text.replace(/^ss\s*/i, '');
+    text = text.replace(/([.!?]\s*)ss\s+/gi, '$1');
+    
     return text.trim();
   }
 
+  // Extract titleSlug from LeetCode URL
+  // Examples:
+  // - https://leetcode.com/problems/two-sum/
+  // - https://leetcode.com/problems/two-sum/description/
+  // - https://leetcode.cn/problems/two-sum/ (Chinese version)
+  function parseTitleSlugFromUrl(url) {
+    try {
+      const urlObj = new URL(url);
+      const match = urlObj.pathname.match(/\/problems\/([^\/]+)/);
+      if (match && match[1]) {
+        return match[1];
+      }
+    } catch (e) {
+      console.log('LC Helper: Failed to parse LeetCode URL:', e.message);
+    }
+    return null;
+  }
+
+  // Fetch problem data from LeetCode GraphQL API
+  // Returns: Full problem data or null if API call fails
+  async function fetchProblemFromGraphQL(titleSlug) {
+    try {
+      const query = `
+        query questionContent($titleSlug: String!) {
+          question(titleSlug: $titleSlug) {
+            questionId
+            questionFrontendId
+            title
+            titleSlug
+            content
+            difficulty
+            topicTags {
+              name
+              slug
+            }
+            codeSnippets {
+              lang
+              langSlug
+              code
+            }
+            exampleTestcases
+            sampleTestCase
+            metaData
+            hints
+          }
+        }
+      `;
+
+      const response = await fetch('https://leetcode.com/graphql', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Referer': 'https://leetcode.com',
+          'Origin': 'https://leetcode.com'
+        },
+        body: JSON.stringify({
+          query: query,
+          variables: { titleSlug: titleSlug },
+          operationName: 'questionContent'
+        })
+      });
+
+      if (!response.ok) {
+        console.log('LC Helper: LeetCode GraphQL API request failed:', response.status);
+        return null;
+      }
+
+      const data = await response.json();
+      
+      if (data.errors || !data.data || !data.data.question) {
+        console.log('LC Helper: LeetCode GraphQL API returned error:', data.errors || 'No question data');
+        return null;
+      }
+
+      const question = data.data.question;
+      
+      // Parse HTML content to extract text
+      // The content field contains HTML, so we need to extract text from it
+      let description = '';
+      let examples = [];
+      let constraints = '';
+      
+      if (question.content) {
+        // Create a temporary DOM element to parse HTML
+        const tempDiv = document.createElement('div');
+        tempDiv.innerHTML = question.content;
+        
+        // Extract description (everything before examples)
+        const exampleSections = tempDiv.querySelectorAll('strong, b');
+        let exampleStartIndex = -1;
+        exampleSections.forEach((el, idx) => {
+          if (el.textContent.toLowerCase().includes('example') && exampleStartIndex === -1) {
+            exampleStartIndex = idx;
+          }
+        });
+        
+        // Get all paragraphs and process them
+        const allElements = Array.from(tempDiv.children);
+        const descriptionParts = [];
+        let foundExample = false;
+        
+        for (const el of allElements) {
+          const text = el.textContent?.trim() || '';
+          const lowerText = text.toLowerCase();
+          
+          // Check if this is the start of examples
+          if (lowerText.includes('example') && !foundExample) {
+            foundExample = true;
+            // Include the example header but break after extracting it
+          }
+          
+          // Check if this is constraints section
+          if (lowerText.includes('constraints') && !constraints) {
+            const constraintsEl = el.nextElementSibling || el;
+            constraints = extractTextWithSuperscripts(constraintsEl);
+            continue;
+          }
+          
+          if (!foundExample && text && !lowerText.includes('constraints')) {
+            descriptionParts.push(extractTextWithSuperscripts(el));
+          }
+        }
+        
+        description = descriptionParts.join('\n\n');
+        
+        // Extract examples from the HTML content
+        // LeetCode examples are usually in <pre> tags or specific div structures
+        const preBlocks = tempDiv.querySelectorAll('pre');
+        preBlocks.forEach((pre, index) => {
+          const text = extractPreText(pre);
+          if (text) {
+            const inputMatch = text.match(/Input[:\s]*([^\n]*(?:\n(?!Output)[^\n]*)*)/i);
+            const outputMatch = text.match(/Output[:\s]*([^\n]*(?:\n(?!Explanation)[^\n]*)*)/i);
+            const explanationMatch = text.match(/Explanation[:\s]*([\s\S]*)/i);
+            
+            if (inputMatch || outputMatch) {
+              examples.push({
+                index: index + 1,
+                raw: text,
+                input: inputMatch ? inputMatch[1].trim() : '',
+                output: outputMatch ? outputMatch[1].trim() : '',
+                explanation: explanationMatch ? explanationMatch[1].trim() : ''
+              });
+            }
+          }
+        });
+      }
+
+      // Format examples as string for LLM
+      const examplesText = examples.map(ex => {
+        let str = `Example ${ex.index}:\n`;
+        if (ex.input) str += `  Input: ${ex.input}\n`;
+        if (ex.output) str += `  Output: ${ex.output}\n`;
+        if (ex.explanation) str += `  Explanation: ${ex.explanation}\n`;
+        return str;
+      }).join('\n');
+
+      // Get tags
+      const tags = question.topicTags?.map(t => t.name).join(', ') || '';
+
+      return {
+        title: question.title || '',
+        description: description.slice(0, 5000),
+        constraints: constraints,
+        difficulty: question.difficulty || 'Unknown',
+        tags: tags,
+        examples: examplesText,
+        examplesCount: examples.length,
+        url: window.location.href,
+        questionId: question.questionId,
+        questionFrontendId: question.questionFrontendId,
+        fromAPI: true // Flag to indicate this came from API
+      };
+    } catch (error) {
+      console.log('LC Helper: Error fetching from LeetCode GraphQL API:', error.message);
+      return null;
+    }
+  }
+
+  // Helper function to extract text from pre elements (used by both API and DOM)
+  function extractPreText(preEl) {
+    if (!preEl) return '';
+    
+    // First handle superscripts, then extract text
+    const textWithSuperscripts = extractTextWithSuperscripts(preEl);
+    if (textWithSuperscripts) return textWithSuperscripts;
+    
+    // Method 1: Check for nested divs
+    const divs = preEl.querySelectorAll('div');
+    if (divs.length > 0) {
+      return Array.from(divs).map(d => extractTextWithSuperscripts(d) || d.textContent.trim()).join('\n');
+    }
+    
+    // Method 2: Check for <br> tags
+    const html = preEl.innerHTML;
+    if (html.includes('<br')) {
+      // Clone and process superscripts before extracting
+      const clone = preEl.cloneNode(true);
+      clone.querySelectorAll('sup').forEach(sup => {
+        const supText = sup.textContent.trim();
+        const replacement = document.createTextNode('^' + supText);
+        sup.parentNode.replaceChild(replacement, sup);
+      });
+      return clone.textContent
+        .replace(/<br\s*\/?>/gi, '\n')
+        .replace(/<[^>]+>/g, '')
+        .trim();
+    }
+    
+    // Method 3: Use innerText which preserves line breaks
+    if (preEl.innerText) {
+      return preEl.innerText.trim();
+    }
+    
+    // Fallback: textContent
+    return preEl.textContent.trim();
+  }
+
   async function extractProblemData() {
+    // First, try to fetch from GraphQL API if we can parse the URL
+    const titleSlug = parseTitleSlugFromUrl(window.location.href);
+    if (titleSlug) {
+      const apiData = await fetchProblemFromGraphQL(titleSlug);
+      if (apiData) {
+        // Log API fetch success
+        console.log('='.repeat(60));
+        console.log('LC Helper - Problem Data from GraphQL API (LeetCode)');
+        console.log('='.repeat(60));
+        console.log('📌 Title:', apiData.title);
+        console.log('📊 Difficulty:', apiData.difficulty);
+        console.log('🏷️ Tags:', apiData.tags || 'None');
+        console.log('📏 Constraints:', apiData.constraints || 'None found');
+        console.log('-'.repeat(60));
+        console.log('📝 Description (first 500 chars):');
+        console.log(apiData.description.slice(0, 500) + (apiData.description.length > 500 ? '...' : ''));
+        console.log('-'.repeat(60));
+        console.log(`📋 Sample Test Cases (${apiData.examplesCount} found)`);
+        console.log('-'.repeat(60));
+        console.log('🔗 URL:', apiData.url);
+        console.log('='.repeat(60));
+        return apiData;
+      }
+    }
+    
+    // Fallback to DOM scraping if API fails
+    console.log('LC Helper: Falling back to DOM scraping for LeetCode problem');
+    
     // LeetCode problem page selectors
     const titleEl = document.querySelector('[data-cy="question-title"]') || 
                     document.querySelector('.text-title-large') ||
@@ -728,45 +1028,6 @@
       if (constraintsList) {
         constraints = extractTextWithSuperscripts(constraintsList);
       }
-    }
-
-    // Helper function to extract text with proper line breaks from pre elements
-    function extractPreText(preEl) {
-      if (!preEl) return '';
-      
-      // First handle superscripts, then extract text
-      const textWithSuperscripts = extractTextWithSuperscripts(preEl);
-      if (textWithSuperscripts) return textWithSuperscripts;
-      
-      // Method 1: Check for nested divs
-      const divs = preEl.querySelectorAll('div');
-      if (divs.length > 0) {
-        return Array.from(divs).map(d => extractTextWithSuperscripts(d) || d.textContent.trim()).join('\n');
-      }
-      
-      // Method 2: Check for <br> tags
-      const html = preEl.innerHTML;
-      if (html.includes('<br')) {
-        // Clone and process superscripts before extracting
-        const clone = preEl.cloneNode(true);
-        clone.querySelectorAll('sup').forEach(sup => {
-          const supText = sup.textContent.trim();
-          const replacement = document.createTextNode('^' + supText);
-          sup.parentNode.replaceChild(replacement, sup);
-        });
-        return clone.textContent
-          .replace(/<br\s*\/?>/gi, '\n')
-          .replace(/<[^>]+>/g, '')
-          .trim();
-      }
-      
-      // Method 3: Use innerText which preserves line breaks
-      if (preEl.innerText) {
-        return preEl.innerText.trim();
-      }
-      
-      // Fallback: textContent
-      return preEl.textContent.trim();
     }
 
     // Extract sample test cases from <pre> blocks
@@ -848,17 +1109,18 @@
     };
     
     // Console log extracted data for accuracy testing
-    console.log('='.repeat(60));
-    console.log('LC Helper - Extracted Problem Data (LeetCode)');
-    console.log('='.repeat(60));
+    console.log('='.repeat(80));
+    console.log('LC Helper - DOM Scraped Problem Data (LeetCode)');
+    console.log('='.repeat(80));
+    console.log('📡 Data Source: DOM Scraping (GraphQL API was unavailable or failed)');
     console.log('📌 Title:', baseData.title);
     console.log('📊 Difficulty:', baseData.difficulty);
     console.log('🏷️ Tags:', baseData.tags || 'None found');
     console.log('📏 Constraints:', baseData.constraints || 'None found');
-    console.log('-'.repeat(60));
-    console.log('📝 Description (first 500 chars):');
-    console.log(baseData.description.slice(0, 500) + (baseData.description.length > 500 ? '...' : ''));
-    console.log('-'.repeat(60));
+    console.log('-'.repeat(80));
+    console.log('📝 FULL DESCRIPTION (' + baseData.description.length + ' chars):');
+    console.log(baseData.description);
+    console.log('-'.repeat(80));
     console.log(`📋 Sample Test Cases (${examples.length} found):`);
     examples.forEach(ex => {
       console.log(`  Example ${ex.index}:`);
@@ -870,15 +1132,20 @@
         console.log(`    Output:`);
         ex.output.split('\n').forEach(line => console.log(`      ${line}`));
       }
-      if (ex.explanation) console.log(`    Explanation: ${ex.explanation.slice(0, 100)}...`);
+      if (ex.explanation) {
+        console.log(`    Explanation:`);
+        console.log(ex.explanation);
+      }
       if (!ex.input && !ex.output && ex.raw) {
         console.log(`    Raw:`);
-        ex.raw.slice(0, 200).split('\n').forEach(line => console.log(`      ${line}`));
+        ex.raw.split('\n').forEach(line => console.log(`      ${line}`));
       }
     });
-    console.log('-'.repeat(60));
+    console.log('-'.repeat(80));
     console.log('🔗 URL:', baseData.url);
-    console.log('='.repeat(60));
+    console.log('='.repeat(80));
+    console.log('\n📦 COMPLETE EXTRACTED DATA OBJECT:');
+    console.log(JSON.stringify(baseData, null, 2));
 
     // Check if problem has images/graphs and capture them
     if (descriptionEl && typeof html2canvas !== 'undefined') {
