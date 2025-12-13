@@ -24,26 +24,27 @@
     "https://api.together.xyz/*",
     "https://api-inference.huggingface.co/*",
     "http://localhost:3000/*",
-    "https://*.lchelper.com/*"
+    "https://*.lchelper.com/*",
+    "https://www.google-analytics.com/*",
+    "https://*.sentry.io/*"
   ],
   "background": {
-    "service_worker": "background/service-worker.js",
-    "type": "module"
+    "service_worker": "background/service-worker.js"
   },
   "content_scripts": [
     {
       "matches": ["https://leetcode.com/problems/*"],
-      "js": ["browser-polyfill.js", "html2canvas.min.js", "content/leetcode.js"],
+      "js": ["browser-polyfill.js", "html2canvas.min.js", "utils/errorTracking.js", "utils/analytics.js", "content/leetcode.js"],
       "css": ["styles/hints-panel.css"]
     },
     {
       "matches": ["https://codeforces.com/problemset/problem/*", "https://codeforces.com/contest/*/problem/*"],
-      "js": ["browser-polyfill.js", "html2canvas.min.js", "content/codeforces.js"],
+      "js": ["browser-polyfill.js", "html2canvas.min.js", "utils/errorTracking.js", "utils/analytics.js", "content/codeforces.js"],
       "css": ["styles/hints-panel.css"]
     },
     {
       "matches": ["https://www.codechef.com/problems/*", "https://www.codechef.com/*/problems/*"],
-      "js": ["browser-polyfill.js", "html2canvas.min.js", "content/codechef.js"],
+      "js": ["browser-polyfill.js", "html2canvas.min.js", "utils/errorTracking.js", "utils/analytics.js", "content/codechef.js"],
       "css": ["styles/hints-panel.css"]
     }
   ],

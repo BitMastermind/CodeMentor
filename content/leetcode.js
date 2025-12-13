@@ -572,6 +572,14 @@
       }
     } catch (error) {
       console.log('[LC Helper] loadHints: Exception occurred:', error);
+      if (typeof LCHErrorTracking !== 'undefined') {
+        LCHErrorTracking.trackError(error, {
+          tags: { type: 'hint_loading', platform: 'leetcode' }
+        });
+      }
+      if (typeof LCAnalytics !== 'undefined') {
+        LCAnalytics.trackError('hint_loading', error.message);
+      }
       showError(error.message || 'An error occurred. Please refresh the page.');
     }
 

@@ -1,8 +1,22 @@
 // LC Helper - Background Service Worker
 
+// Import error tracking and analytics utilities
+// Note: importScripts paths are relative to extension root, not this file
+importScripts('/utils/errorTracking.js');
+importScripts('/utils/analytics.js');
+
 // Initialize on install or update
 chrome.runtime.onInstalled.addListener(async (details) => {
   console.log('LC Helper installed/updated:', details.reason);
+  
+  // Track installation/update
+  if (typeof LCAnalytics !== 'undefined') {
+    LCAnalytics.trackEvent('extension_installed', {
+      reason: details.reason,
+      version: chrome.runtime.getManifest().version
+    });
+  }
+  
   fetchAndCacheContests();
   
   // Set up periodic contest refresh (every 6 hours)
@@ -68,6 +82,11 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
         priority: 2
       }).catch((error) => {
         console.error('LC Helper: Failed to create contest notification:', error);
+        if (typeof LCHErrorTracking !== 'undefined') {
+          LCHErrorTracking.trackError(error, {
+            tags: { type: 'notification_creation' }
+          });
+        }
       });
       console.log('LC Helper: Contest reminder sent for:', contest.name);
     } else {
@@ -339,6 +358,11 @@ async function handleMessage(message, sender, sendResponse) {
       chrome.tabs.create({ url: chrome.runtime.getURL('popup/popup.html') });
       sendResponse({ success: true });
       break;
+    
+    case 'SUBMIT_FEEDBACK':
+      const feedbackResult = await submitFeedback(message.feedback);
+      sendResponse(feedbackResult);
+      break;
       
     default:
       sendResponse({ error: 'Unknown message type' });
@@ -357,6 +381,14 @@ async function fetchAndCacheContests() {
     return contests;
   } catch (error) {
     console.error('Error fetching contests:', error);
+    if (typeof LCHErrorTracking !== 'undefined') {
+      LCHErrorTracking.trackError(error, {
+        tags: { type: 'contest_fetch' }
+      });
+    }
+    if (typeof LCAnalytics !== 'undefined') {
+      LCAnalytics.trackError('contest_fetch', error.message);
+    }
     return [];
   }
 }
@@ -1454,7 +1486,10 @@ Now provide your explanation as JSON:`;
 
 async function explainProblemOpenAI(problem, apiKey, platform = 'codeforces') {
   try {
-    const model = (problem.hasImages && problem.imageData) ? 'gpt-4o' : 'gpt-4o-mini';
+    // Use gpt-4o for vision support if images are present (either imageData or imageUrls), otherwise use gpt-4o-mini
+    const hasImages = (problem.hasImages && (problem.imageData || (problem.imageUrls && problem.imageUrls.length > 0)));
+    let model = hasImages ? 'gpt-4o' : 'gpt-4o-mini';
+    let useImages = hasImages;
     
     // Format examples for better context
     const examplesText = problem.examples ? 
@@ -1633,16 +1668,46 @@ Return valid JSON with this structure:
       }
     ];
 
-    if (problem.hasImages && problem.imageData) {
-      userContent.push({
-        type: 'image_url',
-        image_url: {
-          url: problem.imageData
+    // Handle images - support both imageData (base64) and imageUrls (URLs)
+    if (problem.hasImages) {
+      // Priority 1: Use imageData (base64 from DOM scraping) if available
+      if (problem.imageData) {
+        userContent.push({
+          type: 'image_url',
+          image_url: {
+            url: problem.imageData
+          }
+        });
+      }
+      // Priority 2: Fetch image URLs and convert to base64 (for BYOK compatibility)
+      else if (problem.imageUrls && problem.imageUrls.length > 0) {
+        try {
+          const imageUrl = problem.imageUrls[0].url; // Use first image
+          const imageResponse = await fetch(imageUrl);
+          const imageBlob = await imageResponse.blob();
+          const base64Data = await new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onloadend = () => {
+              resolve(reader.result); // This includes the data URL prefix
+            };
+            reader.onerror = reject;
+            reader.readAsDataURL(imageBlob);
+          });
+          
+          userContent.push({
+            type: 'image_url',
+            image_url: {
+              url: base64Data // OpenAI accepts data URLs
+            }
+          });
+        } catch (e) {
+          console.error('LC Helper: Failed to fetch image for OpenAI (explain):', e);
+          // Continue without image if fetch fails
         }
-      });
+      }
     }
 
-    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+    let response = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -1666,10 +1731,55 @@ Return valid JSON with this structure:
       })
     });
     
-    const data = await response.json();
+    let data = await response.json();
+    
+    // If gpt-4o fails (user doesn't have access), fallback to gpt-4o-mini without images
+    if (data.error && model === 'gpt-4o' && hasImages) {
+      console.log('LC Helper: gpt-4o not available for explanation, falling back to gpt-4o-mini (images will be skipped)');
+      
+      // Remove images from content and retry with gpt-4o-mini
+      const textOnlyContent = userContent.filter(item => item.type === 'text');
+      model = 'gpt-4o-mini';
+      useImages = false;
+      
+      // Update prompt to mention images were detected but can't be analyzed
+      const updatedUserText = userText + '\n\n⚠️ Note: This problem contains images/graphs, but your API key doesn\'t have access to vision models (gpt-4o). The explanation is based on text description only.';
+      
+      response = await fetch('https://api.openai.com/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${apiKey}`
+        },
+        body: JSON.stringify({
+          model: model,
+          messages: [
+            {
+              role: 'system',
+              content: systemPrompt
+            },
+            {
+              role: 'user',
+              content: [{ type: 'text', text: updatedUserText }]
+            }
+          ],
+          temperature: 0.3,
+          max_tokens: 2500,
+          response_format: { type: "json_object" }
+        })
+      });
+      
+      data = await response.json();
+    }
     
     if (data.error) {
       const friendlyError = formatApiError(data.error.message, 'openai');
+      // Add specific message for vision model access issues
+      if (hasImages && model === 'gpt-4o') {
+        return { 
+          error: friendlyError + '\n\n💡 Tip: This problem contains images. To analyze images, you need an OpenAI API key with access to gpt-4o model. Alternatively, use Gemini which supports vision with all API keys.' 
+        };
+      }
       return { error: friendlyError };
     }
     
@@ -2237,7 +2347,8 @@ async function generateHintsOpenAI(problem, apiKey, platform = 'codeforces') {
   try {
     // Use gpt-4o for vision support if images are present (either imageData or imageUrls), otherwise use gpt-4o-mini
     const hasImages = (problem.hasImages && (problem.imageData || (problem.imageUrls && problem.imageUrls.length > 0)));
-    const model = hasImages ? 'gpt-4o' : 'gpt-4o-mini';
+    let model = hasImages ? 'gpt-4o' : 'gpt-4o-mini';
+    let useImages = hasImages;
     
     const difficulty = problem.difficulty || 'Unknown';
     const existingTags = problem.tags || '';
@@ -2403,16 +2514,32 @@ Remember: DO NOT give the solution, code, or exact data structures. Guide the us
           }
         });
       }
-      // Priority 2: Use imageUrls (from GraphQL API) if available
+      // Priority 2: Fetch image URLs and convert to base64 (for BYOK compatibility)
       else if (problem.imageUrls && problem.imageUrls.length > 0) {
-        // Add all image URLs to the content
-        for (const img of problem.imageUrls) {
+        // Fetch and convert image URLs to base64 (similar to Gemini implementation)
+        // This ensures compatibility when URLs require authentication or aren't publicly accessible
+        try {
+          const imageUrl = problem.imageUrls[0].url; // Use first image (OpenAI supports multiple, but we'll start with one)
+          const imageResponse = await fetch(imageUrl);
+          const imageBlob = await imageResponse.blob();
+          const base64Data = await new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onloadend = () => {
+              resolve(reader.result); // This includes the data URL prefix
+            };
+            reader.onerror = reject;
+            reader.readAsDataURL(imageBlob);
+          });
+          
           userContent.push({
             type: 'image_url',
             image_url: {
-              url: img.url
+              url: base64Data // OpenAI accepts data URLs
             }
           });
+        } catch (e) {
+          console.error('LC Helper: Failed to fetch image for OpenAI:', e);
+          // Continue without image if fetch fails
         }
       }
     }
@@ -4179,6 +4306,53 @@ async function testScrapingAccuracyGemini(problem, apiKey, testPrompt) {
     return { rawResponse: text };
   } catch (error) {
     throw new Error(`Gemini API error: ${error.message}`);
+  }
+}
+
+// Submit user feedback
+async function submitFeedback(feedback) {
+  try {
+    // Store feedback locally (you can later send to backend or email)
+    const feedbackKey = `feedback_${Date.now()}_${Math.random().toString(36).substring(7)}`;
+    await chrome.storage.local.set({
+      [feedbackKey]: {
+        ...feedback,
+        id: feedbackKey,
+        storedAt: Date.now()
+      }
+    });
+    
+    // Track feedback submission
+    if (typeof LCAnalytics !== 'undefined') {
+      LCAnalytics.trackEvent('feedback_received', {
+        feedback_type: feedback.type,
+        has_email: !!feedback.email
+      });
+    }
+    
+    // Optionally send to backend API
+    // const { authToken } = await chrome.storage.sync.get('authToken');
+    // if (authToken) {
+    //   await fetch(`${API_BASE_URL}/feedback`, {
+    //     method: 'POST',
+    //     headers: {
+    //       'Content-Type': 'application/json',
+    //       'Authorization': `Bearer ${authToken}`
+    //     },
+    //     body: JSON.stringify(feedback)
+    //   });
+    // }
+    
+    console.log('LC Helper: Feedback submitted:', feedback.type);
+    return { success: true };
+  } catch (error) {
+    console.error('LC Helper: Error submitting feedback:', error);
+    if (typeof LCHErrorTracking !== 'undefined') {
+      LCHErrorTracking.trackError(error, {
+        tags: { type: 'feedback_submission' }
+      });
+    }
+    return { success: false, error: error.message };
   }
 }
 

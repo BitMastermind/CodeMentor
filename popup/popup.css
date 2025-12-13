@@ -1424,3 +1424,58 @@ select:focus {
   color: var(--text-muted);
 }
 
+.modal-body textarea {
+  width: 100%;
+  padding: 12px;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: 13px;
+  resize: vertical;
+  min-height: 120px;
+  transition: all 0.2s ease;
+}
+
+.modal-body textarea:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-glow);
+}
+
+.modal-body textarea::placeholder {
+  color: var(--text-muted);
+}
+
+.input-hint {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-top: 4px;
+  line-height: 1.4;
+}
+
+.error-message {
+  background: rgba(239, 68, 68, 0.15);
+  border: 1px solid var(--danger);
+  color: var(--danger);
+  padding: 12px;
+  border-radius: 8px;
+  font-size: 12px;
+  margin-top: 12px;
+  display: flex;
+  align-items: center;
+}
+
+.success-message {
+  background: rgba(16, 185, 129, 0.15);
+  border: 1px solid var(--success);
+  color: var(--success);
+  padding: 12px;
+  border-radius: 8px;
+  font-size: 12px;
+  margin-top: 12px;
+  display: flex;
+  align-items: center;
+}
+

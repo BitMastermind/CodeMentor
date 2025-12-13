@@ -4,11 +4,23 @@ document.addEventListener('DOMContentLoaded', () => {
   initTabs();
   initSettings();
   initAuthModals();
+  initFeedbackModal();
   loadContests();
   initFilters();
   loadStreakData();
   loadFavorites();
   initRefreshButton();
+  
+  // Initialize analytics and error tracking
+  if (typeof LCAnalytics !== 'undefined') {
+    LCAnalytics.init();
+    LCAnalytics.trackPageView('popup', 'LC Helper Popup');
+  }
+  
+  // Track popup open
+  if (typeof LCAnalytics !== 'undefined') {
+    LCAnalytics.trackEvent('popup_opened');
+  }
 });
 
 // Clean up when popup closes (though this may not always fire)
@@ -426,6 +438,16 @@ function initSettings() {
     document.getElementById('reminderTime').value = result.reminderTime || '30';
     document.getElementById('autoShowPanel').checked = result.autoShowPanel || false;
     
+    // Analytics setting
+    const analyticsEnabled = result.analyticsEnabled !== false; // Default to true
+    const analyticsCheckbox = document.getElementById('analyticsEnabled');
+    if (analyticsCheckbox) {
+      analyticsCheckbox.checked = analyticsEnabled;
+      if (typeof LCAnalytics !== 'undefined') {
+        LCAnalytics.setEnabled(analyticsEnabled);
+      }
+    }
+    
     // Load subscription status if using service mode
     if (serviceMode === 'lch-service') {
       await loadSubscriptionStatus();
@@ -444,6 +466,19 @@ function initSettings() {
   document.getElementById('apiProvider').addEventListener('change', (e) => {
     updateApiKeyLink(e.target.value);
   });
+  
+  // Analytics toggle
+  const analyticsCheckbox = document.getElementById('analyticsEnabled');
+  if (analyticsCheckbox) {
+    analyticsCheckbox.addEventListener('change', async (e) => {
+      const enabled = e.target.checked;
+      await chrome.storage.sync.set({ analyticsEnabled: enabled });
+      if (typeof LCAnalytics !== 'undefined') {
+        LCAnalytics.setEnabled(enabled);
+        LCAnalytics.trackEvent('analytics_toggled', { enabled });
+      }
+    });
+  }
 
   // Toggle API key visibility
   const toggleBtn = document.getElementById('toggleApiKey');
@@ -486,7 +521,8 @@ function initSettings() {
       apiProvider: apiProvider,
       notifyContests: document.getElementById('notifyContests').checked,
       reminderTime: document.getElementById('reminderTime').value,
-      autoShowPanel: document.getElementById('autoShowPanel').checked
+      autoShowPanel: document.getElementById('autoShowPanel').checked,
+      analyticsEnabled: document.getElementById('analyticsEnabled')?.checked !== false
     };
 
     // Never log the API key - only log that it was saved
@@ -966,6 +1002,141 @@ function initAuthModals() {
       registerModal.style.display = 'none';
     }
   });
+}
+
+// Initialize feedback modal
+function initFeedbackModal() {
+  const feedbackModal = document.getElementById('feedbackModal');
+  const openFeedbackBtn = document.getElementById('openFeedbackBtn');
+  const closeFeedbackModal = document.getElementById('closeFeedbackModal');
+  const submitFeedback = document.getElementById('submitFeedback');
+  
+  if (!feedbackModal || !openFeedbackBtn) return;
+  
+  openFeedbackBtn.addEventListener('click', () => {
+    feedbackModal.style.display = 'flex';
+    if (typeof LCAnalytics !== 'undefined') {
+      LCAnalytics.trackEvent('feedback_modal_opened');
+    }
+  });
+  
+  closeFeedbackModal.addEventListener('click', () => {
+    feedbackModal.style.display = 'none';
+    resetFeedbackForm();
+  });
+  
+  submitFeedback.addEventListener('click', async () => {
+    const type = document.getElementById('feedbackType').value;
+    const email = document.getElementById('feedbackEmail').value.trim();
+    const message = document.getElementById('feedbackMessage').value.trim();
+    const errorEl = document.getElementById('feedbackError');
+    const successEl = document.getElementById('feedbackSuccess');
+    
+    // Hide previous messages
+    errorEl.style.display = 'none';
+    successEl.style.display = 'none';
+    
+    if (!message) {
+      errorEl.textContent = 'Please enter your feedback message';
+      errorEl.style.display = 'block';
+      return;
+    }
+    
+    if (message.length < 10) {
+      errorEl.textContent = 'Please provide more details (at least 10 characters)';
+      errorEl.style.display = 'block';
+      return;
+    }
+    
+    try {
+      submitFeedback.disabled = true;
+      submitFeedback.innerHTML = `
+        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 8px;">
+          <line x1="12" y1="2" x2="12" y2="6"></line>
+          <line x1="12" y1="18" x2="12" y2="22"></line>
+          <line x1="4.93" y1="4.93" x2="7.76" y2="7.76"></line>
+          <line x1="16.24" y1="16.24" x2="19.07" y2="19.07"></line>
+          <line x1="2" y1="12" x2="6" y2="12"></line>
+          <line x1="18" y1="12" x2="22" y2="12"></line>
+          <line x1="4.93" y1="19.07" x2="7.76" y2="16.24"></line>
+          <line x1="16.24" y1="7.76" x2="19.07" y2="4.93"></line>
+        </svg>
+        Sending...
+      `;
+      
+      // Get extension version and user info
+      const extensionVersion = chrome.runtime.getManifest().version;
+      const { userEmail } = await chrome.storage.sync.get('userEmail');
+      
+      // Send feedback to background script
+      const response = await chrome.runtime.sendMessage({
+        type: 'SUBMIT_FEEDBACK',
+        feedback: {
+          type,
+          email: email || userEmail || 'anonymous',
+          message,
+          extensionVersion,
+          timestamp: new Date().toISOString(),
+          userAgent: navigator.userAgent
+        }
+      });
+      
+      if (response && response.success) {
+        // Track successful feedback submission
+        if (typeof LCAnalytics !== 'undefined') {
+          LCAnalytics.trackEvent('feedback_submitted', {
+            feedback_type: type,
+            has_email: !!email
+          });
+        }
+        
+        successEl.style.display = 'flex';
+        resetFeedbackForm();
+        
+        // Close modal after 2 seconds
+        setTimeout(() => {
+          feedbackModal.style.display = 'none';
+          resetFeedbackForm();
+        }, 2000);
+      } else {
+        throw new Error(response?.error || 'Failed to submit feedback');
+      }
+    } catch (error) {
+      console.error('Error submitting feedback:', error);
+      if (typeof LCHErrorTracking !== 'undefined') {
+        LCHErrorTracking.trackError(error, {
+          tags: { type: 'feedback_submission' }
+        });
+      }
+      errorEl.textContent = error.message || 'Failed to submit feedback. Please try again.';
+      errorEl.style.display = 'block';
+    } finally {
+      submitFeedback.disabled = false;
+      submitFeedback.innerHTML = `
+        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 8px;">
+          <line x1="22" y1="2" x2="11" y2="13"></line>
+          <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+        </svg>
+        Send Feedback
+      `;
+    }
+  });
+  
+  // Close modal when clicking outside
+  window.addEventListener('click', (e) => {
+    if (e.target === feedbackModal) {
+      feedbackModal.style.display = 'none';
+      resetFeedbackForm();
+    }
+  });
+  
+  function resetFeedbackForm() {
+    document.getElementById('feedbackType').value = 'bug';
+    document.getElementById('feedbackEmail').value = '';
+    document.getElementById('feedbackMessage').value = '';
+    document.getElementById('feedbackError').style.display = 'none';
+    document.getElementById('feedbackSuccess').style.display = 'none';
+  }
 }
 
 // Unified Streak Data Management (API-based backend, classic UI)
