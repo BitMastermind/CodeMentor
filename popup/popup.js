@@ -26,10 +26,14 @@ document.addEventListener('DOMContentLoaded', () => {
 // Clean up when popup closes (though this may not always fire)
 window.addEventListener('beforeunload', () => {
   stopAutoRefresh();
+  stopContestCountdown();
 });
 
 // Auto-refresh interval for today's count (while popup is open)
 let todayCountRefreshInterval = null;
+
+// Auto-refresh interval for contest countdown (while popup is open)
+let contestCountdownInterval = null;
 
 // Initialize refresh button for today's count
 function initRefreshButton() {
@@ -616,6 +620,20 @@ function renderContests() {
   contestList.innerHTML = filteredContests.map(contest => {
     const countdown = getCountdown(contest.startTime);
     const countdownClass = countdown.hours < 1 ? 'live' : countdown.hours < 24 ? 'soon' : '';
+    
+    // Debug: Log timezone conversion for first contest (can be removed later)
+    if (filteredContests.indexOf(contest) === 0) {
+      const date = new Date(contest.startTime);
+      const userTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+      console.log('LC Helper: Contest time conversion', {
+        contest: contest.name,
+        storedUTC: contest.startTime,
+        parsedDate: date.toISOString(),
+        userTimezone: userTimezone,
+        localTime: formatDate(contest.startTime),
+        utcTime: date.toUTCString()
+      });
+    }
 
     return `
       <div class="contest-card" data-url="${contest.url}">
@@ -684,6 +702,9 @@ function renderContests() {
       btn.textContent = !isActive ? '🔔 Reminder Set' : '🔕 Remind Me';
     });
   });
+  
+  // Start/restart countdown auto-refresh
+  startContestCountdown();
 }
 
 function initFilters() {
@@ -730,9 +751,14 @@ function getPlatformName(platform) {
 }
 
 function getCountdown(startTime) {
-  const now = new Date();
+  // Parse the start time (assumed to be in UTC/ISO format)
+  // JavaScript Date automatically converts ISO strings to user's local timezone
   const start = new Date(startTime);
-  const diff = start - now;
+  // Get current time in user's local timezone
+  const now = new Date();
+  
+  // Calculate difference in milliseconds (timezone-independent)
+  const diff = start.getTime() - now.getTime();
 
   if (diff < 0) {
     return { text: '🔴 Live Now!', hours: 0 };
@@ -755,14 +781,49 @@ function getCountdown(startTime) {
 }
 
 function formatDate(dateStr) {
-  const date = new Date(dateStr);
-  return date.toLocaleDateString('en-US', {
-    weekday: 'short',
-    month: 'short',
-    day: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit'
-  });
+  if (!dateStr) return 'Invalid Date';
+  
+  try {
+    // Parse the date string (should be ISO 8601 UTC format)
+    // JavaScript Date automatically converts UTC to local timezone
+    const date = new Date(dateStr);
+    
+    // Validate the date
+    if (isNaN(date.getTime())) {
+      console.warn('LC Helper: Invalid date string:', dateStr);
+      return 'Invalid Date';
+    }
+    
+    // Get user's timezone from browser
+    const userTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    
+    // Format date in user's local timezone
+    // timeZone option ensures it uses the user's actual timezone
+    const formatter = new Intl.DateTimeFormat('en-US', {
+      weekday: 'short',
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: true,
+      timeZone: userTimezone // Explicitly use user's timezone (e.g., 'Asia/Kolkata' for India)
+    });
+    
+    const formatted = formatter.format(date);
+    
+    // Debug log (can be removed in production)
+    // console.log('LC Helper: Date formatting:', {
+    //   input: dateStr,
+    //   parsed: date.toISOString(),
+    //   timezone: userTimezone,
+    //   formatted: formatted
+    // });
+    
+    return formatted;
+  } catch (error) {
+    console.error('LC Helper: Error formatting date:', dateStr, error);
+    return 'Invalid Date';
+  }
 }
 
 function formatDuration(minutes) {
@@ -775,6 +836,27 @@ function formatDuration(minutes) {
     return `${hours}h`;
   }
   return `${mins}m`;
+}
+
+// Start auto-refresh for contest countdown
+function startContestCountdown() {
+  // Clear existing interval
+  if (contestCountdownInterval) {
+    clearInterval(contestCountdownInterval);
+  }
+  
+  // Update countdown every minute to show accurate time remaining
+  contestCountdownInterval = setInterval(() => {
+    renderContests();
+  }, 60000); // 60 seconds
+}
+
+// Stop auto-refresh for contest countdown
+function stopContestCountdown() {
+  if (contestCountdownInterval) {
+    clearInterval(contestCountdownInterval);
+    contestCountdownInterval = null;
+  }
 }
 
 function updateApiKeyLink(provider) {

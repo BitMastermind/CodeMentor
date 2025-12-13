@@ -466,9 +466,10 @@ async function fetchCodeforcesContests() {
         name: c.name,
         platform: 'codeforces',
         url: `https://codeforces.com/contest/${c.id}`,
-        startTime: new Date(c.startTimeSeconds * 1000).toISOString(),
+        startTime: normalizeToISO(new Date(c.startTimeSeconds * 1000)),
         duration: c.durationSeconds / 60
-      }));
+      }))
+      .filter(c => c.startTime); // Remove any with invalid timestamps
     
     console.log('Codeforces contests fetched:', contests.length);
     return contests;
@@ -498,16 +499,20 @@ async function fetchLeetCodeContests() {
       if (response.ok) {
         const data = await response.json();
         const contests = data
-          .filter(c => new Date(c.start_time) > new Date())
+          .filter(c => {
+            const startTime = normalizeToISO(c.start_time);
+            return startTime && new Date(startTime) > new Date();
+          })
           .slice(0, 10)
           .map(c => ({
             id: `lc_${c.name.replace(/\s+/g, '_').replace(/[^a-zA-Z0-9_]/g, '')}`,
             name: c.name,
             platform: 'leetcode',
             url: c.url || 'https://leetcode.com/contest/',
-            startTime: c.start_time,
+            startTime: normalizeToISO(c.start_time),
             duration: parseDuration(c.duration)
-          }));
+          }))
+          .filter(c => c.startTime); // Remove any with invalid timestamps
         
         console.log('LeetCode contests fetched:', contests.length);
         return contests;
@@ -534,9 +539,9 @@ async function fetchLeetCodeContests() {
       name: 'Weekly Contest',
       platform: 'leetcode',
       url: 'https://leetcode.com/contest/',
-      startTime: nextWeekly.toISOString(),
+      startTime: normalizeToISO(nextWeekly),
       duration: 90
-    }];
+    }].filter(c => c.startTime); // Ensure valid timestamp
   } catch (error) {
     console.log('LC Helper: Error fetching LeetCode contests');
     return [];
@@ -561,16 +566,20 @@ async function fetchCodeChefContests() {
       if (response.ok) {
         const data = await response.json();
         const contests = data
-          .filter(c => new Date(c.start_time) > new Date())
+          .filter(c => {
+            const startTime = normalizeToISO(c.start_time);
+            return startTime && new Date(startTime) > new Date();
+          })
           .slice(0, 10)
           .map(c => ({
             id: `cc_${c.name.replace(/\s+/g, '_').replace(/[^a-zA-Z0-9_]/g, '')}`,
             name: c.name,
             platform: 'codechef',
             url: c.url || 'https://www.codechef.com/contests',
-            startTime: c.start_time,
+            startTime: normalizeToISO(c.start_time),
             duration: parseDuration(c.duration)
-          }));
+          }))
+          .filter(c => c.startTime); // Remove any with invalid timestamps
         
         console.log('CodeChef contests fetched:', contests.length);
         return contests;
@@ -597,14 +606,17 @@ async function fetchCodeChefContests() {
         const data = await response.json();
         const futureContests = data.future_contests || [];
         
-        return futureContests.slice(0, 10).map(c => ({
-          id: `cc_${c.contest_code}`,
-          name: c.contest_name,
-          platform: 'codechef',
-          url: `https://www.codechef.com/${c.contest_code}`,
-          startTime: new Date(c.contest_start_date_iso).toISOString(),
-          duration: Math.floor((new Date(c.contest_end_date_iso) - new Date(c.contest_start_date_iso)) / 60000)
-        }));
+        return futureContests
+          .slice(0, 10)
+          .map(c => ({
+            id: `cc_${c.contest_code}`,
+            name: c.contest_name,
+            platform: 'codechef',
+            url: `https://www.codechef.com/${c.contest_code}`,
+            startTime: normalizeToISO(c.contest_start_date_iso),
+            duration: Math.floor((new Date(c.contest_end_date_iso) - new Date(c.contest_start_date_iso)) / 60000)
+          }))
+          .filter(c => c.startTime); // Remove any with invalid timestamps
       }
     } catch (e) {
       // Silently return empty - network errors are expected
@@ -617,6 +629,40 @@ async function fetchCodeChefContests() {
   } catch (error) {
     console.log('LC Helper: Error fetching CodeChef contests');
     return [];
+  }
+}
+
+// Normalize timestamp to ISO 8601 UTC format
+// Handles various input formats: ISO strings (with/without timezone), Unix timestamps, Date objects
+function normalizeToISO(timestamp) {
+  if (!timestamp) return null;
+  
+  try {
+    // If it's already a Date object, convert directly
+    if (timestamp instanceof Date) {
+      if (isNaN(timestamp.getTime())) {
+        console.warn('LC Helper: Invalid Date object');
+        return null;
+      }
+      return timestamp.toISOString();
+    }
+    
+    // Try parsing as Date (handles ISO strings with/without timezone, Unix timestamps, etc.)
+    // JavaScript Date constructor automatically handles:
+    // - ISO 8601 strings: "2024-12-14T02:30:00Z" or "2024-12-14T02:30:00+05:30"
+    // - Unix timestamps (milliseconds or seconds)
+    // - Other date string formats
+    const date = new Date(timestamp);
+    if (isNaN(date.getTime())) {
+      console.warn('LC Helper: Invalid timestamp format:', timestamp);
+      return null;
+    }
+    
+    // Return as ISO 8601 UTC string (always in UTC, ends with 'Z')
+    return date.toISOString();
+  } catch (error) {
+    console.warn('LC Helper: Error normalizing timestamp:', timestamp, error);
+    return null;
   }
 }
 
