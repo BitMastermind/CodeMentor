@@ -1,9 +1,9 @@
-// LC Helper - Popup Script
+// CodeMentor - Popup Script
 
 document.addEventListener('DOMContentLoaded', () => {
   initTabs();
   initSettings();
-  initAuthModals();
+  // Backend authentication removed - Extension is now fully client-side
   initFeedbackModal();
   loadContests();
   initFilters();
@@ -201,6 +201,29 @@ function validateApiKey(key, provider) {
     if (trimmedKey.length < 20) {
       return { valid: false, error: 'Invalid Hugging Face API key length' };
     }
+  } else if (provider === 'openrouter') {
+    // OpenRouter keys start with 'sk-or-'
+    if (trimmedKey && !trimmedKey.startsWith('sk-or-')) {
+      return { valid: false, error: 'Invalid OpenRouter API key format. Keys should start with "sk-or-"' };
+    }
+    if (trimmedKey && trimmedKey.length < 20) {
+      return { valid: false, error: 'Invalid OpenRouter API key length' };
+    }
+  } else if (provider === 'custom') {
+    // Custom endpoint - validate URL format
+    const customEndpoint = document.getElementById('customEndpoint')?.value.trim();
+    const customModel = document.getElementById('customModel')?.value.trim();
+    
+    if (!customEndpoint) {
+      return { valid: false, error: 'Custom endpoint URL is required' };
+    }
+    if (!customEndpoint.startsWith('http://') && !customEndpoint.startsWith('https://')) {
+      return { valid: false, error: 'Custom endpoint must be a valid HTTP/HTTPS URL' };
+    }
+    if (!customModel) {
+      return { valid: false, error: 'Model name is required for custom endpoint' };
+    }
+    // API key is optional for custom endpoints
   }
   
   return { valid: true };
@@ -237,200 +260,14 @@ function clearApiKeyError() {
   }
 }
 
-// Backend API Configuration
-// Set to 'production' when deploying, 'development' for local testing
-const API_ENV = 'development'; // Change to 'production' before launch
-const API_BASE_URL = API_ENV === 'production' 
-  ? 'https://api.lchelper.com/api/v1'
-  : 'http://localhost:3000/api/v1';
-
-// Authentication Functions
-async function login(email, password) {
-  try {
-    const response = await fetch(`${API_BASE_URL}/auth/login`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email, password })
-    });
-    
-    const data = await response.json();
-    if (!response.ok) {
-      throw new Error(data.message || 'Login failed');
-    }
-    
-    // Store token
-    await chrome.storage.sync.set({ authToken: data.token, userEmail: email });
-    
-    // Sync local favorites to backend
-    await syncFavoritesToBackend();
-    
-    return data;
-  } catch (error) {
-    throw error;
-  }
-}
-
-async function register(email, password) {
-  try {
-    const response = await fetch(`${API_BASE_URL}/auth/register`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email, password })
-    });
-    
-    const data = await response.json();
-    if (!response.ok) {
-      throw new Error(data.message || 'Registration failed');
-    }
-    
-    // Store token
-    await chrome.storage.sync.set({ authToken: data.token, userEmail: email });
-    
-    // Sync local favorites to backend
-    await syncFavoritesToBackend();
-    
-    return data;
-  } catch (error) {
-    throw error;
-  }
-}
-
-// Sync local favorites to backend after login/register
-async function syncFavoritesToBackend() {
-  const { authToken } = await chrome.storage.sync.get('authToken');
-  if (!authToken) return;
-  
-  try {
-    const { favorites = [] } = await chrome.storage.local.get('favorites');
-    
-    if (favorites.length === 0) {
-      // No local favorites, just fetch from backend
-      const response = await fetch(`${API_BASE_URL}/favorites`, {
-        headers: { 'Authorization': `Bearer ${authToken}` }
-      });
-      
-      if (response.ok) {
-        const data = await response.json();
-        await chrome.storage.local.set({ favorites: data.favorites || [] });
-      }
-      return;
-    }
-    
-    // Upload local favorites to backend (skip duplicates)
-    for (const fav of favorites) {
-      try {
-        const response = await fetch(`${API_BASE_URL}/favorites`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${authToken}`
-          },
-          body: JSON.stringify({
-            url: fav.url,
-            title: fav.title,
-            platform: fav.platform,
-            difficulty: fav.difficulty
-          })
-        });
-        
-        // Ignore errors for duplicates or limit exceeded
-        if (!response.ok && response.status !== 409 && response.status !== 403) {
-          console.log('LC Helper: Failed to sync favorite:', fav.title);
-        }
-      } catch (error) {
-        console.log('LC Helper: Error syncing favorite:', error.message);
-      }
-    }
-    
-    // Fetch updated list from backend
-    const response = await fetch(`${API_BASE_URL}/favorites`, {
-      headers: { 'Authorization': `Bearer ${authToken}` }
-    });
-    
-    if (response.ok) {
-      const data = await response.json();
-      await chrome.storage.local.set({ favorites: data.favorites || [] });
-    }
-  } catch (error) {
-    console.log('LC Helper: Failed to sync favorites:', error.message);
-  }
-}
-
-async function getSubscriptionStatus() {
-  try {
-    const { authToken } = await chrome.storage.sync.get('authToken');
-    if (!authToken) return null;
-    
-    const response = await fetch(`${API_BASE_URL}/subscription/status`, {
-      headers: { 'Authorization': `Bearer ${authToken}` }
-    });
-    
-    if (response.status === 401) {
-      // Token expired, clear it
-      await chrome.storage.sync.remove('authToken');
-      return null;
-    }
-    
-    const data = await response.json();
-    return data;
-  } catch (error) {
-    console.error('Error fetching subscription status:', error);
-    return null;
-  }
-}
-
-async function createCheckoutSession(tier = 'premium', preferredGateway = 'auto') {
-  try {
-    const { authToken } = await chrome.storage.sync.get('authToken');
-    if (!authToken) throw new Error('Not authenticated');
-    
-    const response = await fetch(`${API_BASE_URL}/subscription/create-checkout`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${authToken}`
-      },
-      body: JSON.stringify({ tier, gateway: preferredGateway })
-    });
-    
-    const data = await response.json();
-    if (!response.ok) {
-      throw new Error(data.message || 'Failed to create checkout session');
-    }
-    
-    // Handle both Stripe and Razorpay checkout
-    const gateway = data.gateway || 'stripe';
-    
-    if (gateway === 'razorpay') {
-      // Razorpay: Use shortUrl or url to redirect to payment page
-      const paymentUrl = data.shortUrl || data.url;
-      if (paymentUrl) {
-        chrome.tabs.create({ url: paymentUrl });
-      } else {
-        throw new Error('Razorpay payment URL not provided');
-      }
-    } else {
-      // Stripe: Use standard checkout URL
-      if (data.url) {
-        chrome.tabs.create({ url: data.url });
-      } else {
-        throw new Error('Stripe checkout URL not provided');
-      }
-    }
-    
-    return data;
-  } catch (error) {
-    throw error;
-  }
-}
+// Backend removed - Extension is now fully client-side (BYOK only)
 
 // Settings Management
 function initSettings() {
   // Load saved settings
   chrome.storage.sync.get([
     'apiKey', 'apiProvider', 'notifyContests', 'reminderTime', 'autoShowPanel',
-    'leetcodeUsername', 'codeforcesUsername', 'codechefUsername',
-    'serviceMode', 'authToken', 'userEmail'
+    'leetcodeUsername', 'codeforcesUsername', 'codechefUsername'
   ], async (result) => {
     // Platform usernames
     if (result.leetcodeUsername) {
@@ -443,18 +280,24 @@ function initSettings() {
       document.getElementById('codechefUsername').value = result.codechefUsername;
     }
     
-    // Service mode
-    const serviceMode = result.serviceMode || 'byok';
-    document.getElementById('serviceMode').value = serviceMode;
-    toggleServiceConfig(serviceMode);
-    
-    // API settings (for BYOK mode)
+    // API settings
     if (result.apiKey) {
       document.getElementById('apiKey').value = result.apiKey;
     }
     const provider = result.apiProvider || 'gemini';
     document.getElementById('apiProvider').value = provider;
     updateApiKeyLink(provider);
+    updateCustomFields(provider);
+    
+    // Load custom endpoint settings
+    chrome.storage.sync.get(['customEndpoint', 'customModel'], (customResult) => {
+      if (customResult.customEndpoint) {
+        document.getElementById('customEndpoint').value = customResult.customEndpoint;
+      }
+      if (customResult.customModel) {
+        document.getElementById('customModel').value = customResult.customModel;
+      }
+    });
     
     document.getElementById('notifyContests').checked = result.notifyContests !== false;
     document.getElementById('reminderTime').value = result.reminderTime || '30';
@@ -469,25 +312,30 @@ function initSettings() {
         LCAnalytics.setEnabled(analyticsEnabled);
       }
     }
-    
-    // Load subscription status if using service mode
-    if (serviceMode === 'lch-service') {
-      await loadSubscriptionStatus();
-    }
-  });
-  
-  // Service mode toggle
-  document.getElementById('serviceMode').addEventListener('change', (e) => {
-    toggleServiceConfig(e.target.value);
-    if (e.target.value === 'lch-service') {
-      loadSubscriptionStatus();
-    }
   });
   
   // Update link when provider changes
   document.getElementById('apiProvider').addEventListener('change', (e) => {
     updateApiKeyLink(e.target.value);
+    updateCustomFields(e.target.value);
   });
+  
+  // Show/hide custom endpoint fields
+  function updateCustomFields(provider) {
+    const customEndpointGroup = document.getElementById('customEndpointGroup');
+    const customModelGroup = document.getElementById('customModelGroup');
+    const apiKeyGroup = document.getElementById('apiKey').closest('.input-group');
+    
+    if (provider === 'custom') {
+      customEndpointGroup.style.display = 'block';
+      customModelGroup.style.display = 'block';
+      apiKeyGroup.querySelector('label').textContent = 'API Key (Optional)';
+    } else {
+      customEndpointGroup.style.display = 'none';
+      customModelGroup.style.display = 'none';
+      apiKeyGroup.querySelector('label').textContent = 'API Key';
+    }
+  }
   
   // Analytics toggle
   const analyticsCheckbox = document.getElementById('analyticsEnabled');
@@ -514,12 +362,11 @@ function initSettings() {
   // Save settings
   document.getElementById('saveSettings').addEventListener('click', async () => {
     const saveBtn = document.getElementById('saveSettings');
-    const serviceMode = document.getElementById('serviceMode').value;
     const apiKey = document.getElementById('apiKey').value.trim();
     const apiProvider = document.getElementById('apiProvider').value;
     
-    // Validate API key if using BYOK mode
-    if (serviceMode === 'byok' && apiKey) {
+    // Validate API key
+    if (apiKey || apiProvider === 'custom') {
       const validation = validateApiKey(apiKey, apiProvider);
       if (!validation.valid) {
         showApiKeyError(validation.error);
@@ -538,17 +385,26 @@ function initSettings() {
       leetcodeUsername: document.getElementById('leetcodeUsername').value.trim(),
       codeforcesUsername: document.getElementById('codeforcesUsername').value.trim(),
       codechefUsername: document.getElementById('codechefUsername').value.trim(),
-      serviceMode: serviceMode,
-      apiKey: serviceMode === 'byok' ? apiKey : '',
+      apiKey: apiKey,
       apiProvider: apiProvider,
       notifyContests: document.getElementById('notifyContests').checked,
       reminderTime: document.getElementById('reminderTime').value,
       autoShowPanel: document.getElementById('autoShowPanel').checked,
       analyticsEnabled: document.getElementById('analyticsEnabled')?.checked !== false
     };
+    
+    // Add custom endpoint settings if using custom provider
+    if (apiProvider === 'custom') {
+      settings.customEndpoint = document.getElementById('customEndpoint').value.trim();
+      settings.customModel = document.getElementById('customModel').value.trim();
+    }
 
     // Never log the API key - only log that it was saved
-    console.log('LC Helper: Settings saved (service mode: ' + serviceMode + ', API key length: ' + (apiKey ? apiKey.length : 0) + ')');
+    // SECURITY: Never log actual API key - only log sanitized version
+    const sanitized = apiKey && apiKey.length > 8 
+      ? `${apiKey.substring(0, 4)}...${apiKey.substring(apiKey.length - 4)}` 
+      : '***';
+    console.log('LC Helper: Settings saved (API key format: ' + sanitized + ')');
     
     await chrome.storage.sync.set(settings);
 
@@ -858,229 +714,29 @@ function stopContestCountdown() {
 function updateApiKeyLink(provider) {
   const link = document.getElementById('apiKeyLink');
   const links = {
-    'openai': { url: 'https://platform.openai.com/api-keys', text: 'Get OpenAI API key →' },
-    'claude': { url: 'https://console.anthropic.com/settings/keys', text: 'Get Claude API key →' },
-    'gemini': { url: 'https://aistudio.google.com/app/apikey', text: 'Get Gemini API key →' },
-    'groq': { url: 'https://console.groq.com/keys', text: 'Get Groq API key (Free) →' },
-    'together': { url: 'https://api.together.xyz/settings/api-keys', text: 'Get Together AI API key (Free) →' },
-    'huggingface': { url: 'https://huggingface.co/settings/tokens', text: 'Get Hugging Face API key (Free) →' }
+    'openai': { url: 'https://platform.openai.com', text: 'Get OpenAI API key →' },
+    'claude': { url: 'https://console.anthropic.com', text: 'Get Claude API key →' },
+    'gemini': { url: 'https://aistudio.google.com', text: 'Get Gemini API key →' },
+    'groq': { url: 'https://console.groq.com', text: 'Get Groq API key (Free) →' },
+    'together': { url: 'https://api.together.ai', text: 'Get Together AI API key (Free) →' },
+    'huggingface': { url: 'https://huggingface.co/settings/tokens', text: 'Get Hugging Face API key (Free) →' },
+    'openrouter': { url: 'https://openrouter.ai', text: 'Get OpenRouter API key →' },
+    'custom': { url: '#', text: 'Configure custom endpoint below →' }
   };
   
   const linkInfo = links[provider] || links['openai'];
   link.href = linkInfo.url;
   link.textContent = linkInfo.text;
-}
-
-// Toggle service configuration visibility
-function toggleServiceConfig(serviceMode) {
-  const byokConfig = document.getElementById('byokConfig');
-  const serviceConfig = document.getElementById('serviceConfig');
   
-  if (serviceMode === 'byok') {
-    byokConfig.style.display = 'block';
-    serviceConfig.style.display = 'none';
+  // Hide link for custom provider
+  if (provider === 'custom') {
+    link.style.display = 'none';
   } else {
-    byokConfig.style.display = 'none';
-    serviceConfig.style.display = 'block';
+    link.style.display = 'block';
   }
 }
 
-// Load and display subscription status
-async function loadSubscriptionStatus() {
-  const statusEl = document.getElementById('subscriptionStatus');
-  const tierEl = document.getElementById('subscriptionTier');
-  const infoEl = document.getElementById('subscriptionInfo');
-  const loginBtn = document.getElementById('loginBtn');
-  const registerBtn = document.getElementById('registerBtn');
-  const subscribeBtn = document.getElementById('subscribeBtn');
-  const logoutBtn = document.getElementById('logoutBtn');
-  
-  const { authToken, userEmail } = await chrome.storage.sync.get(['authToken', 'userEmail']);
-  
-  if (!authToken) {
-    statusEl.textContent = 'Not logged in';
-    tierEl.textContent = '';
-    tierEl.className = 'tier-badge';
-    infoEl.innerHTML = '<p>Login or register to subscribe to premium service.</p>';
-    loginBtn.style.display = 'inline-block';
-    registerBtn.style.display = 'inline-block';
-    subscribeBtn.style.display = 'none';
-    logoutBtn.style.display = 'none';
-    return;
-  }
-  
-  // User is logged in
-  loginBtn.style.display = 'none';
-  registerBtn.style.display = 'none';
-  logoutBtn.style.display = 'inline-block';
-  
-  const subscription = await getSubscriptionStatus();
-  
-  if (!subscription || !subscription.hasSubscription) {
-    statusEl.textContent = 'No active subscription';
-    tierEl.textContent = '';
-    tierEl.className = 'tier-badge';
-    infoEl.innerHTML = '<p>Subscribe to unlock unlimited hints!</p>';
-    subscribeBtn.style.display = 'inline-block';
-    subscribeBtn.textContent = 'Subscribe ($9.99/month)';
-  } else {
-    statusEl.textContent = subscription.isActive ? 'Active' : 'Inactive';
-    tierEl.textContent = subscription.tier.toUpperCase();
-    tierEl.className = `tier-badge tier-${subscription.tier}`;
-    
-    if (subscription.isActive) {
-      const periodEnd = subscription.currentPeriodEnd 
-        ? new Date(subscription.currentPeriodEnd).toLocaleDateString()
-        : 'N/A';
-      infoEl.innerHTML = `<p>Subscription active until ${periodEnd}</p>`;
-      subscribeBtn.style.display = 'none';
-    } else {
-      infoEl.innerHTML = '<p>Your subscription has expired. Renew to continue using the service.</p>';
-      subscribeBtn.style.display = 'inline-block';
-      subscribeBtn.textContent = 'Renew Subscription';
-    }
-  }
-}
-
-// Initialize authentication modals
-function initAuthModals() {
-  // Login modal
-  const loginModal = document.getElementById('loginModal');
-  const loginBtn = document.getElementById('loginBtn');
-  const closeLoginModal = document.getElementById('closeLoginModal');
-  const submitLogin = document.getElementById('submitLogin');
-  const showRegister = document.getElementById('showRegister');
-  
-  loginBtn.addEventListener('click', () => {
-    loginModal.style.display = 'flex';
-  });
-  
-  closeLoginModal.addEventListener('click', () => {
-    loginModal.style.display = 'none';
-  });
-  
-  showRegister.addEventListener('click', (e) => {
-    e.preventDefault();
-    loginModal.style.display = 'none';
-    document.getElementById('registerModal').style.display = 'flex';
-  });
-  
-  submitLogin.addEventListener('click', async () => {
-    const email = document.getElementById('loginEmail').value.trim();
-    const password = document.getElementById('loginPassword').value;
-    const errorEl = document.getElementById('loginError');
-    
-    if (!email || !password) {
-      errorEl.textContent = 'Please enter email and password';
-      errorEl.style.display = 'block';
-      return;
-    }
-    
-    try {
-      submitLogin.disabled = true;
-      submitLogin.textContent = 'Logging in...';
-      await login(email, password);
-      loginModal.style.display = 'none';
-      await loadSubscriptionStatus();
-      document.getElementById('loginEmail').value = '';
-      document.getElementById('loginPassword').value = '';
-    } catch (error) {
-      errorEl.textContent = error.message;
-      errorEl.style.display = 'block';
-    } finally {
-      submitLogin.disabled = false;
-      submitLogin.textContent = 'Login';
-    }
-  });
-  
-  // Register modal
-  const registerModal = document.getElementById('registerModal');
-  const registerBtn = document.getElementById('registerBtn');
-  const closeRegisterModal = document.getElementById('closeRegisterModal');
-  const submitRegister = document.getElementById('submitRegister');
-  const showLogin = document.getElementById('showLogin');
-  
-  registerBtn.addEventListener('click', () => {
-    registerModal.style.display = 'flex';
-  });
-  
-  closeRegisterModal.addEventListener('click', () => {
-    registerModal.style.display = 'none';
-  });
-  
-  showLogin.addEventListener('click', (e) => {
-    e.preventDefault();
-    registerModal.style.display = 'none';
-    loginModal.style.display = 'flex';
-  });
-  
-  submitRegister.addEventListener('click', async () => {
-    const email = document.getElementById('registerEmail').value.trim();
-    const password = document.getElementById('registerPassword').value;
-    const passwordConfirm = document.getElementById('registerPasswordConfirm').value;
-    const errorEl = document.getElementById('registerError');
-    
-    if (!email || !password || !passwordConfirm) {
-      errorEl.textContent = 'Please fill in all fields';
-      errorEl.style.display = 'block';
-      return;
-    }
-    
-    if (password.length < 8) {
-      errorEl.textContent = 'Password must be at least 8 characters';
-      errorEl.style.display = 'block';
-      return;
-    }
-    
-    if (password !== passwordConfirm) {
-      errorEl.textContent = 'Passwords do not match';
-      errorEl.style.display = 'block';
-      return;
-    }
-    
-    try {
-      submitRegister.disabled = true;
-      submitRegister.textContent = 'Registering...';
-      await register(email, password);
-      registerModal.style.display = 'none';
-      await loadSubscriptionStatus();
-      document.getElementById('registerEmail').value = '';
-      document.getElementById('registerPassword').value = '';
-      document.getElementById('registerPasswordConfirm').value = '';
-    } catch (error) {
-      errorEl.textContent = error.message;
-      errorEl.style.display = 'block';
-    } finally {
-      submitRegister.disabled = false;
-      submitRegister.textContent = 'Register';
-    }
-  });
-  
-  // Subscribe button
-  document.getElementById('subscribeBtn').addEventListener('click', async () => {
-    try {
-      await createCheckoutSession('premium');
-    } catch (error) {
-      alert('Error: ' + error.message);
-    }
-  });
-  
-  // Logout button
-  document.getElementById('logoutBtn').addEventListener('click', async () => {
-    await chrome.storage.sync.remove(['authToken', 'userEmail']);
-    await loadSubscriptionStatus();
-  });
-  
-  // Close modals when clicking outside
-  window.addEventListener('click', (e) => {
-    if (e.target === loginModal) {
-      loginModal.style.display = 'none';
-    }
-    if (e.target === registerModal) {
-      registerModal.style.display = 'none';
-    }
-  });
-}
+// Backend authentication and subscription removed - Extension is now fully client-side
 
 // Initialize feedback modal
 function initFeedbackModal() {
@@ -1144,14 +800,12 @@ function initFeedbackModal() {
       
       // Get extension version and user info
       const extensionVersion = chrome.runtime.getManifest().version;
-      const { userEmail } = await chrome.storage.sync.get('userEmail');
-      
       // Send feedback to background script
       const response = await chrome.runtime.sendMessage({
         type: 'SUBMIT_FEEDBACK',
         feedback: {
           type,
-          email: email || userEmail || 'anonymous',
+          email: email || 'anonymous',
           message,
           extensionVersion,
           timestamp: new Date().toISOString(),
@@ -1345,22 +999,7 @@ async function loadFavorites() {
     const response = await chrome.runtime.sendMessage({ type: 'GET_FAVORITES' });
     const favorites = response.favorites || [];
     
-    // Check if user is logged in to show limit info
-    const { authToken } = await chrome.storage.sync.get('authToken');
-    if (authToken) {
-      try {
-        const apiResponse = await fetch(`${API_BASE_URL}/favorites`, {
-          headers: { 'Authorization': `Bearer ${authToken}` }
-        });
-        if (apiResponse.ok) {
-          const data = await apiResponse.json();
-          renderFavorites(data.favorites || [], data.limit, data.count, data.tier);
-          return;
-        }
-      } catch (error) {
-        console.log('LC Helper: Failed to get favorites limit info:', error);
-      }
-    }
+    // Backend removed - favorites are local-only, no limits
     
     renderFavorites(favorites);
   } catch (error) {
@@ -1368,28 +1007,18 @@ async function loadFavorites() {
   }
 }
 
-function renderFavorites(favorites, limit = null, count = null, tier = null) {
+function renderFavorites(favorites) {
   const favoritesList = document.getElementById('favoritesList');
   const favoritesCount = document.getElementById('favoritesCount');
   
-  // Show count with limit info if available
-  if (limit !== null && count !== null) {
-    if (tier === 'free') {
-      favoritesCount.textContent = `${count}/${limit} saved (Free)`;
-      favoritesCount.title = 'Upgrade to premium for unlimited favorites!';
-    } else {
-      favoritesCount.textContent = `${count} saved (Premium)`;
-    }
-  } else {
-    favoritesCount.textContent = `${favorites.length} saved`;
-  }
+  // Show count
+  favoritesCount.textContent = `${favorites.length} saved`;
   
   if (favorites.length === 0) {
     favoritesList.innerHTML = `
       <div class="empty-state">
         <div class="empty-state-icon">❤️</div>
         <p>No favorites yet. Add problems from any platform!</p>
-        ${tier === 'free' ? '<p class="favorites-limit-hint">Free tier: Up to 50 favorites</p>' : ''}
       </div>
     `;
     return;

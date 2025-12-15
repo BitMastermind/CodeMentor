@@ -83,10 +83,12 @@ Requirements:
 - MUST compare complexities (O(n log n) vs O(n²))
 - Output ONLY valid JSON, no markdown formatting`;
 
-    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`, {
+    // SECURITY: Use header instead of query param to prevent API key exposure in URLs/logs
+    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
+        'x-goog-api-key': apiKey
       },
       body: JSON.stringify({
         contents: [{

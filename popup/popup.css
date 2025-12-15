@@ -1055,13 +1055,6 @@ select:focus {
    FAVORITES LIST STYLES
    ============================================ */
 
-.favorites-limit-hint {
-  font-size: 12px;
-  color: var(--text-secondary);
-  margin-top: 8px;
-  opacity: 0.8;
-}
-
 .favorites-header-actions {
   display: flex;
   align-items: center;

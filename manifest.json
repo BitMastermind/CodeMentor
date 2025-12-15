@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "LC Helper - Competitive Programming Assistant",
+  "name": "CodeMentor - AI Coding Assistant",
   "version": "1.0.0",
-  "description": "Smart hints, topic classification, and contest tracking for LeetCode, Codeforces & CodeChef",
+  "description": "AI-powered coding hints, contest tracking, and streak management to improve your coding skills on LeetCode, Codeforces & CodeChef",
   "permissions": [
     "storage",
     "alarms",
@@ -23,8 +23,6 @@
     "https://api.groq.com/*",
     "https://api.together.xyz/*",
     "https://api-inference.huggingface.co/*",
-    "http://localhost:3000/*",
-    "https://*.lchelper.com/*",
     "https://www.google-analytics.com/*",
     "https://*.sentry.io/*"
   ],
@@ -65,6 +63,9 @@
     "safari": {
       "strict_min_version": "15.4"
     }
+  },
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'self'; connect-src 'self' https://api.openai.com https://generativelanguage.googleapis.com https://api.anthropic.com https://api.groq.com https://api.together.xyz https://api-inference.huggingface.co https://openrouter.ai https://leetcode.com https://codeforces.com https://www.codechef.com https://kontests.net https://clist.by;"
   }
 }
 

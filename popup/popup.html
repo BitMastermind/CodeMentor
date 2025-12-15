@@ -4,7 +4,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>LC Helper</title>
+  <title>CodeMentor</title>
   <link rel="stylesheet" href="popup.css">
 </head>
 
@@ -146,80 +146,57 @@
       </div>
 
       <div class="settings-group">
-        <h3>🔑 Service Mode</h3>
-        <p class="settings-desc">Choose how you want to use LC Helper - bring your own API key (free) or use our premium
-          service.</p>
+        <h3>🔑 API Configuration</h3>
+        <p class="settings-desc">Configure your AI provider and API key. Your API key is stored locally and only used to communicate directly with your chosen AI provider.</p>
         <div class="input-group">
-          <label for="serviceMode">Service Mode</label>
-          <select id="serviceMode">
-            <option value="byok">Bring Your Own Key (Free)</option>
-            <option value="lch-service">LC Helper Service (Premium)</option>
+          <label for="apiProvider">AI Provider</label>
+          <select id="apiProvider">
+            <optgroup label="Best Accuracy (Paid)">
+              <option value="openai">Best Accuracy (OpenAI – GPT/o-series)</option>
+              <option value="claude">Best Accuracy (Claude)</option>
+              <option value="gemini">Gemini (Cost‑Friendly Best)</option>
+            </optgroup>
+            <optgroup label="Free / Open Source">
+              <option value="groq">Best Free (Groq – Llama 3.x 70B)</option>
+              <option value="together">Together AI – Large Open Model</option>
+              <option value="huggingface">Hugging Face – Open Model</option>
+              <option value="openrouter">Bring Your Own (OpenRouter)</option>
+              <option value="custom">Custom / Self‑hosted Model</option>
+            </optgroup>
           </select>
         </div>
-
-        <!-- BYOK Configuration (shown when BYOK is selected) -->
-        <div id="byokConfig" class="service-config">
-          <div class="input-group">
-            <label for="apiProvider">AI Provider</label>
-            <select id="apiProvider">
-              <optgroup label="Best Value (Student Friendly)">
-                <option value="gemini">Google Gemini (Gemini 2.5 Flash)</option>
-                <option value="openai">OpenAI (GPT-5 Mini)</option>
-                <option value="claude">Anthropic (Claude 3.5 Haiku)</option>
-              </optgroup>
-              <optgroup label="Free / Open Source">
-                <option value="groq">Groq (Llama 3.3 70B) - Free Tier</option>
-                <option value="together">Together AI (Llama 3.3 70B) - Free Tier</option>
-                <option value="huggingface">Hugging Face (Llama 3.3 70B) - Free Tier</option>
-              </optgroup>
-            </select>
-          </div>
-          <div class="input-group">
-            <label for="apiKey">API Key</label>
-            <div class="input-wrapper">
-              <input type="password" id="apiKey" placeholder="Enter your API key..." autocomplete="off">
-              <button class="toggle-visibility" id="toggleApiKey">
-                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none"
-                  stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
-                  class="eye-icon">
-                  <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
-                  <circle cx="12" cy="12" r="3"></circle>
-                </svg>
-              </button>
-            </div>
-            <a href="#" target="_blank" class="help-link" id="apiKeyLink">Get your API key →</a>
-          </div>
-          <div class="security-notice">
-            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none"
-              stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
-              style="flex-shrink: 0;">
-              <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
-              <path d="M9 12l2 2 4-4"></path>
-            </svg>
-            <div>
-              <strong>Security Note:</strong> Your API key is stored locally in your browser and never sent to our
-              servers.
-              Keep your API key private and never share it with anyone.
-            </div>
-          </div>
+        <div class="input-group" id="customEndpointGroup" style="display: none;">
+          <label for="customEndpoint">Custom Endpoint URL</label>
+          <input type="text" id="customEndpoint" placeholder="https://api.example.com/v1" autocomplete="off">
         </div>
-
-        <!-- Premium Service Configuration (shown when service mode is selected) -->
-        <div id="serviceConfig" class="service-config" style="display: none;">
-          <div class="service-status-card">
-            <div class="service-status-header">
-              <span id="subscriptionStatus">Not subscribed</span>
-              <span id="subscriptionTier" class="tier-badge"></span>
-            </div>
-            <div id="subscriptionInfo" class="subscription-info">
-              <p>Subscribe to use our premium service with unlimited hints!</p>
-            </div>
-            <div class="service-actions">
-              <button id="loginBtn" class="btn-secondary">Login</button>
-              <button id="registerBtn" class="btn-secondary">Register</button>
-              <button id="subscribeBtn" class="btn-primary" style="display: none;">Subscribe</button>
-              <button id="logoutBtn" class="btn-secondary" style="display: none;">Logout</button>
-            </div>
+        <div class="input-group" id="customModelGroup" style="display: none;">
+          <label for="customModel">Model Name</label>
+          <input type="text" id="customModel" placeholder="gpt-4o, llama-3-70b, etc." autocomplete="off">
+        </div>
+        <div class="input-group">
+          <label for="apiKey">API Key</label>
+          <div class="input-wrapper">
+            <input type="password" id="apiKey" placeholder="Enter your API key..." autocomplete="off">
+            <button class="toggle-visibility" id="toggleApiKey">
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none"
+                stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
+                class="eye-icon">
+                <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                <circle cx="12" cy="12" r="3"></circle>
+              </svg>
+            </button>
+          </div>
+          <a href="#" target="_blank" class="help-link" id="apiKeyLink">Get your API key →</a>
+        </div>
+        <div class="security-notice">
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none"
+            stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
+            style="flex-shrink: 0;">
+            <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
+            <path d="M9 12l2 2 4-4"></path>
+          </svg>
+          <div>
+            <strong>Security Note:</strong> Your API key is encrypted and stored locally in your browser. It's only used to communicate directly with your chosen AI provider. API keys are transmitted securely using HTTPS headers only (never in URLs). Keep your API key private and never share it with anyone.
           </div>
         </div>
       </div>

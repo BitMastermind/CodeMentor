@@ -1,6 +1,6 @@
-# LC Helper - Competitive Programming Assistant
+# CodeMentor - AI Coding Assistant
 
-A powerful Chrome extension that provides AI-powered hints, topic classification, contest tracking, and streak management for competitive programming platforms (LeetCode, Codeforces, and CodeChef).
+A powerful Chrome extension that provides AI-powered hints, topic classification, contest tracking, and streak management for coding platforms (LeetCode, Codeforces, and CodeChef).
 
 ![Version](https://img.shields.io/badge/version-1.0.0-blue.svg)
 ![License](https://img.shields.io/badge/license-MIT-green.svg)
@@ -154,7 +154,6 @@ Enter your usernames in Settings to enable:
 
 - REST API (`user.status`) for submissions
 - `contest.list` for upcoming contests
-- Rate-limited (2-second delay between calls)
 
 **CodeChef:**
 

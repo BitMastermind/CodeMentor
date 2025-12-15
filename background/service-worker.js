@@ -4,6 +4,7 @@
 // Note: importScripts paths are relative to extension root, not this file
 importScripts('/utils/errorTracking.js');
 importScripts('/utils/analytics.js');
+importScripts('/utils/apiKeySecurity.js');
 
 // Initialize on install or update
 chrome.runtime.onInstalled.addListener(async (details) => {
@@ -766,81 +767,7 @@ async function getReminderTime() {
   return parseInt(reminderTime) || 30;
 }
 
-// Backend API Configuration
-// Update this to your production backend URL when deploying
-// Backend API Configuration
-// Set to 'production' when deploying, 'development' for local testing
-const API_ENV = 'development'; // Change to 'production' before launch
-const API_BASE_URL = API_ENV === 'production'
-  ? 'https://api.lchelper.com/api/v1'
-  : 'http://localhost:3000/api/v1';
-
-// Generate hints via backend service
-async function generateHintsViaService(problem, platform) {
-  try {
-    const { authToken } = await chrome.storage.sync.get('authToken');
-
-    if (!authToken) {
-      return {
-        error: 'Not authenticated. Please login in settings.',
-        requiresAuth: true
-      };
-    }
-
-    const response = await fetch(`${API_BASE_URL}/hints/generate`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${authToken}`
-      },
-      body: JSON.stringify({
-        problem: problem,
-        platform: platform
-      })
-    });
-
-    if (response.status === 401) {
-      // Token expired or invalid
-      await chrome.storage.sync.remove('authToken');
-      return {
-        error: 'Session expired. Please login again.',
-        requiresAuth: true
-      };
-    }
-
-    if (response.status === 402) {
-      // Subscription expired
-      return {
-        error: 'Subscription expired. Please renew your subscription.',
-        requiresPayment: true
-      };
-    }
-
-    if (response.status === 429) {
-      // Rate limited
-      const retryAfter = response.headers.get('Retry-After') || '60';
-      return {
-        error: 'Rate limit exceeded. Please try again later.',
-        retryAfter: parseInt(retryAfter)
-      };
-    }
-
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}));
-      return {
-        error: errorData.message || 'Service unavailable. Please try again later.'
-      };
-    }
-
-    const data = await response.json();
-    return data;
-  } catch (error) {
-    console.error('LC Helper: Service error:', error);
-    return {
-      error: 'Service unavailable. Please check your connection or try again later.'
-    };
-  }
-}
+// Backend removed - Extension is now fully client-side (BYOK only)
 
 // AI Hints Generation with Caching and Hybrid Mode
 async function generateHints(problem) {
@@ -870,79 +797,82 @@ async function generateHints(problem) {
     // Future: add more interview-focused platforms (gfg, etc.) here
   }
 
-  // Check service mode
-  const { serviceMode } = await chrome.storage.sync.get('serviceMode');
+  // Always use BYOK (Bring Your Own Key) mode
+  const { key: apiKey, provider: apiProvider, error } = await getApiKeySafely();
 
-  if (serviceMode === 'lch-service') {
-    // Use backend service
-    const result = await generateHintsViaService(problem, platform);
-
-    // Cache the result if successful
-    if (result && !result.error) {
-      const cacheData = {
-        ...result,
-        cachedAt: Date.now(),
-        problemTitle: problem.title,
-        problemUrl: problem.url
-      };
-      await chrome.storage.local.set({ [cacheKey]: cacheData });
-      console.log('Cached hints from service for:', problem.title);
-    }
-
-    return result;
-  } else {
-    // Use BYOK (Bring Your Own Key) mode
-    const { key: apiKey, provider: apiProvider, error } = await getApiKeySafely();
-
-    if (error || !apiKey) {
-      return { error: error || 'API key not configured. Add your API key in settings.' };
-    }
-
-    const provider = apiProvider;
-    let result;
-
-    if (provider === 'gemini') {
-      result = await generateHintsGemini(problem, apiKey, platform);
-    } else if (provider === 'claude') {
-      result = await generateHintsClaude(problem, apiKey, platform);
-    } else if (provider === 'groq') {
-      result = await generateHintsGroq(problem, apiKey, platform);
-    } else if (provider === 'together') {
-      result = await generateHintsTogether(problem, apiKey, platform);
-    } else if (provider === 'huggingface') {
-      result = await generateHintsHuggingFace(problem, apiKey, platform);
-    } else {
-      // Default to OpenAI
-      result = await generateHintsOpenAI(problem, apiKey, platform);
-    }
-
-    // Cache the result if successful
-    if (result && !result.error) {
-      const cacheData = {
-        ...result,
-        cachedAt: Date.now(),
-        problemTitle: problem.title,
-        problemUrl: problem.url
-      };
-      await chrome.storage.local.set({ [cacheKey]: cacheData });
-      console.log('Cached hints for:', problem.title);
-    }
-
-    return result;
+  if (error || !apiKey) {
+    return { error: error || 'API key not configured. Add your API key in settings.' };
   }
+
+  const provider = apiProvider;
+  let result;
+
+  if (provider === 'gemini') {
+    result = await generateHintsGemini(problem, apiKey, platform);
+  } else if (provider === 'claude') {
+    result = await generateHintsClaude(problem, apiKey, platform);
+  } else if (provider === 'groq') {
+    result = await generateHintsGroq(problem, apiKey, platform);
+  } else if (provider === 'together') {
+    result = await generateHintsTogether(problem, apiKey, platform);
+  } else if (provider === 'huggingface') {
+    result = await generateHintsHuggingFace(problem, apiKey, platform);
+  } else if (provider === 'openrouter') {
+    result = await generateHintsOpenRouter(problem, apiKey, platform);
+  } else if (provider === 'custom') {
+    result = await generateHintsCustom(problem, apiKey, platform);
+  } else {
+    // Default to OpenAI
+    result = await generateHintsOpenAI(problem, apiKey, platform);
+  }
+
+  // Cache the result if successful
+  if (result && !result.error) {
+    const cacheData = {
+      ...result,
+      cachedAt: Date.now(),
+      problemTitle: problem.title,
+      problemUrl: problem.url
+    };
+    await chrome.storage.local.set({ [cacheKey]: cacheData });
+    console.log('Cached hints for:', problem.title);
+  }
+
+  return result;
 }
 
 // Safe API Key Retrieval - Never logs the actual key
 async function getApiKeySafely() {
+  // Use secure utility if available, otherwise fallback to direct storage access
+  if (typeof getApiKeySecurely !== 'undefined') {
+    const result = await getApiKeySecurely();
+    return {
+      key: result.key,
+      provider: result.provider,
+      error: result.error || null
+    };
+  }
+
+  // Fallback implementation (for backward compatibility)
   try {
-    const { apiKey, apiProvider } = await chrome.storage.sync.get(['apiKey', 'apiProvider']);
+    const { apiKey, apiProvider, customEndpoint, customModel } = await chrome.storage.sync.get(['apiKey', 'apiProvider', 'customEndpoint', 'customModel']);
+
+    // For custom provider, API key is optional but endpoint and model are required
+    if (apiProvider === 'custom') {
+      if (!customEndpoint || !customModel) {
+        return { key: null, provider: null, error: 'Custom endpoint URL and model name must be configured in settings.' };
+      }
+      // API key is optional for custom endpoints
+      return { key: apiKey || '', provider: 'custom' };
+    }
 
     if (!apiKey) {
       return { key: null, provider: null, error: 'API key not configured. Add your API key in settings.' };
     }
 
-    // Never log the actual key - only log that it exists and its length
-    console.log('LC Helper: Using API key (provider: ' + (apiProvider || 'gemini') + ', length: ' + apiKey.length + ')');
+    // SECURITY: Never log the actual key - only log sanitized version
+    const sanitized = apiKey.length > 8 ? `${apiKey.substring(0, 4)}...${apiKey.substring(apiKey.length - 4)}` : '***';
+    console.log('LC Helper: Using API key (provider: ' + (apiProvider || 'gemini') + ', format: ' + sanitized + ')');
 
     return { key: apiKey, provider: apiProvider || 'gemini' };
   } catch (error) {
@@ -963,69 +893,7 @@ function generateCacheKey(input) {
   return normalized;
 }
 
-// Explain problem via backend service
-async function explainProblemViaService(problem, platform) {
-  try {
-    const { authToken } = await chrome.storage.sync.get('authToken');
-
-    if (!authToken) {
-      return {
-        error: 'Not authenticated. Please login in settings.',
-        requiresAuth: true
-      };
-    }
-
-    const response = await fetch(`${API_BASE_URL}/hints/explain`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${authToken}`
-      },
-      body: JSON.stringify({
-        problem: problem,
-        platform: platform
-      })
-    });
-
-    if (response.status === 401) {
-      await chrome.storage.sync.remove('authToken');
-      return {
-        error: 'Session expired. Please login again.',
-        requiresAuth: true
-      };
-    }
-
-    if (response.status === 402) {
-      return {
-        error: 'Subscription expired. Please renew your subscription.',
-        requiresPayment: true
-      };
-    }
-
-    if (response.status === 429) {
-      const retryAfter = response.headers.get('Retry-After') || '60';
-      return {
-        error: 'Rate limit exceeded. Please try again later.',
-        retryAfter: parseInt(retryAfter)
-      };
-    }
-
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}));
-      return {
-        error: errorData.message || 'Service unavailable. Please try again later.'
-      };
-    }
-
-    const data = await response.json();
-    return data;
-  } catch (error) {
-    console.error('LC Helper: Service error:', error);
-    return {
-      error: 'Service unavailable. Please check your connection or try again later.'
-    };
-  }
-}
+// Backend service removed - Extension is now fully client-side (BYOK only)
 
 // Explain problem in simpler terms
 async function explainProblem(problem) {
@@ -1053,66 +921,48 @@ async function explainProblem(problem) {
     }
   }
 
-  // Check service mode
-  const { serviceMode } = await chrome.storage.sync.get('serviceMode');
+  // Always use BYOK mode
+  const { key: apiKey, provider: apiProvider, error } = await getApiKeySafely();
 
-  if (serviceMode === 'lch-service') {
-    // Use backend service
-    const result = await explainProblemViaService(problem, platform);
-
-    // Cache the result if successful
-    if (result && !result.error) {
-      const cacheData = {
-        ...result,
-        cachedAt: Date.now(),
-        problemTitle: problem.title,
-        problemUrl: problem.url
-      };
-      await chrome.storage.local.set({ [cacheKey]: cacheData });
-      console.log('Cached explanation from service for:', problem.title);
-    }
-
-    return result;
-  } else {
-    // Use BYOK mode
-    const { key: apiKey, provider: apiProvider, error } = await getApiKeySafely();
-
-    if (error || !apiKey) {
-      return { error: error || 'API key not configured. Add your API key in settings.' };
-    }
-
-    const provider = apiProvider;
-    let result;
-
-    if (provider === 'gemini') {
-      result = await explainProblemGemini(problem, apiKey, platform);
-    } else if (provider === 'claude') {
-      result = await explainProblemClaude(problem, apiKey, platform);
-    } else if (provider === 'groq') {
-      result = await explainProblemGroq(problem, apiKey, platform);
-    } else if (provider === 'together') {
-      result = await explainProblemTogether(problem, apiKey, platform);
-    } else if (provider === 'huggingface') {
-      result = await explainProblemHuggingFace(problem, apiKey, platform);
-    } else {
-      // Default to OpenAI
-      result = await explainProblemOpenAI(problem, apiKey, platform);
-    }
-
-    // Cache the result if successful
-    if (result && !result.error) {
-      const cacheData = {
-        ...result,
-        cachedAt: Date.now(),
-        problemTitle: problem.title,
-        problemUrl: problem.url
-      };
-      await chrome.storage.local.set({ [cacheKey]: cacheData });
-      console.log('Cached explanation for:', problem.title);
-    }
-
-    return result;
+  if (error || !apiKey) {
+    return { error: error || 'API key not configured. Add your API key in settings.' };
   }
+
+  const provider = apiProvider;
+  let result;
+
+  if (provider === 'gemini') {
+    result = await explainProblemGemini(problem, apiKey, platform);
+  } else if (provider === 'claude') {
+    result = await explainProblemClaude(problem, apiKey, platform);
+  } else if (provider === 'groq') {
+    result = await explainProblemGroq(problem, apiKey, platform);
+  } else if (provider === 'together') {
+    result = await explainProblemTogether(problem, apiKey, platform);
+  } else if (provider === 'huggingface') {
+    result = await explainProblemHuggingFace(problem, apiKey, platform);
+  } else if (provider === 'openrouter') {
+    result = await explainProblemOpenRouter(problem, apiKey, platform);
+  } else if (provider === 'custom') {
+    result = await explainProblemCustom(problem, apiKey, platform);
+  } else {
+    // Default to OpenAI
+    result = await explainProblemOpenAI(problem, apiKey, platform);
+  }
+
+  // Cache the result if successful
+  if (result && !result.error) {
+    const cacheData = {
+      ...result,
+      cachedAt: Date.now(),
+      problemTitle: problem.title,
+      problemUrl: problem.url
+    };
+    await chrome.storage.local.set({ [cacheKey]: cacheData });
+    console.log('Cached explanation for:', problem.title);
+  }
+
+  return result;
 }
 
 async function explainProblemGemini(problem, apiKey, platform = 'codeforces') {
@@ -1221,21 +1071,35 @@ Your explanation must include:
 
 ═══════════════════════════════════════════════════════════════
 
-OUTPUT FORMAT (STRICT JSON)
+OUTPUT FORMAT (STRICT JSON - MANDATORY)
 
 ═══════════════════════════════════════════════════════════════
 
-Return ONLY valid JSON. Use \\n for newlines inside strings, NOT literal line breaks.
+⚠️ CRITICAL: You MUST return ONLY valid JSON. No markdown, no code blocks, no explanatory text before or after the JSON. Just the raw JSON object.
 
+REQUIRED JSON SCHEMA:
 {
-  "explanation": "Clear explanation with **bold** for key terms, *italics* for emphasis, and \`code\` for variables.\\n\\nUse \\\\n\\\\n for paragraph breaks.",
-  "keyPoints": [
-    "First key insight about understanding the problem",
-    "Second important detail about input/structure",
-    "Third clarification from sample walkthrough",
-    "Fourth tricky case or rule to remember"
-  ]
+  "explanation": "string (required)",
+  "keyPoints": ["string", "string", "string", ...] (required, array of strings)
 }
+
+JSON RULES:
+1. Start with { and end with }
+2. Use double quotes for all strings: "text"
+3. Escape newlines as \\n (backslash-n), NOT literal line breaks
+4. Escape quotes inside strings as \\"
+5. Use \\\\n\\\\n for paragraph breaks in explanation text
+6. keyPoints must be an array of strings, even if empty: []
+
+EXAMPLE OF CORRECT OUTPUT:
+{"explanation":"This problem asks us to find...\\n\\nThe key insight is...","keyPoints":["Point 1","Point 2","Point 3"]}
+
+❌ WRONG OUTPUTS (DO NOT DO THIS):
+- Plain text explanation without JSON
+- Markdown code blocks like \`\`\`json ... \`\`\`
+- Text before or after the JSON object
+- JSON with unescaped newlines or quotes
+- Missing required fields (explanation or keyPoints)
 
 ═══════════════════════════════════════════════════════════════
 
@@ -1253,6 +1117,10 @@ RULES
 
 - Mention time complexity.
 
+- Add any text outside the JSON object.
+
+- Wrap JSON in markdown code blocks.
+
 ✅ DO:
 
 - Be clear, conversational, beginner-friendly.
@@ -1263,7 +1131,9 @@ RULES
 
 - Encourage careful reading of constraints.
 
-Now return the JSON explanation.`;
+- Return ONLY the JSON object, nothing else.
+
+Now return ONLY the JSON object (no other text):`;
     } else {
       // Codeforces/CodeChef competitive programming focused prompt
       prompt = `You are an expert competitive programming tutor.  
@@ -1360,21 +1230,35 @@ Your explanation must help the student understand:
 
 ═══════════════════════════════════════════════════════════════
 
-OUTPUT FORMAT (STRICT JSON)
+OUTPUT FORMAT (STRICT JSON - MANDATORY)
 
 ═══════════════════════════════════════════════════════════════
 
-Return ONLY valid JSON. Use \\n for newlines inside strings, NOT literal line breaks.
+⚠️ CRITICAL: You MUST return ONLY valid JSON. No markdown, no code blocks, no explanatory text before or after the JSON. Just the raw JSON object.
 
+REQUIRED JSON SCHEMA:
 {
-  "explanation": "A clear explanation. Use **bold** for key terms and \\\\n\\\\n for paragraph breaks.",
-  "keyPoints": [
-    "First key insight about the model",
-    "Second important detail about inputs/constraints",
-    "Third clarification from the sample walkthrough",
-    "Fourth notable tricky condition"
-  ]
+  "explanation": "string (required)",
+  "keyPoints": ["string", "string", "string", ...] (required, array of strings)
 }
+
+JSON RULES:
+1. Start with { and end with }
+2. Use double quotes for all strings: "text"
+3. Escape newlines as \\n (backslash-n), NOT literal line breaks
+4. Escape quotes inside strings as \\"
+5. Use \\\\n\\\\n for paragraph breaks in explanation text
+6. keyPoints must be an array of strings, even if empty: []
+
+EXAMPLE OF CORRECT OUTPUT:
+{"explanation":"This problem asks us to find...\\n\\nThe key insight is...","keyPoints":["Point 1","Point 2","Point 3"]}
+
+❌ WRONG OUTPUTS (DO NOT DO THIS):
+- Plain text explanation without JSON
+- Markdown code blocks like \`\`\`json ... \`\`\`
+- Text before or after the JSON object
+- JSON with unescaped newlines or quotes
+- Missing required fields (explanation or keyPoints)
 
 ═══════════════════════════════════════════════════════════════
 
@@ -1392,9 +1276,11 @@ CRITICAL GUIDELINES
 
 - Be friendly, clear, and highly structured.
 
-- Use markdown formatting for readability.
+- Use markdown formatting for readability (inside the JSON string).
 
 - Validate interpretation using the samples.
+
+- Return ONLY the JSON object, nothing else.
 
 ❌ DON'T:
 
@@ -1410,9 +1296,13 @@ CRITICAL GUIDELINES
 
 - DO NOT assume missing information.
 
+- DO NOT add any text outside the JSON object.
+
+- DO NOT wrap JSON in markdown code blocks.
+
 ═══════════════════════════════════════════════════════════════
 
-Now provide your explanation as JSON:`;
+Now return ONLY the JSON object (no other text):`;
     }
 
     // Log the exact prompt being sent to LLM for debugging
@@ -1463,17 +1353,41 @@ Now provide your explanation as JSON:`;
       }
     }
 
-    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        contents: [{ parts }],
-        generationConfig: {
-          temperature: 0.3,
-          maxOutputTokens: 2500,
-          response_mime_type: "application/json"
+    // SECURITY: Use header instead of query param to prevent API key exposure in URLs/logs
+    // Use response_schema to enforce JSON structure
+    const requestBody = {
+      contents: [{ parts }],
+      generationConfig: {
+        temperature: 0.3,
+        maxOutputTokens: 2500,
+        response_mime_type: "application/json",
+        response_schema: {
+          type: "object",
+          properties: {
+            explanation: {
+              type: "string",
+              description: "Clear explanation of the problem"
+            },
+            keyPoints: {
+              type: "array",
+              items: {
+                type: "string"
+              },
+              description: "Array of key insights about the problem"
+            }
+          },
+          required: ["explanation", "keyPoints"]
         }
-      })
+      }
+    };
+
+    let response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-goog-api-key': apiKey
+      },
+      body: JSON.stringify(requestBody)
     });
 
     if (!response.ok) {
@@ -1482,12 +1396,13 @@ Now provide your explanation as JSON:`;
       return { error: friendlyError };
     }
 
-    const data = await response.json();
-    const content = data.candidates[0].content.parts[0].text;
+    let data = await response.json();
+    let content = data.candidates[0].content.parts[0].text;
 
-    // Parse JSON from response (should be valid JSON due to response_mime_type)
+    // Parse JSON from response (should be valid JSON due to response_mime_type and response_schema)
+    let parsed = null;
     try {
-      const parsed = JSON.parse(content);
+      parsed = JSON.parse(content);
       if (parsed.explanation && parsed.keyPoints) {
         return parsed;
       }
@@ -1496,14 +1411,67 @@ Now provide your explanation as JSON:`;
         return { explanation: parsed.explanation, keyPoints: parsed.keyPoints || [] };
       }
     } catch (e) {
+      console.warn('LC Helper: First attempt JSON parse failed, trying extraction:', e.message);
       // Fallback: try to extract JSON using robust extraction
-      const extracted = extractJSONFromResponse(content);
-      if (extracted && extracted.explanation) {
-        return extracted;
+      parsed = extractJSONFromResponse(content);
+      if (parsed && parsed.explanation) {
+        return parsed;
       }
     }
 
-    // Fallback: extract meaningful text from response instead of raw JSON/markdown
+    // If we still don't have valid JSON, retry with a stricter prompt
+    if (!parsed || !parsed.explanation) {
+      console.warn('LC Helper: JSON extraction failed, retrying with stricter prompt...');
+      const strictPrompt = `${prompt}\n\n⚠️ REMINDER: You MUST return ONLY valid JSON. No text before or after. Start with { and end with }. Example: {"explanation":"...","keyPoints":["..."]}`;
+      
+      try {
+        // Rebuild parts array with stricter prompt
+        const retryParts = [{ text: strictPrompt }];
+        if (parts.length > 1) {
+          retryParts.push(...parts.slice(1)); // Keep image parts if any
+        }
+        
+        const retryRequestBody = {
+          contents: [{ parts: retryParts }],
+          generationConfig: requestBody.generationConfig
+        };
+
+        response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-goog-api-key': apiKey
+          },
+          body: JSON.stringify(retryRequestBody)
+        });
+
+        if (response.ok) {
+          data = await response.json();
+          content = data.candidates[0].content.parts[0].text;
+          
+          try {
+            parsed = JSON.parse(content);
+            if (parsed.explanation && parsed.keyPoints) {
+              console.log('LC Helper: Retry successful, got valid JSON');
+              return parsed;
+            }
+            if (parsed.explanation) {
+              return { explanation: parsed.explanation, keyPoints: parsed.keyPoints || [] };
+            }
+          } catch (e2) {
+            parsed = extractJSONFromResponse(content);
+            if (parsed && parsed.explanation) {
+              console.log('LC Helper: Retry successful after extraction');
+              return parsed;
+            }
+          }
+        }
+      } catch (retryError) {
+        console.error('LC Helper: Retry failed:', retryError);
+      }
+    }
+
+    // Final fallback: extract meaningful text from response instead of raw JSON/markdown
     const cleanText = extractTextFromResponse(content);
     console.log('LC Helper: Using extracted text fallback for explanation');
     return {
@@ -1590,14 +1558,36 @@ Your explanation must include:
    - Clarify weird or ambiguous parts of the statement.
 
 ═══════════════════════════════════════════════════════════════
-OUTPUT FORMAT (JSON)
+OUTPUT FORMAT (STRICT JSON - MANDATORY)
 ═══════════════════════════════════════════════════════════════
 
-Return valid JSON. IMPORTANT: Use \\n for newlines inside strings, not literal line breaks.
+⚠️ CRITICAL: You MUST return ONLY valid JSON. No markdown, no code blocks, no explanatory text before or after the JSON. Just the raw JSON object.
+
+REQUIRED JSON SCHEMA:
 {
-  "explanation": "Clear explanation with **bold** for key terms.\\n\\nUse \\\\n\\\\n for paragraphs.",
-  "keyPoints": ["Key insight 1", "Key insight 2", "Key insight 3", "Key insight 4"]
-}`;
+  "explanation": "string (required)",
+  "keyPoints": ["string", "string", "string", ...] (required, array of strings)
+}
+
+JSON RULES:
+1. Start with { and end with }
+2. Use double quotes for all strings: "text"
+3. Escape newlines as \\n (backslash-n), NOT literal line breaks
+4. Escape quotes inside strings as \\"
+5. Use \\\\n\\\\n for paragraph breaks in explanation text
+6. keyPoints must be an array of strings, even if empty: []
+
+EXAMPLE OF CORRECT OUTPUT:
+{"explanation":"This problem asks us to find...\\n\\nThe key insight is...","keyPoints":["Point 1","Point 2","Point 3"]}
+
+❌ WRONG OUTPUTS (DO NOT DO THIS):
+- Plain text explanation without JSON
+- Markdown code blocks like \`\`\`json ... \`\`\`
+- Text before or after the JSON object
+- JSON with unescaped newlines or quotes
+- Missing required fields (explanation or keyPoints)
+
+Return ONLY the JSON object (no other text):`;
     } else {
       // Codeforces/CodeChef competitive programming focused prompt
       systemPrompt = `You are an expert competitive programming tutor. Your role is to help students TRULY UNDERSTAND the problem before they attempt to solve it.
@@ -1674,14 +1664,36 @@ Your explanation must help the student understand:
    - Highlight patterns or structural weirdness, but NOT solution strategies.
 
 ═══════════════════════════════════════════════════════════════
-OUTPUT FORMAT (JSON)
+OUTPUT FORMAT (STRICT JSON - MANDATORY)
 ═══════════════════════════════════════════════════════════════
 
-Return valid JSON. IMPORTANT: Use \\n for newlines inside strings, not literal line breaks.
+⚠️ CRITICAL: You MUST return ONLY valid JSON. No markdown, no code blocks, no explanatory text before or after the JSON. Just the raw JSON object.
+
+REQUIRED JSON SCHEMA:
 {
-  "explanation": "Clear explanation with **bold** for key terms.\\n\\nUse \\\\n\\\\n for paragraphs.",
-  "keyPoints": ["Key insight 1", "Key insight 2", "Key insight 3", "Key insight 4"]
-}`;
+  "explanation": "string (required)",
+  "keyPoints": ["string", "string", "string", ...] (required, array of strings)
+}
+
+JSON RULES:
+1. Start with { and end with }
+2. Use double quotes for all strings: "text"
+3. Escape newlines as \\n (backslash-n), NOT literal line breaks
+4. Escape quotes inside strings as \\"
+5. Use \\\\n\\\\n for paragraph breaks in explanation text
+6. keyPoints must be an array of strings, even if empty: []
+
+EXAMPLE OF CORRECT OUTPUT:
+{"explanation":"This problem asks us to find...\\n\\nThe key insight is...","keyPoints":["Point 1","Point 2","Point 3"]}
+
+❌ WRONG OUTPUTS (DO NOT DO THIS):
+- Plain text explanation without JSON
+- Markdown code blocks like \`\`\`json ... \`\`\`
+- Text before or after the JSON object
+- JSON with unescaped newlines or quotes
+- Missing required fields (explanation or keyPoints)
+
+Return ONLY the JSON object (no other text):`;
     }
 
     const userContent = [
@@ -2219,11 +2231,7 @@ function extractTextFromResponse(content) {
 
   let text = content.trim();
 
-  // Remove markdown code blocks first
-  text = text.replace(/```(?:json)?\s*[\s\S]*?```/g, '').trim();
-  text = text.replace(/```(?:json)?\s*[\s\S]*$/g, '').trim();
-
-  // If the remaining text looks like JSON, try to extract the explanation field
+  // First, try to extract JSON if present
   if (text.startsWith('{') || text.includes('"explanation"')) {
     try {
       const parsed = JSON.parse(text);
@@ -2231,24 +2239,54 @@ function extractTextFromResponse(content) {
         return parsed.explanation;
       }
     } catch (e) {
-      // Not valid JSON, continue
+      // Not valid JSON, try extraction
     }
     
-    // Try to extract explanation field with regex
-    const explanationMatch = text.match(/"explanation"\s*:\s*"((?:[^"\\]|\\.)*)"/);
+    // Try to extract explanation field with regex (handles multiline strings better)
+    const explanationMatch = text.match(/"explanation"\s*:\s*"((?:[^"\\]|\\.|\\n)*)"/s);
     if (explanationMatch) {
       try {
         // Unescape the JSON string
         return JSON.parse('"' + explanationMatch[1] + '"');
       } catch (e) {
-        return explanationMatch[1].replace(/\\n/g, '\n').replace(/\\"/g, '"');
+        return explanationMatch[1].replace(/\\n/g, '\n').replace(/\\"/g, '"').replace(/\\\\/g, '\\');
+      }
+    }
+
+    // Try multiline JSON extraction (handles unescaped newlines)
+    const multilineMatch = text.match(/"explanation"\s*:\s*"([^"]*(?:\\.[^"]*)*)"/);
+    if (multilineMatch) {
+      try {
+        return JSON.parse('"' + multilineMatch[1] + '"');
+      } catch (e) {
+        // If JSON parsing fails, try to extract the text between quotes manually
+        let extracted = multilineMatch[1];
+        // Handle escaped sequences
+        extracted = extracted.replace(/\\n/g, '\n').replace(/\\"/g, '"').replace(/\\\\/g, '\\');
+        return extracted;
       }
     }
   }
 
-  // If no JSON-like content, return the cleaned text
-  // Remove any remaining partial JSON-like structures
-  text = text.replace(/^\s*\{[\s\S]*$/, '').trim();
+  // Remove markdown code blocks
+  text = text.replace(/```(?:json)?\s*([\s\S]*?)```/g, '$1').trim();
+  text = text.replace(/```(?:json)?\s*([\s\S]*)$/g, '$1').trim();
+
+  // If text still looks like it contains JSON structure, try to extract just the explanation text
+  // Look for patterns like "explanation": "..." or explanation: "..."
+  const looseMatch = text.match(/(?:explanation|Explanation)\s*[:\-]\s*["']?([^"'{}\[\]]+)["']?/i);
+  if (looseMatch && looseMatch[1].trim().length > 10) {
+    return looseMatch[1].trim();
+  }
+
+  // Remove any remaining partial JSON-like structures at the start
+  text = text.replace(/^\s*\{[\s\S]*?$/, '').trim();
+  
+  // If the text is very long and seems to be a full explanation (not JSON), use it
+  // This handles cases where LLM completely ignores JSON format
+  if (text.length > 50 && !text.startsWith('{') && !text.startsWith('[')) {
+    return text;
+  }
   
   return text || content;
 }
@@ -2753,10 +2791,12 @@ Now generate the hints as JSON.`;
       }
     }
 
-    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`, {
+    // SECURITY: Use header instead of query param to prevent API key exposure in URLs/logs
+    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
+        'x-goog-api-key': apiKey
       },
       body: JSON.stringify({
         contents: [{
@@ -3186,16 +3226,48 @@ Return JSON:
 
 async function explainProblemClaude(problem, apiKey, platform = 'codeforces') {
   try {
+    const jsonRules = `
+
+OUTPUT FORMAT (STRICT JSON - MANDATORY)
+
+⚠️ CRITICAL: You MUST return ONLY valid JSON. No markdown, no code blocks, no explanatory text before or after the JSON. Just the raw JSON object.
+
+REQUIRED JSON SCHEMA:
+{
+  "explanation": "string (required)",
+  "keyPoints": ["string", "string", "string", ...] (required, array of strings)
+}
+
+JSON RULES:
+1. Start with { and end with }
+2. Use double quotes for all strings: "text"
+3. Escape newlines as \\n (backslash-n), NOT literal line breaks
+4. Escape quotes inside strings as \\\"
+5. Use \\\\n\\\\n for paragraph breaks in explanation text
+6. keyPoints must be an array of strings, even if empty: []
+
+EXAMPLE OF CORRECT OUTPUT:
+{"explanation":"This problem asks us to find...\\n\\nThe key insight is...","keyPoints":["Point 1","Point 2","Point 3"]}
+
+❌ WRONG OUTPUTS (DO NOT DO THIS):
+- Plain text explanation without JSON
+- Markdown code blocks like \`\`\`json ... \`\`\`
+- Text before or after the JSON object
+- JSON with unescaped newlines or quotes
+- Missing required fields (explanation or keyPoints)
+
+Return ONLY the JSON object (no other text).`;
+
     const prompt = `Explain this problem in simpler terms:
 
 Title: ${problem.title}
 ${problem.hasImages ? 'Note: This problem includes images/graphs. Analyze them carefully along with the text description.\n' : ''}Description: ${problem.description}
 ${problem.examples ? `\nExamples:\n${problem.examples}` : ''}
 
-Provide a clear explanation with key concepts and approach.`;
+Provide a clear explanation with key concepts and approach.${jsonRules}`;
 
     // Build content array - start with text
-    const content = [{
+    const messageContent = [{
       type: 'text',
       text: prompt
     }];
@@ -3210,7 +3282,7 @@ Provide a clear explanation with key concepts and approach.`;
         const mimeTypeMatch = problem.imageData.match(/^data:image\/(\w+);base64,/);
         const mimeType = mimeTypeMatch ? `image/${mimeTypeMatch[1]}` : 'image/jpeg';
 
-        content.push({
+        messageContent.push({
           type: 'image',
           source: {
             type: 'base64',
@@ -3238,7 +3310,7 @@ Provide a clear explanation with key concepts and approach.`;
         max_tokens: 2048,
         messages: [{
           role: 'user',
-          content: content
+          content: messageContent
         }]
       })
     });
@@ -3249,13 +3321,73 @@ Provide a clear explanation with key concepts and approach.`;
     }
 
     const data = await response.json();
-    const explanation = data.content[0].text;
+    let content = data.content[0].text;
+    const imagePart = messageContent.find(part => part.type === 'image');
 
+    const tryParse = (text) => {
+      try {
+        const parsed = JSON.parse(text);
+        if (parsed.explanation && parsed.keyPoints) return parsed;
+        if (parsed.explanation) return { explanation: parsed.explanation, keyPoints: parsed.keyPoints || [] };
+      } catch (e) {
+        const extracted = extractJSONFromResponse(text);
+        if (extracted && extracted.explanation) return extracted;
+      }
+      return null;
+    };
+
+    let parsed = tryParse(content);
+
+    // Retry with stricter prompt if needed
+    if (!parsed || !parsed.explanation) {
+      console.warn('LC Helper: Claude JSON extraction failed, retrying with stricter prompt...');
+      const strictPrompt = `${prompt}\n\n⚠️ REMINDER: You MUST return ONLY valid JSON. No text before or after. Start with { and end with }. Example: {"explanation":"...","keyPoints":["..."]}`;
+
+      const retryContent = [{
+        type: 'text',
+        text: strictPrompt
+      }];
+
+      if (imagePart) {
+        retryContent.push(imagePart);
+      }
+
+      const retryResponse = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': apiKey,
+          'anthropic-version': '2023-06-01'
+        },
+        body: JSON.stringify({
+          model: 'claude-3-5-haiku-20241022',
+          max_tokens: 2048,
+          messages: [{
+            role: 'user',
+            content: retryContent
+          }]
+        })
+      });
+
+      if (retryResponse.ok) {
+        const retryData = await retryResponse.json();
+        content = retryData.content[0].text;
+        parsed = tryParse(content);
+      }
+    }
+
+    if (parsed && parsed.explanation) {
+      return {
+        explanation: parsed.explanation,
+        keyPoints: parsed.keyPoints || []
+      };
+    }
+
+    // Final fallback to text extraction
+    const cleanText = extractTextFromResponse(content);
     return {
-      explanation: explanation,
-      keyConcepts: [],
-      examples: [],
-      approach: ''
+      explanation: cleanText || 'Failed to parse explanation. Please try again.',
+      keyPoints: []
     };
   } catch (error) {
     console.error('Error explaining problem with Claude:', error);
@@ -3380,11 +3512,43 @@ Return JSON:
 
 async function explainProblemGroq(problem, apiKey, platform = 'codeforces') {
   try {
+    const jsonRules = `
+
+OUTPUT FORMAT (STRICT JSON - MANDATORY)
+
+⚠️ CRITICAL: You MUST return ONLY valid JSON. No markdown, no code blocks, no explanatory text before or after the JSON. Just the raw JSON object.
+
+REQUIRED JSON SCHEMA:
+{
+  "explanation": "string (required)",
+  "keyPoints": ["string", "string", "string", ...] (required, array of strings)
+}
+
+JSON RULES:
+1. Start with { and end with }
+2. Use double quotes for all strings: "text"
+3. Escape newlines as \\n (backslash-n), NOT literal line breaks
+4. Escape quotes inside strings as \\\"
+5. Use \\\\n\\\\n for paragraph breaks in explanation text
+6. keyPoints must be an array of strings, even if empty: []
+
+EXAMPLE OF CORRECT OUTPUT:
+{"explanation":"This problem asks us to find...\\n\\nThe key insight is...","keyPoints":["Point 1","Point 2","Point 3"]}
+
+❌ WRONG OUTPUTS (DO NOT DO THIS):
+- Plain text explanation without JSON
+- Markdown code blocks like \`\`\`json ... \`\`\`
+- Text before or after the JSON object
+- JSON with unescaped newlines or quotes
+- Missing required fields (explanation or keyPoints)
+
+Return ONLY the JSON object (no other text).`;
+
     const prompt = `Explain this problem in simpler terms:
 
 Title: ${problem.title}
 ${problem.hasImages ? 'Note: This problem includes images/graphs. Analyze them carefully along with the text description.\n' : ''}Description: ${problem.description}
-${problem.examples ? `\nExamples:\n${problem.examples}` : ''}`;
+${problem.examples ? `\nExamples:\n${problem.examples}` : ''}${jsonRules}`;
 
     // Build user message content - start with text
     const userContent = [{
@@ -3434,13 +3598,67 @@ ${problem.examples ? `\nExamples:\n${problem.examples}` : ''}`;
     }
 
     const data = await response.json();
-    const explanation = data.choices[0].message.content;
+    let content = data.choices[0].message.content;
+    const imagePart = userContent.find(part => part.type === 'image_url');
 
+    const tryParse = (text) => {
+      try {
+        const parsed = JSON.parse(text);
+        if (parsed.explanation && parsed.keyPoints) return parsed;
+        if (parsed.explanation) return { explanation: parsed.explanation, keyPoints: parsed.keyPoints || [] };
+      } catch (e) {
+        const extracted = extractJSONFromResponse(text);
+        if (extracted && extracted.explanation) return extracted;
+      }
+      return null;
+    };
+
+    let parsed = tryParse(content);
+
+    if (!parsed || !parsed.explanation) {
+      console.warn('LC Helper: Groq JSON extraction failed, retrying with stricter prompt...');
+      const strictPrompt = `${prompt}\n\n⚠️ REMINDER: You MUST return ONLY valid JSON. No text before or after. Start with { and end with }. Example: {"explanation":"...","keyPoints":["..."]}`;
+
+      const retryContent = [{
+        type: 'text',
+        text: strictPrompt
+      }];
+      if (imagePart) retryContent.push(imagePart);
+
+      const retryResponse = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${apiKey}`
+        },
+        body: JSON.stringify({
+          model: model,
+          messages: [
+            { role: 'user', content: retryContent }
+          ],
+          temperature: 0.7,
+          max_tokens: 2048
+        })
+      });
+
+      if (retryResponse.ok) {
+        const retryData = await retryResponse.json();
+        content = retryData.choices?.[0]?.message?.content || content;
+        parsed = tryParse(content);
+      }
+    }
+
+    if (parsed && parsed.explanation) {
+      return {
+        explanation: parsed.explanation,
+        keyPoints: parsed.keyPoints || []
+      };
+    }
+
+    const cleanText = extractTextFromResponse(content);
     return {
-      explanation: explanation,
-      keyConcepts: [],
-      examples: [],
-      approach: ''
+      explanation: cleanText || 'Failed to parse explanation. Please try again.',
+      keyPoints: []
     };
   } catch (error) {
     console.error('Error explaining problem with Groq:', error);
@@ -3565,11 +3783,43 @@ Return JSON:
 
 async function explainProblemTogether(problem, apiKey, platform = 'codeforces') {
   try {
+    const jsonRules = `
+
+OUTPUT FORMAT (STRICT JSON - MANDATORY)
+
+⚠️ CRITICAL: You MUST return ONLY valid JSON. No markdown, no code blocks, no explanatory text before or after the JSON. Just the raw JSON object.
+
+REQUIRED JSON SCHEMA:
+{
+  "explanation": "string (required)",
+  "keyPoints": ["string", "string", "string", ...] (required, array of strings)
+}
+
+JSON RULES:
+1. Start with { and end with }
+2. Use double quotes for all strings: "text"
+3. Escape newlines as \\n (backslash-n), NOT literal line breaks
+4. Escape quotes inside strings as \\\"
+5. Use \\\\n\\\\n for paragraph breaks in explanation text
+6. keyPoints must be an array of strings, even if empty: []
+
+EXAMPLE OF CORRECT OUTPUT:
+{"explanation":"This problem asks us to find...\\n\\nThe key insight is...","keyPoints":["Point 1","Point 2","Point 3"]}
+
+❌ WRONG OUTPUTS (DO NOT DO THIS):
+- Plain text explanation without JSON
+- Markdown code blocks like \`\`\`json ... \`\`\`
+- Text before or after the JSON object
+- JSON with unescaped newlines or quotes
+- Missing required fields (explanation or keyPoints)
+
+Return ONLY the JSON object (no other text).`;
+
     const prompt = `Explain this problem in simpler terms:
 
 Title: ${problem.title}
 ${problem.hasImages ? 'Note: This problem includes images/graphs. Analyze them carefully along with the text description.\n' : ''}Description: ${problem.description}
-${problem.examples ? `\nExamples:\n${problem.examples}` : ''}`;
+${problem.examples ? `\nExamples:\n${problem.examples}` : ''}${jsonRules}`;
 
     // Build user message content - start with text
     const userContent = [{
@@ -3619,13 +3869,67 @@ ${problem.examples ? `\nExamples:\n${problem.examples}` : ''}`;
     }
 
     const data = await response.json();
-    const explanation = data.choices[0].message.content;
+    let content = data.choices[0].message.content;
+    const imagePart = userContent.find(part => part.type === 'image_url');
 
+    const tryParse = (text) => {
+      try {
+        const parsed = JSON.parse(text);
+        if (parsed.explanation && parsed.keyPoints) return parsed;
+        if (parsed.explanation) return { explanation: parsed.explanation, keyPoints: parsed.keyPoints || [] };
+      } catch (e) {
+        const extracted = extractJSONFromResponse(text);
+        if (extracted && extracted.explanation) return extracted;
+      }
+      return null;
+    };
+
+    let parsed = tryParse(content);
+
+    if (!parsed || !parsed.explanation) {
+      console.warn('LC Helper: Together JSON extraction failed, retrying with stricter prompt...');
+      const strictPrompt = `${prompt}\n\n⚠️ REMINDER: You MUST return ONLY valid JSON. No text before or after. Start with { and end with }. Example: {"explanation":"...","keyPoints":["..."]}`;
+
+      const retryContent = [{
+        type: 'text',
+        text: strictPrompt
+      }];
+      if (imagePart) retryContent.push(imagePart);
+
+      const retryResponse = await fetch('https://api.together.xyz/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${apiKey}`
+        },
+        body: JSON.stringify({
+          model: model,
+          messages: [
+            { role: 'user', content: retryContent }
+          ],
+          temperature: 0.7,
+          max_tokens: 2048
+        })
+      });
+
+      if (retryResponse.ok) {
+        const retryData = await retryResponse.json();
+        content = retryData.choices?.[0]?.message?.content || content;
+        parsed = tryParse(content);
+      }
+    }
+
+    if (parsed && parsed.explanation) {
+      return {
+        explanation: parsed.explanation,
+        keyPoints: parsed.keyPoints || []
+      };
+    }
+
+    const cleanText = extractTextFromResponse(content);
     return {
-      explanation: explanation,
-      keyConcepts: [],
-      examples: [],
-      approach: ''
+      explanation: cleanText || 'Failed to parse explanation. Please try again.',
+      keyPoints: []
     };
   } catch (error) {
     console.error('Error explaining problem with Together AI:', error);
@@ -3730,11 +4034,43 @@ Return JSON:
 
 async function explainProblemHuggingFace(problem, apiKey, platform = 'codeforces') {
   try {
+    const jsonRules = `
+
+OUTPUT FORMAT (STRICT JSON - MANDATORY)
+
+⚠️ CRITICAL: You MUST return ONLY valid JSON. No markdown, no code blocks, no explanatory text before or after the JSON. Just the raw JSON object.
+
+REQUIRED JSON SCHEMA:
+{
+  "explanation": "string (required)",
+  "keyPoints": ["string", "string", "string", ...] (required, array of strings)
+}
+
+JSON RULES:
+1. Start with { and end with }
+2. Use double quotes for all strings: "text"
+3. Escape newlines as \\n (backslash-n), NOT literal line breaks
+4. Escape quotes inside strings as \\\"
+5. Use \\\\n\\\\n for paragraph breaks in explanation text
+6. keyPoints must be an array of strings, even if empty: []
+
+EXAMPLE OF CORRECT OUTPUT:
+{"explanation":"This problem asks us to find...\\n\\nThe key insight is...","keyPoints":["Point 1","Point 2","Point 3"]}
+
+❌ WRONG OUTPUTS (DO NOT DO THIS):
+- Plain text explanation without JSON
+- Markdown code blocks like \`\`\`json ... \`\`\`
+- Text before or after the JSON object
+- JSON with unescaped newlines or quotes
+- Missing required fields (explanation or keyPoints)
+
+Return ONLY the JSON object (no other text).`;
+
     const prompt = `Explain this problem in simpler terms:
 
 Title: ${problem.title}
 ${problem.hasImages ? 'Note: This problem includes images/graphs. Analyze them carefully along with the text description.\n' : ''}Description: ${problem.description}
-${problem.examples ? `\nExamples:\n${problem.examples}` : ''}`;
+${problem.examples ? `\nExamples:\n${problem.examples}` : ''}${jsonRules}`;
 
     // Use vision model if images present
     const model = (problem.hasImages && problem.imageData)
@@ -3774,17 +4110,613 @@ ${problem.examples ? `\nExamples:\n${problem.examples}` : ''}`;
     }
 
     const data = await response.json();
-    const explanation = Array.isArray(data) ? data[0].generated_text : data.generated_text;
+    let content = Array.isArray(data) ? data[0].generated_text : data.generated_text;
 
+    const tryParse = (text) => {
+      try {
+        const parsed = JSON.parse(text);
+        if (parsed.explanation && parsed.keyPoints) return parsed;
+        if (parsed.explanation) return { explanation: parsed.explanation, keyPoints: parsed.keyPoints || [] };
+      } catch (e) {
+        const extracted = extractJSONFromResponse(text);
+        if (extracted && extracted.explanation) return extracted;
+      }
+      return null;
+    };
+
+    let parsed = tryParse(content);
+
+    if (!parsed || !parsed.explanation) {
+      console.warn('LC Helper: HuggingFace JSON extraction failed, retrying with stricter prompt...');
+      const strictPrompt = `${prompt}\n\n⚠️ REMINDER: You MUST return ONLY valid JSON. No text before or after. Start with { and end with }. Example: {"explanation":"...","keyPoints":["..."]}`;
+
+      let strictInputs;
+      if (problem.hasImages && problem.imageData && model.includes('idefics')) {
+        strictInputs = {
+          question: strictPrompt,
+          image: problem.imageData
+        };
+      } else {
+        strictInputs = `<|user|>\n${strictPrompt}\n<|assistant|>\n`;
+      }
+
+      const retryResponse = await fetch(`https://api-inference.huggingface.co/models/${model}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${apiKey}`
+        },
+        body: JSON.stringify({
+          inputs: strictInputs,
+          parameters: {
+            temperature: 0.7,
+            max_new_tokens: 2048,
+            return_full_text: false
+          }
+        })
+      });
+
+      if (retryResponse.ok) {
+        const retryData = await retryResponse.json();
+        content = Array.isArray(retryData) ? retryData[0].generated_text : retryData.generated_text;
+        parsed = tryParse(content);
+      }
+    }
+
+    if (parsed && parsed.explanation) {
+      return {
+        explanation: parsed.explanation,
+        keyPoints: parsed.keyPoints || []
+      };
+    }
+
+    const cleanText = extractTextFromResponse(content);
     return {
-      explanation: explanation,
-      keyConcepts: [],
-      examples: [],
-      approach: ''
+      explanation: cleanText || 'Failed to parse explanation. Please try again.',
+      keyPoints: []
     };
   } catch (error) {
     console.error('Error explaining problem with Hugging Face:', error);
     return { error: formatApiError(error.message, 'huggingface') };
+  }
+}
+
+// ============================================
+// OPENROUTER HINTS GENERATION
+// ============================================
+
+async function generateHintsOpenRouter(problem, apiKey, platform = 'codeforces') {
+  try {
+    const difficulty = problem.difficulty || 'Unknown';
+    const existingTags = problem.tags || '';
+
+    // Use the same prompt structure as OpenAI
+    const systemPrompt = platform === 'leetcode'
+      ? 'You are a world-class LeetCode interview coach. Provide three progressive hints without revealing the solution.'
+      : 'You are a world-class competitive programming coach. Provide three progressive hints without revealing the solution.';
+
+    // Build the same comprehensive prompt used for OpenAI
+    const truncatedDescription = problem.description ? problem.description.substring(0, 4000) : '';
+    const truncatedExamples = problem.examples ? problem.examples.substring(0, 2000) : '';
+    const truncatedInputFormat = problem.inputFormat ? problem.inputFormat.substring(0, 1000) : '';
+    const truncatedOutputFormat = problem.outputFormat ? problem.outputFormat.substring(0, 1000) : '';
+
+    const userPrompt = platform === 'leetcode'
+      ? `Analyze this LeetCode problem and generate three progressive hints:
+
+Title: ${problem.title}
+${existingTags ? `Tags: ${existingTags}` : ''}
+Difficulty: ${difficulty}
+${problem.hasImages ? 'Note: This problem includes images/graphs. Analyze them carefully along with the text description.\n' : ''}Description: ${truncatedDescription}
+${truncatedExamples ? `\n\nExamples:\n${truncatedExamples}` : ''}
+
+Return JSON with three hints:
+{
+  "hints": [
+    "Hint 1 (gentle push)...",
+    "Hint 2 (stronger nudge)...",
+    "Hint 3 (almost there)..."
+  ],
+  "topic": "Topic classification",
+  "timeComplexity": "Time complexity",
+  "spaceComplexity": "Space complexity"
+}`
+      : `Analyze this competitive programming problem and generate three progressive hints:
+
+Title: ${problem.title}
+${existingTags ? `Tags: ${existingTags}` : ''}
+Difficulty: ${difficulty}
+${problem.hasImages ? 'Note: This problem includes images/graphs. Analyze them carefully along with the text description.\n' : ''}Description: ${truncatedDescription}
+${truncatedExamples ? `\n\nExamples:\n${truncatedExamples}` : ''}
+${truncatedInputFormat ? `\n\nInput Format:\n${truncatedInputFormat}` : ''}
+${truncatedOutputFormat ? `\n\nOutput Format:\n${truncatedOutputFormat}` : ''}
+
+Return JSON with three hints:
+{
+  "hints": [
+    "Hint 1 (gentle push)...",
+    "Hint 2 (stronger nudge)...",
+    "Hint 3 (almost there)..."
+  ],
+  "topic": "Topic classification",
+  "timeComplexity": "Time complexity",
+  "spaceComplexity": "Space complexity"
+}`;
+
+    // Build messages array
+    const messages = [
+      { role: 'system', content: systemPrompt },
+      { role: 'user', content: userPrompt }
+    ];
+
+    // Add image if available (OpenRouter supports vision models)
+    if (problem.hasImages && problem.imageData) {
+      try {
+        const base64Data = problem.imageData.replace(/^data:image\/\w+;base64,/, '');
+        const mimeTypeMatch = problem.imageData.match(/^data:image\/(\w+);base64,/);
+        const mimeType = mimeTypeMatch ? `image/${mimeTypeMatch[1]}` : 'image/jpeg';
+        
+        messages[1].content = [
+          { type: 'text', text: userPrompt },
+          {
+            type: 'image_url',
+            image_url: {
+              url: `data:${mimeType};base64,${base64Data}`
+            }
+          }
+        ];
+        console.log('OpenRouter: Including image data in request');
+      } catch (imageError) {
+        console.warn('OpenRouter: Failed to process image data, continuing with text-only:', imageError.message);
+      }
+    }
+
+    // Use a good default model (user can override via OpenRouter dashboard)
+    // OpenRouter will route to the best available model
+    const model = 'openai/gpt-4o-mini'; // Default, but OpenRouter allows many models
+
+    const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiKey}`,
+        'HTTP-Referer': chrome.runtime.getURL(''),
+        'X-Title': 'LC Helper'
+      },
+      body: JSON.stringify({
+        model: model,
+        messages: messages,
+        temperature: 0.7,
+        max_tokens: 3072,
+        response_format: { type: "json_object" }
+      })
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData.error?.message || `HTTP ${response.status}`);
+    }
+
+    const data = await response.json();
+    const content = data.choices?.[0]?.message?.content || '';
+
+    // Parse JSON from response
+    const parsed = extractJSONFromResponse(content);
+    const normalized = normalizeHintsResponse(parsed);
+    if (normalized) {
+      return normalized;
+    }
+
+    console.error('LC Helper: Failed to extract/normalize hints from OpenRouter response');
+    return { error: 'Failed to parse AI response. Please try again.' };
+  } catch (error) {
+    console.error('Error generating hints with OpenRouter:', error);
+    return { error: formatApiError(error.message, 'openrouter') };
+  }
+}
+
+async function explainProblemOpenRouter(problem, apiKey, platform = 'codeforces') {
+  try {
+    const jsonRules = `
+
+OUTPUT FORMAT (STRICT JSON - MANDATORY)
+
+⚠️ CRITICAL: You MUST return ONLY valid JSON. No markdown, no code blocks, no explanatory text before or after the JSON. Just the raw JSON object.
+
+REQUIRED JSON SCHEMA:
+{
+  "explanation": "string (required)",
+  "keyPoints": ["string", "string", "string", ...] (required, array of strings)
+}
+
+JSON RULES:
+1. Start with { and end with }
+2. Use double quotes for all strings: "text"
+3. Escape newlines as \\n (backslash-n), NOT literal line breaks
+4. Escape quotes inside strings as \\\"
+5. Use \\\\n\\\\n for paragraph breaks in explanation text
+6. keyPoints must be an array of strings, even if empty: []
+
+EXAMPLE OF CORRECT OUTPUT:
+{"explanation":"This problem asks us to find...\\n\\nThe key insight is...","keyPoints":["Point 1","Point 2","Point 3"]}
+
+❌ WRONG OUTPUTS (DO NOT DO THIS):
+- Plain text explanation without JSON
+- Markdown code blocks like \`\`\`json ... \`\`\`
+- Text before or after the JSON object
+- JSON with unescaped newlines or quotes
+- Missing required fields (explanation or keyPoints)
+
+Return ONLY the JSON object (no other text).`;
+
+    const prompt = `Explain this problem in simpler terms:
+
+Title: ${problem.title}
+${problem.hasImages ? 'Note: This problem includes images/graphs. Analyze them carefully along with the text description.\n' : ''}Description: ${problem.description}
+${problem.examples ? `\nExamples:\n${problem.examples}` : ''}
+
+Provide a clear explanation with key concepts.${jsonRules}`;
+
+    const messages = [{ role: 'user', content: prompt }];
+
+    // Add image if available
+    if (problem.hasImages && problem.imageData) {
+      try {
+        const base64Data = problem.imageData.replace(/^data:image\/\w+;base64,/, '');
+        const mimeTypeMatch = problem.imageData.match(/^data:image\/(\w+);base64,/);
+        const mimeType = mimeTypeMatch ? `image/${mimeTypeMatch[1]}` : 'image/jpeg';
+        
+        messages[0].content = [
+          { type: 'text', text: prompt },
+          {
+            type: 'image_url',
+            image_url: {
+              url: `data:${mimeType};base64,${base64Data}`
+            }
+          }
+        ];
+      } catch (imageError) {
+        console.warn('OpenRouter: Failed to process image data, continuing with text-only:', imageError.message);
+      }
+    }
+
+    const model = 'openai/gpt-4o-mini';
+
+    const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiKey}`,
+        'HTTP-Referer': chrome.runtime.getURL(''),
+        'X-Title': 'LC Helper'
+      },
+      body: JSON.stringify({
+        model: model,
+        messages: messages,
+        temperature: 0.7,
+        max_tokens: 2048
+      })
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData.error?.message || `HTTP ${response.status}`);
+    }
+
+    const data = await response.json();
+    let content = data.choices[0].message.content;
+    const imagePart = Array.isArray(messages[0].content) ? messages[0].content.find(part => part.type === 'image_url') : null;
+
+    const tryParse = (text) => {
+      try {
+        const parsed = JSON.parse(text);
+        if (parsed.explanation && parsed.keyPoints) return parsed;
+        if (parsed.explanation) return { explanation: parsed.explanation, keyPoints: parsed.keyPoints || [] };
+      } catch (e) {
+        const extracted = extractJSONFromResponse(text);
+        if (extracted && extracted.explanation) return extracted;
+      }
+      return null;
+    };
+
+    let parsed = tryParse(content);
+
+    if (!parsed || !parsed.explanation) {
+      console.warn('LC Helper: OpenRouter JSON extraction failed, retrying with stricter prompt...');
+      const strictPrompt = `${prompt}\n\n⚠️ REMINDER: You MUST return ONLY valid JSON. No text before or after. Start with { and end with }. Example: {"explanation":"...","keyPoints":["..."]}`;
+
+      const strictMessageContent = imagePart
+        ? [{ type: 'text', text: strictPrompt }, imagePart]
+        : strictPrompt;
+
+      const retryResponse = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${apiKey}`,
+          'HTTP-Referer': chrome.runtime.getURL(''),
+          'X-Title': 'LC Helper'
+        },
+        body: JSON.stringify({
+          model: model,
+          messages: [{ role: 'user', content: strictMessageContent }],
+          temperature: 0.7,
+          max_tokens: 2048
+        })
+      });
+
+      if (retryResponse.ok) {
+        const retryData = await retryResponse.json();
+        content = retryData.choices?.[0]?.message?.content || content;
+        parsed = tryParse(content);
+      }
+    }
+
+    if (parsed && parsed.explanation) {
+      return {
+        explanation: parsed.explanation,
+        keyPoints: parsed.keyPoints || []
+      };
+    }
+
+    const cleanText = extractTextFromResponse(content);
+    return {
+      explanation: cleanText || 'Failed to parse explanation. Please try again.',
+      keyPoints: []
+    };
+  } catch (error) {
+    console.error('Error explaining problem with OpenRouter:', error);
+    return { error: formatApiError(error.message, 'openrouter') };
+  }
+}
+
+// ============================================
+// CUSTOM HTTP ENDPOINT HINTS GENERATION
+// ============================================
+
+async function generateHintsCustom(problem, apiKey, platform = 'codeforces') {
+  try {
+    // Get custom endpoint settings
+    const { customEndpoint, customModel } = await chrome.storage.sync.get(['customEndpoint', 'customModel']);
+    
+    if (!customEndpoint || !customModel) {
+      return { error: 'Custom endpoint URL and model name must be configured in settings.' };
+    }
+
+    const difficulty = problem.difficulty || 'Unknown';
+    const existingTags = problem.tags || '';
+
+    const systemPrompt = platform === 'leetcode'
+      ? 'You are a world-class LeetCode interview coach. Provide three progressive hints without revealing the solution.'
+      : 'You are a world-class competitive programming coach. Provide three progressive hints without revealing the solution.';
+
+    const userPrompt = `Analyze this problem and generate three progressive hints:
+
+Title: ${problem.title}
+${existingTags ? `Tags: ${existingTags}` : ''}
+Difficulty: ${difficulty}
+${problem.hasImages ? 'Note: This problem includes images/graphs. Analyze them carefully along with the text description.\n' : ''}Description: ${problem.description}
+${problem.examples ? `\n\nExamples:\n${problem.examples}` : ''}
+
+Return JSON:
+{
+  "hints": [
+    "Hint 1 (gentle push)...",
+    "Hint 2 (stronger nudge)...",
+    "Hint 3 (almost there)..."
+  ],
+  "topic": "Topic classification",
+  "timeComplexity": "Time complexity",
+  "spaceComplexity": "Space complexity"
+}`;
+
+    // Build request body - try OpenAI-compatible format first
+    const requestBody = {
+      model: customModel,
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: userPrompt }
+      ],
+      temperature: 0.7,
+      max_tokens: 3072,
+      response_format: { type: "json_object" }
+    };
+
+    // Build headers
+    const headers = {
+      'Content-Type': 'application/json'
+    };
+    
+    if (apiKey) {
+      headers['Authorization'] = `Bearer ${apiKey}`;
+    }
+
+    const response = await fetch(customEndpoint, {
+      method: 'POST',
+      headers: headers,
+      body: JSON.stringify(requestBody)
+    });
+
+    if (!response.ok) {
+      const errorData = await response.text().catch(() => '');
+      throw new Error(errorData || `HTTP ${response.status}`);
+    }
+
+    const data = await response.json();
+    
+    // Try to extract content from various response formats
+    let content = '';
+    if (data.choices?.[0]?.message?.content) {
+      content = data.choices[0].message.content;
+    } else if (data.content) {
+      content = data.content;
+    } else if (data.text) {
+      content = data.text;
+    } else if (typeof data === 'string') {
+      content = data;
+    }
+
+    // Parse JSON from response
+    const parsed = extractJSONFromResponse(content);
+    const normalized = normalizeHintsResponse(parsed);
+    if (normalized) {
+      return normalized;
+    }
+
+    console.error('LC Helper: Failed to extract/normalize hints from custom endpoint response');
+    return { error: 'Failed to parse AI response. Please check your endpoint format.' };
+  } catch (error) {
+    console.error('Error generating hints with custom endpoint:', error);
+    return { error: formatApiError(error.message, 'custom') };
+  }
+}
+
+async function explainProblemCustom(problem, apiKey, platform = 'codeforces') {
+  try {
+    // Get custom endpoint settings
+    const { customEndpoint, customModel } = await chrome.storage.sync.get(['customEndpoint', 'customModel']);
+    
+    if (!customEndpoint || !customModel) {
+      return { error: 'Custom endpoint URL and model name must be configured in settings.' };
+    }
+
+    const jsonRules = `
+
+OUTPUT FORMAT (STRICT JSON - MANDATORY)
+
+⚠️ CRITICAL: You MUST return ONLY valid JSON. No markdown, no code blocks, no explanatory text before or after the JSON. Just the raw JSON object.
+
+REQUIRED JSON SCHEMA:
+{
+  "explanation": "string (required)",
+  "keyPoints": ["string", "string", "string", ...] (required, array of strings)
+}
+
+JSON RULES:
+1. Start with { and end with }
+2. Use double quotes for all strings: "text"
+3. Escape newlines as \\n (backslash-n), NOT literal line breaks
+4. Escape quotes inside strings as \\\"
+5. Use \\\\n\\\\n for paragraph breaks in explanation text
+6. keyPoints must be an array of strings, even if empty: []
+
+EXAMPLE OF CORRECT OUTPUT:
+{"explanation":"This problem asks us to find...\\n\\nThe key insight is...","keyPoints":["Point 1","Point 2","Point 3"]}
+
+❌ WRONG OUTPUTS (DO NOT DO THIS):
+- Plain text explanation without JSON
+- Markdown code blocks like \`\`\`json ... \`\`\`
+- Text before or after the JSON object
+- JSON with unescaped newlines or quotes
+- Missing required fields (explanation or keyPoints)
+
+Return ONLY the JSON object (no other text).`;
+
+    const prompt = `Explain this problem in simpler terms:
+
+Title: ${problem.title}
+${problem.hasImages ? 'Note: This problem includes images/graphs. Analyze them carefully along with the text description.\n' : ''}Description: ${problem.description}
+${problem.examples ? `\nExamples:\n${problem.examples}` : ''}
+
+Provide a clear explanation with key concepts.${jsonRules}`;
+
+    // Build request body - OpenAI-compatible format
+    const requestBody = {
+      model: customModel,
+      messages: [
+        { role: 'user', content: prompt }
+      ],
+      temperature: 0.7,
+      max_tokens: 2048
+    };
+
+    // Build headers
+    const headers = {
+      'Content-Type': 'application/json'
+    };
+    
+    if (apiKey) {
+      headers['Authorization'] = `Bearer ${apiKey}`;
+    }
+
+    const response = await fetch(customEndpoint, {
+      method: 'POST',
+      headers: headers,
+      body: JSON.stringify(requestBody)
+    });
+
+    if (!response.ok) {
+      const errorData = await response.text().catch(() => '');
+      throw new Error(errorData || `HTTP ${response.status}`);
+    }
+
+    const data = await response.json();
+    
+    // Try to extract content from various response formats
+    const extractContent = (payload, fallback = '') => {
+      if (payload?.choices?.[0]?.message?.content) return payload.choices[0].message.content;
+      if (payload?.content) return payload.content;
+      if (payload?.text) return payload.text;
+      if (typeof payload === 'string') return payload;
+      return fallback;
+    };
+
+    let content = extractContent(data, '');
+
+    const tryParse = (text) => {
+      try {
+        const parsed = JSON.parse(text);
+        if (parsed.explanation && parsed.keyPoints) return parsed;
+        if (parsed.explanation) return { explanation: parsed.explanation, keyPoints: parsed.keyPoints || [] };
+      } catch (e) {
+        const extracted = extractJSONFromResponse(text);
+        if (extracted && extracted.explanation) return extracted;
+      }
+      return null;
+    };
+
+    let parsed = tryParse(content);
+
+    if (!parsed || !parsed.explanation) {
+      console.warn('LC Helper: Custom endpoint JSON extraction failed, retrying with stricter prompt...');
+      const strictPrompt = `${prompt}\n\n⚠️ REMINDER: You MUST return ONLY valid JSON. No text before or after. Start with { and end with }. Example: {"explanation":"...","keyPoints":["..."]}`;
+
+      const strictRequestBody = {
+        ...requestBody,
+        messages: [
+          { role: 'user', content: strictPrompt }
+        ],
+        response_format: { type: "json_object" }
+      };
+
+      const retryResponse = await fetch(customEndpoint, {
+        method: 'POST',
+        headers: headers,
+        body: JSON.stringify(strictRequestBody)
+      });
+
+      if (retryResponse.ok) {
+        const retryData = await retryResponse.json().catch(() => ({}));
+        content = extractContent(retryData, content);
+        parsed = tryParse(content);
+      }
+    }
+
+    if (parsed && parsed.explanation) {
+      return {
+        explanation: parsed.explanation,
+        keyPoints: parsed.keyPoints || []
+      };
+    }
+
+    const cleanText = extractTextFromResponse(content);
+    return {
+      explanation: cleanText || 'Failed to parse explanation. Please try again.',
+      keyPoints: []
+    };
+  } catch (error) {
+    console.error('Error explaining problem with custom endpoint:', error);
+    return { error: formatApiError(error.message, 'custom') };
   }
 }
 
@@ -3966,12 +4898,10 @@ async function syncUnifiedStreak() {
       return;
     }
 
-    // Fetch data from all platforms in parallel (with delay for Codeforces)
+    // Fetch data from all platforms in parallel
     const results = await Promise.allSettled([
       leetcodeUsername ? fetchLeetCodeActivity(leetcodeUsername) : Promise.resolve(null),
-      new Promise(resolve => setTimeout(async () => {
-        resolve(codeforcesUsername ? await fetchCodeforcesActivity(codeforcesUsername) : null);
-      }, 2000)), // 2 second delay for Codeforces rate limiting
+      codeforcesUsername ? fetchCodeforcesActivity(codeforcesUsername) : Promise.resolve(null),
       codechefUsername ? fetchCodeChefActivity(codechefUsername) : Promise.resolve(null)
     ]);
 
@@ -4393,9 +5323,7 @@ async function syncTodayCountFromAPIs() {
   // Fetch today's solved problems from all platforms
   const results = await Promise.allSettled([
     leetcodeUsername ? fetchLeetCodeTodaySubmissions(leetcodeUsername) : Promise.resolve([]),
-    new Promise(resolve => setTimeout(async () => {
-      resolve(codeforcesUsername ? await fetchCodeforcesTodaySubmissions(codeforcesUsername) : []);
-    }, 2000)), // 2 second delay for Codeforces rate limiting
+    codeforcesUsername ? fetchCodeforcesTodaySubmissions(codeforcesUsername) : Promise.resolve([]),
     codechefUsername ? fetchCodeChefTodaySubmissions(codechefUsername) : Promise.resolve([])
   ]);
 
@@ -4592,87 +5520,19 @@ async function setupDailyResetAlarm() {
 }
 
 // ============================================
-// FAVORITES SYSTEM (Hybrid: Backend + Local)
+// FAVORITES SYSTEM (Local Storage Only)
 // ============================================
 
 async function getFavorites() {
-  const { authToken } = await chrome.storage.sync.get('authToken');
-
-  // If authenticated, try to get from backend first
-  if (authToken) {
-    try {
-      const response = await fetch(`${API_BASE_URL}/favorites`, {
-        headers: { 'Authorization': `Bearer ${authToken}` }
-      });
-
-      if (response.ok) {
-        const data = await response.json();
-        // Sync to local storage for offline access
-        await chrome.storage.local.set({ favorites: data.favorites || [] });
-        return data.favorites || [];
-      } else if (response.status === 401) {
-        // Token expired, remove it
-        await chrome.storage.sync.remove('authToken');
-      }
-    } catch (error) {
-      console.log('LC Helper: Failed to fetch favorites from backend, using local:', error.message);
-    }
-  }
-
-  // Fallback to local storage
   const { favorites } = await chrome.storage.local.get('favorites');
   return favorites || [];
 }
 
 async function addFavorite(problem) {
-  const { authToken } = await chrome.storage.sync.get('authToken');
-
   // Generate ID
   const id = `${problem.platform}_${generateCacheKey(problem.url)}`;
 
-  // If authenticated, save to backend
-  if (authToken) {
-    try {
-      const response = await fetch(`${API_BASE_URL}/favorites`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${authToken}`
-        },
-        body: JSON.stringify({
-          url: problem.url,
-          title: problem.title,
-          platform: problem.platform,
-          difficulty: problem.difficulty
-        })
-      });
-
-      if (response.ok) {
-        const data = await response.json();
-        // Also save locally for offline access
-        const { favorites = [] } = await chrome.storage.local.get('favorites');
-        if (!favorites.some(f => f.id === id)) {
-          favorites.push(data.favorite);
-          await chrome.storage.local.set({ favorites });
-        }
-        return { success: true, favorite: data.favorite };
-      } else if (response.status === 401) {
-        // Token expired, remove it
-        await chrome.storage.sync.remove('authToken');
-      } else if (response.status === 403) {
-        // Limit exceeded
-        const errorData = await response.json().catch(() => ({}));
-        return { success: false, error: errorData.message || 'Favorite limit exceeded' };
-      } else {
-        const errorData = await response.json().catch(() => ({}));
-        return { success: false, error: errorData.message || 'Failed to save favorite' };
-      }
-    } catch (error) {
-      console.log('LC Helper: Failed to save favorite to backend, saving locally:', error.message);
-    }
-  }
-
-  // Fallback to local storage
+  // Save to local storage
   const { favorites = [] } = await chrome.storage.local.get('favorites');
   if (favorites.some(f => f.id === id)) {
     return { success: false, error: 'Already in favorites' };
@@ -4693,32 +5553,7 @@ async function addFavorite(problem) {
 }
 
 async function removeFavorite(id) {
-  const { authToken } = await chrome.storage.sync.get('authToken');
-
-  // If authenticated, remove from backend
-  if (authToken) {
-    try {
-      const response = await fetch(`${API_BASE_URL}/favorites/${encodeURIComponent(id)}`, {
-        method: 'DELETE',
-        headers: { 'Authorization': `Bearer ${authToken}` }
-      });
-
-      if (response.ok || response.status === 404) {
-        // Also remove from local
-        const { favorites = [] } = await chrome.storage.local.get('favorites');
-        const updated = favorites.filter(f => f.id !== id);
-        await chrome.storage.local.set({ favorites: updated });
-        return { success: true };
-      } else if (response.status === 401) {
-        // Token expired, remove it
-        await chrome.storage.sync.remove('authToken');
-      }
-    } catch (error) {
-      console.log('LC Helper: Failed to remove favorite from backend, removing locally:', error.message);
-    }
-  }
-
-  // Fallback to local storage
+  // Remove from local storage
   const { favorites = [] } = await chrome.storage.local.get('favorites');
   const updated = favorites.filter(f => f.id !== id);
   await chrome.storage.local.set({ favorites: updated });
@@ -4726,28 +5561,7 @@ async function removeFavorite(id) {
 }
 
 async function isFavorite(url) {
-  const { authToken } = await chrome.storage.sync.get('authToken');
-
-  // If authenticated, check backend
-  if (authToken) {
-    try {
-      const response = await fetch(`${API_BASE_URL}/favorites/check?url=${encodeURIComponent(url)}`, {
-        headers: { 'Authorization': `Bearer ${authToken}` }
-      });
-
-      if (response.ok) {
-        const data = await response.json();
-        return data.isFavorite;
-      } else if (response.status === 401) {
-        // Token expired, remove it
-        await chrome.storage.sync.remove('authToken');
-      }
-    } catch (error) {
-      console.log('LC Helper: Failed to check favorite on backend, checking local:', error.message);
-    }
-  }
-
-  // Fallback to local storage
+  // Check local storage
   const { favorites = [] } = await chrome.storage.local.get('favorites');
   return favorites.some(f => f.url === url);
 }
@@ -5011,9 +5825,13 @@ async function testScrapingAccuracyGemini(problem, apiKey, testPrompt) {
       });
     }
 
-    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`, {
+    // SECURITY: Use header instead of query param to prevent API key exposure in URLs/logs
+    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        'x-goog-api-key': apiKey
+      },
       body: JSON.stringify({
         contents: [{ parts }],
         generationConfig: {
@@ -5068,14 +5886,7 @@ async function submitFeedback(feedback) {
     }
 
     // Optionally send to backend API
-    // const { authToken } = await chrome.storage.sync.get('authToken');
-    // if (authToken) {
-    //   await fetch(`${API_BASE_URL}/feedback`, {
-    //     method: 'POST',
-    //     headers: {
-    //       'Content-Type': 'application/json',
-    //       'Authorization': `Bearer ${authToken}`
-    //     },
+    // Backend removed - feedback is stored locally only
     //     body: JSON.stringify(feedback)
     //   });
     // }
