@@ -101,6 +101,37 @@ export async function initDatabase() {
     )
   `);
 
+  // Hints cache table (for aggressive caching to reduce API costs)
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS hints_cache (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      cache_key TEXT UNIQUE NOT NULL,
+      hints_data TEXT NOT NULL,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+
+  // Rate limit tracking table (persistent rate limiting)
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS rate_limit_tracking (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      identifier TEXT NOT NULL,
+      endpoint TEXT,
+      request_count INTEGER DEFAULT 1,
+      window_start DATETIME DEFAULT CURRENT_TIMESTAMP,
+      window_end DATETIME NOT NULL,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(identifier, endpoint, window_start)
+    )
+  `);
+
+  // Note: Removed registration_attempts table - not needed since:
+  // 1. API requires paid subscription (free accounts can't abuse API)
+  // 2. Multiple paying accounts = more revenue (good for business!)
+  // 3. Light rate limiting (10 per 15 min) prevents spam/DoS only
+
   // Create indexes for better performance
   database.exec(`
     CREATE INDEX IF NOT EXISTS idx_subscriptions_user_id ON subscriptions(user_id);
@@ -110,6 +141,10 @@ export async function initDatabase() {
     CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
     CREATE INDEX IF NOT EXISTS idx_favorites_user_id ON favorites(user_id);
     CREATE INDEX IF NOT EXISTS idx_favorites_problem_id ON favorites(problem_id);
+    CREATE INDEX IF NOT EXISTS idx_hints_cache_key ON hints_cache(cache_key);
+    CREATE INDEX IF NOT EXISTS idx_hints_cache_created ON hints_cache(created_at);
+    CREATE INDEX IF NOT EXISTS idx_rate_limit_identifier ON rate_limit_tracking(identifier, endpoint);
+    CREATE INDEX IF NOT EXISTS idx_rate_limit_window ON rate_limit_tracking(window_end);
   `);
 
   console.log('📊 Database schema initialized');

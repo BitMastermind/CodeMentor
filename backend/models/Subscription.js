@@ -5,8 +5,12 @@ export class Subscription {
   static create(userId, subscriptionData) {
     const db = getDatabase();
     const {
+      gateway = 'stripe',
       stripe_customer_id,
       stripe_subscription_id,
+      razorpay_customer_id,
+      razorpay_subscription_id,
+      razorpay_order_id,
       status = 'active',
       tier = 'premium',
       current_period_start,
@@ -16,14 +20,19 @@ export class Subscription {
 
     const result = db.prepare(`
       INSERT INTO subscriptions (
-        user_id, stripe_customer_id, stripe_subscription_id, 
+        user_id, gateway, stripe_customer_id, stripe_subscription_id,
+        razorpay_customer_id, razorpay_subscription_id, razorpay_order_id,
         status, tier, current_period_start, current_period_end, cancel_at_period_end
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       userId,
-      stripe_customer_id,
-      stripe_subscription_id,
+      gateway,
+      stripe_customer_id || null,
+      stripe_subscription_id || null,
+      razorpay_customer_id || null,
+      razorpay_subscription_id || null,
+      razorpay_order_id || null,
       status,
       tier,
       current_period_start,
@@ -42,6 +51,16 @@ export class Subscription {
   static findByStripeSubscriptionId(stripeSubscriptionId) {
     const db = getDatabase();
     return db.prepare('SELECT * FROM subscriptions WHERE stripe_subscription_id = ?').get(stripeSubscriptionId);
+  }
+
+  static findByRazorpaySubscriptionId(razorpaySubscriptionId) {
+    const db = getDatabase();
+    return db.prepare('SELECT * FROM subscriptions WHERE razorpay_subscription_id = ?').get(razorpaySubscriptionId);
+  }
+
+  static findByRazorpayOrderId(razorpayOrderId) {
+    const db = getDatabase();
+    return db.prepare('SELECT * FROM subscriptions WHERE razorpay_order_id = ?').get(razorpayOrderId);
   }
 
   static update(id, updates) {

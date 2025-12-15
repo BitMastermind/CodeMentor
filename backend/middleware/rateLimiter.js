@@ -2,11 +2,11 @@
 import rateLimit from 'express-rate-limit';
 import { Subscription } from '../models/Subscription.js';
 
-// Base rate limit configuration
-const baseWindowMs = parseInt(process.env.RATE_LIMIT_WINDOW_MS) || 60000; // 1 minute
-const maxFree = parseInt(process.env.RATE_LIMIT_MAX_FREE) || 10;
-const maxPremium = parseInt(process.env.RATE_LIMIT_MAX_PREMIUM) || 30;
-const maxPro = parseInt(process.env.RATE_LIMIT_MAX_PRO) || 50;
+// Base rate limit configuration (DAILY limits)
+const baseWindowMs = parseInt(process.env.RATE_LIMIT_WINDOW_MS) || 86400000; // 24 hours (86400000 ms)
+const maxFree = parseInt(process.env.RATE_LIMIT_MAX_FREE) || 10; // 10 requests per day
+const maxPremium = parseInt(process.env.RATE_LIMIT_MAX_PREMIUM) || 25; // 25 requests per day
+const maxPro = parseInt(process.env.RATE_LIMIT_MAX_PRO) || 60; // 60 requests per day
 
 // Dynamic rate limiter based on user subscription tier
 export function createRateLimiter() {
@@ -41,8 +41,10 @@ export function createRateLimiter() {
         max: maxRequests,
         message: {
           error: 'Too Many Requests',
-          message: `Rate limit exceeded. You can make ${maxRequests} requests per minute. Please try again later.`,
-          retryAfter: Math.ceil(baseWindowMs / 1000)
+          message: `Rate limit exceeded. You can make ${maxRequests} requests per day. Please try again tomorrow or upgrade your plan.`,
+          retryAfter: Math.ceil(baseWindowMs / 1000),
+          limitType: 'daily',
+          requestsRemaining: 0
         },
         standardHeaders: true,
         legacyHeaders: false,
@@ -65,7 +67,8 @@ export const standardRateLimiter = rateLimit({
   message: {
     error: 'Too Many Requests',
     message: 'Rate limit exceeded. Please try again later.',
-    retryAfter: Math.ceil(baseWindowMs / 1000)
+    retryAfter: Math.ceil(baseWindowMs / 1000),
+    limitType: 'daily'
   },
   standardHeaders: true,
   legacyHeaders: false

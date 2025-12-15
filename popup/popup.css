@@ -1099,10 +1099,11 @@ select:focus {
   transform: translateY(0);
 }
 
-.pick-one-btn svg {
+.pick-one-btn img {
   width: 16px;
   height: 16px;
-  stroke-width: 2.5;
+  filter: brightness(0) invert(1); /* Makes SVG white to match button text color */
+  flex-shrink: 0;
 }
 
 .pick-one-btn:disabled {

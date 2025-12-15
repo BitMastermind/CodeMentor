@@ -1,7 +1,7 @@
 // LC Helper - Error Tracking with Sentry
 // Lightweight error tracking that works in Chrome extensions
 
-(function() {
+(function () {
   'use strict';
 
   // Configuration - Set your Sentry DSN here
@@ -63,6 +63,20 @@
         url: typeof window !== 'undefined' ? window.location.href : 'background'
       }
     };
+
+    // Filter out benign errors
+    const ignorePatterns = [
+      'ResizeObserver loop',
+      'message channel closed',
+      'receiving end does not exist'
+    ];
+
+    if (ignorePatterns.some(pattern =>
+      (typeof error === 'string' && error.includes(pattern)) ||
+      (error.message && error.message.includes(pattern))
+    )) {
+      return;
+    }
 
     // Log to console (always)
     console.error('LC Helper Error:', errorData);
@@ -186,7 +200,7 @@
    * @param {string} context - Context name for error tracking
    */
   function wrapAsync(fn, context = 'async') {
-    return async function(...args) {
+    return async function (...args) {
       try {
         addBreadcrumb(`Starting ${context}`, 'function', 'info');
         const result = await fn.apply(this, args);

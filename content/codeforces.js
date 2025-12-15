@@ -1,6 +1,6 @@
 // LC Helper - Codeforces Content Script
 
-(function() {
+(function () {
   'use strict';
 
   let panel = null;
@@ -74,7 +74,6 @@
       stopTimerDisplay();
       sendResponse({ success: true });
     }
-    return true;
   });
 
   // Listen for messages from page context (for testing)
@@ -86,7 +85,7 @@
           type: 'TEST_TIMER_NOTIFICATION',
           url: event.data.url || location.href
         });
-        
+
         // Send response back to page
         window.postMessage({
           type: 'LCH_TEST_RESPONSE',
@@ -108,7 +107,7 @@
           type: 'TEST_SCRAPING_ACCURACY',
           problem: problem
         });
-        
+
         // Send response back to page
         window.postMessage({
           type: 'LCH_TEST_RESPONSE',
@@ -127,7 +126,7 @@
       // Forward any message from page to background script
       try {
         const response = await safeSendMessage(event.data.originalMessage);
-        
+
         // Send response back to page
         window.postMessage({
           type: 'LCH_TEST_RESPONSE',
@@ -354,15 +353,15 @@
   // Expose test function to content script context
   // Note: To access from page console, use: window.postMessage({type: 'LCH_TEST_SCRAPING'}, '*')
   // Or switch to Extension context in DevTools console dropdown
-  window.testScrapingAccuracy = async function() {
+  window.testScrapingAccuracy = async function () {
     try {
       const problem = await extractProblemData();
-      
+
       const response = await safeSendMessage({
         type: 'TEST_SCRAPING_ACCURACY',
         problem: problem
       });
-      
+
       if (response?.success) {
         // Show visual comparison modal
         showScrapingComparison(response.comparison);
@@ -382,7 +381,7 @@
   window.addEventListener('message', async (event) => {
     // Only handle messages from the page itself
     if (event.source !== window) return;
-    
+
     if (event.data && event.data.type === 'LCH_CALL_TEST_SCRAPING') {
       try {
         const result = await window.testScrapingAccuracy();
@@ -417,14 +416,14 @@
         setTimeout(doInit, 100);
         return;
       }
-      
+
       createFAB();
       checkAutoShow();
-      
+
       // Start problem timer
       await initializeTimer();
     };
-    
+
     // Wait for page to load, but also check if body is ready
     if (document.body) {
       setTimeout(doInit, 1000);
@@ -448,27 +447,27 @@
   // Initialize problem timer
   async function initializeTimer() {
     if (!isExtensionContextValid()) return;
-    
+
     try {
       const problemData = await extractProblemData();
       if (!problemData.title) return;
-      
+
       currentProblemData = {
         url: window.location.href,
         title: problemData.title,
         platform: 'codeforces',
         difficulty: problemData.difficulty
       };
-      
+
       const response = await safeSendMessage({
         type: 'START_TIMER',
         problem: currentProblemData
       });
-      
+
       if (response?.timer) {
         timerStartTime = response.timer.startTime;
         startTimerDisplay();
-        
+
         if (response.timer.reminderSent) {
           showTimerReminderModal();
         }
@@ -487,11 +486,11 @@
   function updateTimerDisplay() {
     const timerEl = document.querySelector('.lch-timer-display');
     if (!timerEl || !timerStartTime) return;
-    
+
     const elapsed = Date.now() - timerStartTime;
     const minutes = Math.floor(elapsed / 60000);
     const seconds = Math.floor((elapsed % 60000) / 1000);
-    
+
     // Stop timer if it reaches 1 hour (60 minutes)
     if (minutes >= 60) {
       stopTimerDisplay();
@@ -499,9 +498,9 @@
       timerEl.classList.add('warning');
       return;
     }
-    
+
     timerEl.textContent = `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
-    
+
     if (minutes >= 30) {
       timerEl.classList.add('warning');
     }
@@ -522,7 +521,7 @@
     if (existingToast) {
       existingToast.remove();
     }
-    
+
     const toast = document.createElement('div');
     toast.className = 'lch-timer-toast';
     toast.innerHTML = `
@@ -537,32 +536,32 @@
         </div>
       </div>
     `;
-    
+
     document.body.appendChild(toast);
-    
+
     // Trigger slide-in animation
     setTimeout(() => {
       toast.classList.add('show');
     }, 10);
-    
+
     // Auto-dismiss after 8 seconds
     const autoDismiss = setTimeout(() => {
       dismissToast();
     }, 8000);
-    
+
     const dismissToast = () => {
       toast.classList.remove('show');
       setTimeout(() => {
         toast.remove();
       }, 300);
     };
-    
+
     // Add close button listener
     document.getElementById('timerToastClose').addEventListener('click', () => {
       clearTimeout(autoDismiss);
       dismissToast();
     });
-    
+
     // Click anywhere on toast to dismiss
     toast.addEventListener('click', (e) => {
       if (e.target === toast || e.target.closest('.lch-timer-toast-content')) {
@@ -646,19 +645,19 @@
     `;
 
     document.body.appendChild(panel);
-    
+
     // Prevent clicks inside panel from closing it
     panel.addEventListener('click', (e) => {
       e.stopPropagation();
     });
-    
+
     // Close panel when clicking outside (but not on FAB)
     document.addEventListener('click', handleOutsideClick);
-    
+
     if (timerStartTime) {
       updateTimerDisplay();
     }
-    
+
     // Show quick actions (favorite, get hints) without auto-loading
     showQuickActions();
   }
@@ -668,17 +667,17 @@
     if (!panel || !panel.classList.contains('active')) {
       return;
     }
-    
+
     // Don't close if clicking on the FAB (it has its own toggle handler)
     if (fab && fab.contains(e.target)) {
       return;
     }
-    
+
     // Don't close if clicking inside the panel
     if (panel.contains(e.target)) {
       return;
     }
-    
+
     // Close the panel if clicking outside
     panel.classList.remove('active');
   }
@@ -686,7 +685,13 @@
   // Show quick actions panel without loading hints
   async function showQuickActions() {
     const body = panel.querySelector('.lch-panel-body');
+    const header = panel.querySelector('.lch-panel-header');
     
+    // Show the panel header when showing quick actions
+    if (header) {
+      header.style.display = '';
+    }
+
     // Extract problem data for favorites (lightweight, no API call)
     if (!currentProblemData) {
       try {
@@ -703,14 +708,14 @@
         console.log('LC Helper: Could not extract problem data:', e.message);
       }
     }
-    
+
     // Check if problem is in favorites
     let isFavorite = false;
     try {
       const favResponse = await safeSendMessage({ type: 'IS_FAVORITE', url: window.location.href });
       isFavorite = favResponse?.isFavorite || false;
-    } catch (e) {}
-    
+    } catch (e) { }
+
     body.innerHTML = `
       <div class="lch-quick-actions">
         <div class="lch-quick-section">
@@ -736,16 +741,16 @@
         </div>
       </div>
     `;
-    
+
     // Add event listeners
     body.querySelector('#explainBtn').addEventListener('click', () => {
       explainProblem();
     });
-    
+
     body.querySelector('#getHintsBtn').addEventListener('click', () => {
       loadHints();
     });
-    
+
     const favoriteBtn = body.querySelector('#favoriteBtn');
     if (favoriteBtn) {
       favoriteBtn.addEventListener('click', async () => {
@@ -760,14 +765,14 @@
     }
 
     panel.classList.toggle('active');
-    
+
     // Don't auto-load hints - let user click "Get Hints" button
     // This saves API calls when user just wants to check timer or favorite
   }
 
   async function checkAutoShow() {
     if (!isExtensionContextValid()) return;
-    
+
     const { autoShowPanel } = await safeStorageGet('autoShowPanel');
     if (autoShowPanel) {
       createPanel();
@@ -836,12 +841,12 @@
     isLoading = false;
   }
 
-  async function explainProblem() {
+  async function explainProblem(forceRefresh = false) {
     if (!isExtensionContextValid()) {
       showError('Extension was reloaded. Please refresh the page.');
       return;
     }
-    
+
     try {
       const { apiKey } = await safeStorageGet('apiKey');
 
@@ -869,6 +874,9 @@
           difficulty: problem.difficulty
         };
       }
+
+      // Add force refresh flag
+      problem.forceRefresh = forceRefresh;
 
       const response = await chrome.runtime.sendMessage({
         type: 'EXPLAIN_PROBLEM',
@@ -898,18 +906,18 @@
     try {
       const urlObj = new URL(url);
       const pathParts = urlObj.pathname.split('/').filter(p => p);
-      
+
       // Check for problemset URL: /problemset/problem/{contestId}/{index}
       const problemsetIndex = pathParts.indexOf('problem');
       if (problemsetIndex >= 0 && problemsetIndex < pathParts.length - 1) {
-        const contestId = parseInt(pathParts[problemsetIndex - 1] === 'problem' ? 
-                                  pathParts[problemsetIndex - 2] : pathParts[problemsetIndex - 1]);
+        const contestId = parseInt(pathParts[problemsetIndex - 1] === 'problem' ?
+          pathParts[problemsetIndex - 2] : pathParts[problemsetIndex - 1]);
         const index = pathParts[problemsetIndex + 1];
         if (!isNaN(contestId) && index) {
           return { contestId, index, type: 'problemset' };
         }
       }
-      
+
       // Check for contest URL: /contest/{contestId}/problem/{index}
       // or gym URL: /gym/{contestId}/problem/{index}
       const contestIdMatch = url.match(/\/(?:contest|gym|problemset)\/(\d+)\/problem\/([A-Z])/i);
@@ -932,34 +940,34 @@
     try {
       // API endpoint: https://codeforces.com/api/problemset.problems
       const response = await fetch('https://codeforces.com/api/problemset.problems');
-      
+
       if (!response.ok) {
         console.log('LC Helper: Codeforces API request failed:', response.status);
         return null;
       }
-      
+
       const data = await response.json();
-      
+
       if (data.status !== 'OK' || !data.result || !data.result.problems) {
         console.log('LC Helper: Codeforces API returned error:', data.comment);
         return null;
       }
-      
+
       // Find the matching problem in the API response
       const problem = data.result.problems.find(
         p => p.contestId === contestId && p.index === problemIndex
       );
-      
+
       if (!problem) {
         console.log('LC Helper: Problem not found in API response');
         return null;
       }
-      
+
       // Find corresponding statistics
       const stats = data.result.problemStatistics?.find(
         s => s.contestId === contestId && s.index === problemIndex
       );
-      
+
       return {
         tags: problem.tags || [],
         rating: problem.rating || null,
@@ -972,144 +980,188 @@
     }
   }
 
-  // Extract problem data with proper LaTeX handling from MathJax script tags
-  function extractProblemWithMath(selectorOrElement) {
-    // Accept either a selector string or an HTML element
-    const element = typeof selectorOrElement === 'string' 
-      ? document.querySelector(selectorOrElement)
-      : selectorOrElement;
-    if (!element) return '';
-
-    // Clone to avoid modifying the original DOM
-    const clone = element.cloneNode(true);
-
-    // Find all MathJax script tags and replace with LaTeX notation
-    const mathScripts = clone.querySelectorAll('script[type="math/tex"]');
-    mathScripts.forEach(script => {
-      const latex = script.textContent;
-      const span = document.createElement('span');
-      span.textContent = `$${latex}$`;
-      script.parentNode.replaceChild(span, script);
-    });
-
-    // Handle display math (block equations)
-    const displayMath = clone.querySelectorAll('script[type="math/tex; mode=display"]');
-    displayMath.forEach(script => {
-      const latex = script.textContent;
-      const div = document.createElement('div');
-      div.textContent = `$$${latex}$$`;
-      script.parentNode.replaceChild(div, script);
-    });
-
-    // Now get the text content with proper formatting
-    return clone.textContent.trim();
-  }
-
   // Extract examples from Codeforces problem page
   function extractExamples() {
-    const sampleTests = document.querySelectorAll('.sample-test');
-    return Array.from(sampleTests).map(sample => {
-      const inputs = sample.querySelectorAll('.input pre');
-      const outputs = sample.querySelectorAll('.output pre');
+    const examples = [];
+    
+    // Method 1: Look for .sample-test divs (standard Codeforces structure)
+    const sampleTestDivs = document.querySelectorAll('.sample-test');
+    if (sampleTestDivs.length > 0) {
+      sampleTestDivs.forEach(sample => {
+        const inputPre = sample.querySelector('.input pre');
+        const outputPre = sample.querySelector('.output pre');
+        examples.push({
+          input: inputPre?.textContent.trim() || '',
+          output: outputPre?.textContent.trim() || ''
+        });
+      });
+      return examples;
+    }
+    
+    // Method 2: Fallback - look for .input and .output divs directly
+    const sampleTests = document.querySelector('.sample-tests');
+    if (sampleTests) {
+      const inputDivs = sampleTests.querySelectorAll('.input');
+      const outputDivs = sampleTests.querySelectorAll('.output');
+      
+      for (let i = 0; i < inputDivs.length; i++) {
+        const inputPre = inputDivs[i].querySelector('pre');
+        const outputPre = outputDivs[i]?.querySelector('pre');
+        examples.push({
+          input: inputPre?.textContent.trim() || '',
+          output: outputPre?.textContent.trim() || ''
+        });
+      }
+    }
+    
+    return examples;
+  }
 
-      return {
-        input: inputs[0]?.textContent.trim() || '',
-        output: outputs[0]?.textContent.trim() || ''
-      };
+  // Extract image URLs from HTML content
+  function extractImagesFromHTML(htmlString) {
+    if (!htmlString) return [];
+
+    try {
+      const parser = new DOMParser();
+      const doc = parser.parseFromString(htmlString, 'text/html');
+      const images = doc.querySelectorAll('img');
+
+      return Array.from(images).map(img => {
+        // Get src - handle both absolute and relative URLs
+        let src = img.src || img.getAttribute('src') || '';
+
+        // Convert relative URLs to absolute
+        if (src && !src.startsWith('http')) {
+          if (src.startsWith('//')) {
+            src = 'https:' + src;
+          } else if (src.startsWith('/')) {
+            src = 'https://codeforces.com' + src;
+          } else {
+            src = 'https://codeforces.com/' + src;
+          }
+        }
+
+        return {
+          url: src,
+          alt: img.alt || img.getAttribute('alt') || 'Problem diagram',
+          width: img.width || img.getAttribute('width') || null,
+          height: img.height || img.getAttribute('height') || null
+        };
+      }).filter(img => img.url && img.url.length > 0); // Filter out empty URLs
+    } catch (e) {
+      console.log('[LC Helper] extractImagesFromHTML: Error parsing HTML:', e);
+      return [];
+    }
+  }
+
+  // Utility function to wait for DOM elements with retry logic (handles slow networks)
+  async function waitForElement(selectors, options = {}) {
+    const {
+      timeout = 10000, // 10 seconds default timeout
+      retryInterval = 500, // Start with 500ms intervals
+      minContentLength = 0, // Minimum text content length
+      checkContent = null // Custom function to check if element is ready
+    } = options;
+
+    const startTime = Date.now();
+    const selectorArray = Array.isArray(selectors) ? selectors : [selectors];
+
+    // First, try immediate check
+    for (const selector of selectorArray) {
+      const element = document.querySelector(selector);
+      if (element) {
+        // Check if element has sufficient content
+        if (minContentLength > 0 && element.textContent.trim().length < minContentLength) {
+          // Element exists but content not loaded yet, continue to waiting logic
+        } else if (checkContent && !checkContent(element)) {
+          // Custom check failed, continue to waiting logic
+        } else {
+          return element;
+        }
+      }
+    }
+
+    // If not found immediately, use MutationObserver with retry logic
+    return new Promise((resolve, reject) => {
+      let retryCount = 0;
+      const maxRetries = Math.floor(timeout / retryInterval);
+
+      const observer = new MutationObserver(() => {
+        for (const selector of selectorArray) {
+          const element = document.querySelector(selector);
+          if (element) {
+            // Check if element has sufficient content
+            if (minContentLength > 0 && element.textContent.trim().length < minContentLength) {
+              continue; // Content not ready yet
+            }
+            if (checkContent && !checkContent(element)) {
+              continue; // Custom check failed
+            }
+
+            observer.disconnect();
+            resolve(element);
+            return;
+          }
+        }
+
+        // Retry with exponential backoff
+        retryCount++;
+        if (retryCount >= maxRetries) {
+          observer.disconnect();
+          reject(new Error(`Element not found after ${timeout}ms. Tried selectors: ${selectorArray.join(', ')}`));
+        }
+      });
+
+      // Start observing
+      observer.observe(document.body || document.documentElement, {
+        childList: true,
+        subtree: true
+      });
+
+      // Fallback timeout
+      setTimeout(() => {
+        observer.disconnect();
+        // Final attempt
+        for (const selector of selectorArray) {
+          const element = document.querySelector(selector);
+          if (element && (minContentLength === 0 || element.textContent.trim().length >= minContentLength)) {
+            if (!checkContent || checkContent(element)) {
+              resolve(element);
+              return;
+            }
+          }
+        }
+        reject(new Error(`Element not found after ${timeout}ms. Tried selectors: ${selectorArray.join(', ')}`));
+      }, timeout);
     });
   }
 
-  // Scrape problem HTML directly (best for LLM - preserves all formatting and math)
-  function scrapeProblemHTML() {
-    const problemStatement = document.querySelector('.problem-statement');
-
-    if (!problemStatement) {
-      throw new Error('Problem statement not found');
-    }
-
-    const urlInfo = parseProblemUrl(window.location.href);
-
-    return {
-      url: window.location.href,
-      contestId: urlInfo?.contestId || null,
-      problemId: urlInfo?.index || null,
-
-      // Send raw HTML - preserves all formatting and math
-      html: problemStatement.innerHTML,
-
-      // Also extract clean examples separately
-      examples: extractExamples(),
-
-      // Metadata
-      timeLimit: document.querySelector('.time-limit')?.textContent.trim() || '',
-      memoryLimit: document.querySelector('.memory-limit')?.textContent.trim() || '',
-      title: document.querySelector('.title')?.textContent.trim() || ''
-    };
-  }
-
-  // Scrape problem data using simple DOM scraping
-  function scrapeProblemData() {
-    const problemStatement = document.querySelector('.problem-statement');
-    if (!problemStatement) {
-      return null;
-    }
-
-    // Extract statement - get the main description div (first div after header)
-    const statementDiv = problemStatement.querySelector('.header + div') || 
-                                  problemStatement.querySelector(':scope > div:not(.header)');
-    const statement = statementDiv ? extractProblemWithMath(statementDiv) : '';
-
-    // Extract input/output specifications (scoped to problemStatement)
-    const inputSpecEl = problemStatement.querySelector('.input-specification');
-    const inputSpec = inputSpecEl ? extractProblemWithMath(inputSpecEl) : '';
-    const outputSpecEl = problemStatement.querySelector('.output-specification');
-    const outputSpec = outputSpecEl ? extractProblemWithMath(outputSpecEl) : '';
-    
-    // Extract notes if present (scoped to problemStatement)
-    const notesEl = problemStatement.querySelector('.note');
-    const notes = notesEl ? extractProblemWithMath(notesEl) : '';
-
-    // Combine statement and notes for full description
-    let description = statement.trim();
-    if (notes) {
-      description += (description ? '\n\n' : '') + 'Note: ' + notes.trim();
-    }
-
-    // Extract title (scoped to problemStatement, with fallback to document)
-    const titleEl = problemStatement.querySelector('.title') || document.querySelector('.title');
-    const title = titleEl ? extractProblemWithMath(titleEl) : '';
-
-    return {
-      title: title,
-      statement: statement,
-      inputSpec: inputSpec,
-      outputSpec: outputSpec,
-      notes: notes,
-      description: description,
-      timeLimit: document.querySelector('.time-limit')?.textContent.trim() || '',
-      memoryLimit: document.querySelector('.memory-limit')?.textContent.trim() || '',
-      examples: extractExamples()
-    };
-  }
-
+  // Extract problem data using raw HTML approach (future-proof, LLM handles parsing)
   async function extractProblemData() {
-    // Pure DOM scraping - no API calls
-    const titleEl = document.querySelector('.title');
-    const problemStatement = document.querySelector('.problem-statement');
-    
-    if (!problemStatement) {
-      throw new Error('Problem statement not found');
+    // Wait for problem statement with retry logic (handles slow networks)
+    let problemStatement;
+    try {
+      problemStatement = await waitForElement('.problem-statement', {
+        timeout: 15000, // 15 seconds for slow networks
+        minContentLength: 100 // Ensure it has actual content, not just empty element
+      });
+    } catch (error) {
+      console.error('LC Helper: Failed to find problem statement:', error);
+      throw new Error('Problem statement not found. The page may still be loading. Please wait a moment and try again.');
     }
 
-    // Get HTML version (best for LLM - preserves all formatting and math)
-    const htmlData = scrapeProblemHTML();
-    
-    // Get text version (for compatibility)
-    const textData = scrapeProblemData();
-    
-    if (!textData && !htmlData) {
-      throw new Error('Could not extract problem data from page');
+    // Extract title (for metadata) - wait for it if needed
+    let titleEl;
+    try {
+      titleEl = await waitForElement('.title', {
+        timeout: 5000,
+        minContentLength: 1
+      });
+    } catch (e) {
+      // Title not critical, try direct query as fallback
+      titleEl = document.querySelector('.title');
     }
+    const title = titleEl?.textContent?.trim() || '';
 
     // Extract difficulty from title (e.g., "A. Problem Name" -> Easy)
     let difficulty = 'Unknown';
@@ -1117,71 +1169,443 @@
       const titleText = titleEl.textContent.trim();
       const letter = titleText.match(/^([A-G])\./)?.[1];
       if (letter) {
-        const difficultyMap = { 
-          'A': 'Easy', 'B': 'Easy', 'C': 'Medium', 
-          'D': 'Medium', 'E': 'Hard', 'F': 'Hard', 'G': 'Hard' 
+        const difficultyMap = {
+          'A': 'Easy', 'B': 'Easy', 'C': 'Medium',
+          'D': 'Medium', 'E': 'Hard', 'F': 'Hard', 'G': 'Hard'
         };
         difficulty = difficultyMap[letter] || 'Medium';
       }
     }
-    
-    // Get problem rating from DOM
+
+    // Get problem rating from DOM (for metadata)
     let problemRating = '';
-      const ratingEl = document.querySelector('.tag-box[title*="Difficulty"]') || 
-                       document.querySelector('[title*="rating"]');
-      if (ratingEl) {
-        problemRating = ratingEl.textContent.trim().replace('*', '');
-    }
-    
-    // Get tags from DOM
-    let tags = '';
-      const tagElements = document.querySelectorAll('.tag-box a, [class*="tag"]');
-      if (tagElements.length > 0) {
-        tags = Array.from(tagElements)
-          .map(el => el.textContent.trim())
-          .filter(t => t.length > 0 && t.length < 30 && !t.match(/^\*?\d+$/)) // Exclude rating numbers
-          .slice(0, 5)
-          .join(', ');
+    const ratingEl = document.querySelector('.tag-box[title*="Difficulty"]') ||
+      document.querySelector('[title*="rating"]');
+    if (ratingEl) {
+      problemRating = ratingEl.textContent.trim().replace('*', '');
     }
 
-    // Format examples as string for LLM
-    const examples = textData?.examples || htmlData?.examples || [];
+    // Get tags from DOM (for metadata)
+    let tags = '';
+    const tagElements = document.querySelectorAll('.tag-box a, [class*="tag"]');
+    if (tagElements.length > 0) {
+      tags = Array.from(tagElements)
+        .map(el => el.textContent.trim())
+        .filter(t => t.length > 0 && t.length < 30 && !t.match(/^\*?\d+$/)) // Exclude rating numbers
+        .slice(0, 5)
+        .join(', ');
+    }
+
+    // Convert HTML to compact plain text format for maximum token reduction
+    // This extracts ALL essential problem information while removing HTML overhead
+    function extractStructuredText(problemStatementEl) {
+      if (!problemStatementEl) return '';
+      
+      const originalLength = problemStatementEl.innerHTML.length;
+      const clone = problemStatementEl.cloneNode(true);
+      
+      // Convert MathJax to LaTeX FIRST (before any text extraction)
+      // Inline math: <script type="math/tex">...</script> -> $...$
+      clone.querySelectorAll('script[type="math/tex"]').forEach(script => {
+        const latex = script.textContent;
+        const span = document.createElement('span');
+        span.textContent = ` $${latex}$ `;
+        if (script.parentNode) script.parentNode.replaceChild(span, script);
+      });
+      
+      // Display math: <script type="math/tex; mode=display">...</script> -> $$...$$
+      clone.querySelectorAll('script[type="math/tex; mode=display"]').forEach(script => {
+        const latex = script.textContent;
+        const span = document.createElement('span');
+        span.textContent = `\n$$${latex}$$\n`;
+        if (script.parentNode) script.parentNode.replaceChild(span, script);
+      });
+      
+      // Convert <sup> tags to LaTeX superscript notation (preserves footnotes like *, †)
+      // This ensures footnotes are readable in the extracted text
+      clone.querySelectorAll('sup').forEach(sup => {
+        const supText = sup.textContent.trim();
+        const span = document.createElement('span');
+        span.textContent = `^{${supText}}`;
+        if (sup.parentNode) sup.parentNode.replaceChild(span, sup);
+      });
+      
+      // Convert <sub> tags to LaTeX subscript notation
+      clone.querySelectorAll('sub').forEach(sub => {
+        const subText = sub.textContent.trim();
+        const span = document.createElement('span');
+        span.textContent = `_{${subText}}`;
+        if (sub.parentNode) sub.parentNode.replaceChild(span, sub);
+      });
+      
+      // Remove MathJax rendered output (we keep our LaTeX conversion)
+      clone.querySelectorAll('.MathJax, .MathJax_Preview, .MathJax_Display, .mjx-chtml, .mjx-math, [class*="MathJax"]').forEach(el => el.remove());
+      
+      // Remove ONLY non-problem elements (keep all problem content)
+      clone.querySelectorAll('script:not([type*="math"]), style, noscript, link').forEach(el => el.remove());
+      clone.querySelectorAll('.time-limit, .memory-limit, .input-file, .output-file').forEach(el => el.remove());
+      clone.querySelectorAll('.property-title').forEach(el => { if (el.parentElement) el.parentElement.remove(); });
+      clone.querySelectorAll('.tag-box, .star-icon, form, button, nav, .footer, .header').forEach(el => el.remove());
+      clone.querySelectorAll('[style*="display:none"], [hidden], .hidden').forEach(el => el.remove());
+      
+      // Extract structured sections
+      const sections = {};
+      
+      // Get title (header div) - preserve full title
+      const titleEl = clone.querySelector('.title');
+      sections.title = titleEl ? titleEl.textContent.trim() : '';
+      if (titleEl) titleEl.remove();
+      
+      // Get problem statement - the main description div (usually first child or has no specific class)
+      // Codeforces structure: .problem-statement > .header, then description divs, then .input-specification, .output-specification, .sample-tests, .note
+      let description = '';
+      
+      // Method 1: Get all direct child divs that are NOT special sections
+      const allChildren = clone.querySelectorAll(':scope > div');
+      allChildren.forEach(div => {
+        const className = div.className || '';
+        // Skip known section classes
+        if (className.includes('header') || 
+            className.includes('input-specification') || 
+            className.includes('output-specification') || 
+            className.includes('sample-tests') || 
+            className.includes('note') ||
+            className.includes('section-title')) {
+          return;
+        }
+        // This is likely the problem description
+        const text = div.textContent.trim();
+        if (text && text.length > 10) {
+          description += text + '\n\n';
+        }
+      });
+      
+      // Method 2: If no description found, try getting text before input-specification
+      if (!description.trim()) {
+        // Get all text nodes and p tags before the first section
+        const walker = document.createTreeWalker(clone, NodeFilter.SHOW_TEXT | NodeFilter.SHOW_ELEMENT, null, false);
+        let node;
+        let foundSection = false;
+        while ((node = walker.nextNode()) && !foundSection) {
+          if (node.nodeType === Node.ELEMENT_NODE) {
+            const className = node.className || '';
+            if (className.includes('input-specification') || className.includes('output-specification')) {
+              foundSection = true;
+              break;
+            }
+            if (node.tagName === 'P' || node.tagName === 'DIV') {
+              const text = node.textContent.trim();
+              if (text && text.length > 10 && !className.includes('header')) {
+                description += text + '\n\n';
+              }
+            }
+          }
+        }
+      }
+      sections.description = description.trim();
+      
+      // Get Input specification - preserve ALL content
+      const inputSection = clone.querySelector('.input-specification');
+      if (inputSection) {
+        // Remove the "Input" title but keep everything else
+        const inputTitle = inputSection.querySelector('.section-title');
+        if (inputTitle) inputTitle.remove();
+        sections.input = inputSection.textContent.trim();
+      } else {
+        sections.input = '';
+      }
+      
+      // Get Output specification - preserve ALL content
+      const outputSection = clone.querySelector('.output-specification');
+      if (outputSection) {
+        const outputTitle = outputSection.querySelector('.section-title');
+        if (outputTitle) outputTitle.remove();
+        sections.output = outputSection.textContent.trim();
+      } else {
+        sections.output = '';
+      }
+      
+      // Get Note section - preserve ALL content (often contains crucial hints)
+      const noteSection = clone.querySelector('.note');
+      if (noteSection) {
+        const noteTitle = noteSection.querySelector('.section-title');
+        if (noteTitle) noteTitle.remove();
+        sections.note = noteSection.textContent.trim();
+      } else {
+        sections.note = '';
+      }
+      
+      // Get ALL Examples - preserve exact formatting
+      // Use ORIGINAL element (not clone) to ensure we get unmodified examples
+      const originalSampleTests = problemStatementEl.querySelector('.sample-tests');
+      const examples = [];
+      
+      if (originalSampleTests) {
+        // Debug: log what we find
+        console.log('[LC Helper] Found .sample-tests container');
+        
+        // Method 1: Look for .sample-test divs (standard Codeforces structure)
+        const sampleTestDivs = originalSampleTests.querySelectorAll('.sample-test');
+        console.log('[LC Helper] Found .sample-test divs:', sampleTestDivs.length);
+        
+        if (sampleTestDivs.length > 0) {
+          sampleTestDivs.forEach((sample, idx) => {
+            const inputPre = sample.querySelector('.input pre');
+            const outputPre = sample.querySelector('.output pre');
+            const input = inputPre?.textContent.trim() || '';
+            const output = outputPre?.textContent.trim() || '';
+            console.log(`[LC Helper] Example ${idx + 1}: Input=${input.substring(0, 30)}..., Output=${output.substring(0, 30)}...`);
+            examples.push({ input, output });
+          });
+        } else {
+          // Method 2: Fallback - pair up .input and .output divs
+          const inputDivs = originalSampleTests.querySelectorAll('.input');
+          const outputDivs = originalSampleTests.querySelectorAll('.output');
+          console.log('[LC Helper] Fallback: Found .input divs:', inputDivs.length, '.output divs:', outputDivs.length);
+          
+          for (let i = 0; i < inputDivs.length; i++) {
+            const inputPre = inputDivs[i].querySelector('pre');
+            const outputPre = outputDivs[i]?.querySelector('pre');
+            const input = inputPre?.textContent.trim() || '';
+            const output = outputPre?.textContent.trim() || '';
+            console.log(`[LC Helper] Example ${i + 1}: Input=${input.substring(0, 30)}..., Output=${output.substring(0, 30)}...`);
+            examples.push({ input, output });
+          }
+        }
+        
+        // Method 3: If still no examples, try getting all pre tags
+        if (examples.length === 0) {
+          const allPres = originalSampleTests.querySelectorAll('pre');
+          console.log('[LC Helper] Method 3: Found pre tags:', allPres.length);
+          // Assume alternating input/output
+          for (let i = 0; i < allPres.length; i += 2) {
+            const input = allPres[i]?.textContent.trim() || '';
+            const output = allPres[i + 1]?.textContent.trim() || '';
+            if (input || output) {
+              examples.push({ input, output });
+            }
+          }
+        }
+      } else {
+        console.log('[LC Helper] WARNING: No .sample-tests container found!');
+        
+        // Try alternative selector - some problems might have different structure
+        const altExamples = problemStatementEl.querySelectorAll('.input pre, .output pre');
+        console.log('[LC Helper] Alternative: Found input/output pre tags:', altExamples.length);
+      }
+      
+      sections.examples = examples;
+      console.log('[LC Helper] Total examples extracted:', examples.length);
+      
+      // Build compact text representation (markdown-like, no HTML tags)
+      let compactText = '';
+      
+      // Problem description (the core problem statement)
+      if (sections.description) {
+        compactText += sections.description + '\n\n';
+      }
+      
+      // Input format
+      if (sections.input) {
+        compactText += '**Input:**\n' + sections.input + '\n\n';
+      }
+      
+      // Output format
+      if (sections.output) {
+        compactText += '**Output:**\n' + sections.output + '\n\n';
+      }
+      
+      // All examples with clear formatting
+      if (sections.examples.length > 0) {
+        compactText += '**Examples:**\n';
+        sections.examples.forEach((ex, i) => {
+          compactText += `\nExample ${i + 1}:\n`;
+          compactText += `Input:\n${ex.input}\n`;
+          compactText += `Output:\n${ex.output}\n`;
+        });
+        compactText += '\n';
+      }
+      
+      // Note section (often contains important clarifications)
+      if (sections.note) {
+        compactText += '**Note:**\n' + sections.note + '\n';
+      }
+      
+      // Clean up excessive whitespace while preserving structure
+      compactText = compactText.replace(/\n{4,}/g, '\n\n\n').trim();
+      
+      const reduction = Math.round((1 - compactText.length / originalLength) * 100);
+      
+      // Detailed logging for verification
+      console.log('\n' + '='.repeat(80));
+      console.log('[LC Helper] STRUCTURED TEXT EXTRACTION RESULTS');
+      console.log('='.repeat(80));
+      console.log(`📊 REDUCTION: ${originalLength} chars -> ${compactText.length} chars (-${reduction}%)`);
+      console.log('-'.repeat(80));
+      console.log('📌 TITLE:', sections.title || '(extracted separately)');
+      console.log('-'.repeat(80));
+      console.log('📝 DESCRIPTION LENGTH:', sections.description.length, 'chars');
+      console.log('📥 INPUT SPEC LENGTH:', sections.input.length, 'chars');
+      console.log('📤 OUTPUT SPEC LENGTH:', sections.output.length, 'chars');
+      console.log('📋 EXAMPLES COUNT:', sections.examples.length);
+      console.log('📎 NOTE LENGTH:', sections.note.length, 'chars');
+      console.log('-'.repeat(80));
+      console.log('🔍 FINAL EXTRACTED TEXT:');
+      console.log('-'.repeat(80));
+      console.log(compactText);
+      console.log('='.repeat(80) + '\n');
+      
+      return compactText;
+    }
+    
+    // Fallback: Clean HTML if structured extraction fails (preserves more structure)
+    function cleanHTMLFallback(element) {
+      if (!element) return '';
+      
+      const originalLength = element.innerHTML.length;
+      const clone = element.cloneNode(true);
+      
+      // Convert MathJax to LaTeX
+      clone.querySelectorAll('script[type="math/tex"]').forEach(script => {
+        const span = document.createElement('span');
+        span.textContent = ` $${script.textContent}$ `;
+        if (script.parentNode) script.parentNode.replaceChild(span, script);
+      });
+      clone.querySelectorAll('script[type="math/tex; mode=display"]').forEach(script => {
+        const span = document.createElement('span');
+        span.textContent = `\n$$${script.textContent}$$\n`;
+        if (script.parentNode) script.parentNode.replaceChild(span, script);
+      });
+      
+      // Remove non-essential elements but keep problem content
+      clone.querySelectorAll('script:not([type*="math"]), style, noscript, link').forEach(el => el.remove());
+      clone.querySelectorAll('.time-limit, .memory-limit, .input-file, .output-file, .property-title').forEach(el => el.remove());
+      clone.querySelectorAll('.tag-box, .MathJax, .MathJax_Preview, .mjx-chtml, form, button, nav, .footer, .header, .caption').forEach(el => el.remove());
+      clone.querySelectorAll('[style*="display:none"], [hidden], .hidden').forEach(el => el.remove());
+      
+      // Replace section titles with markdown headers
+      clone.querySelectorAll('.section-title').forEach(el => {
+        const title = el.textContent.trim();
+        el.textContent = `\n**${title}:**\n`;
+      });
+      
+      // Convert <pre> tags to preserve code formatting
+      clone.querySelectorAll('pre').forEach(pre => {
+        pre.textContent = '\n```\n' + pre.textContent + '\n```\n';
+      });
+      
+      // Strip all attributes (reduces size significantly)
+      clone.querySelectorAll('*').forEach(el => {
+        const href = el.getAttribute('href');
+        const src = el.getAttribute('src');
+        while (el.attributes.length > 0) el.removeAttribute(el.attributes[0].name);
+        if (href) el.setAttribute('href', href);
+        if (src) el.setAttribute('src', src);
+      });
+      
+      // Get text content - use textContent for cleaner output
+      let text = clone.textContent || clone.innerText || '';
+      
+      // Clean up whitespace while preserving paragraph breaks
+      text = text.replace(/[ \t]+/g, ' ');  // Collapse horizontal whitespace
+      text = text.replace(/\n[ \t]+/g, '\n');  // Remove leading whitespace on lines
+      text = text.replace(/[ \t]+\n/g, '\n');  // Remove trailing whitespace on lines
+      text = text.replace(/\n{4,}/g, '\n\n\n');  // Limit consecutive newlines
+      text = text.trim();
+      
+      const reduction = Math.round((1 - text.length / originalLength) * 100);
+      
+      console.log('\n' + '='.repeat(80));
+      console.log('[LC Helper] FALLBACK HTML EXTRACTION');
+      console.log('='.repeat(80));
+      console.log(`📊 REDUCTION: ${originalLength} chars -> ${text.length} chars (-${reduction}%)`);
+      console.log('-'.repeat(80));
+      console.log('🔍 EXTRACTED TEXT:');
+      console.log('-'.repeat(80));
+      console.log(text);
+      console.log('='.repeat(80) + '\n');
+      
+      return text;
+    }
+
+    // Extract problem content - try structured text first, fallback to clean HTML
+    let problemHTML = extractStructuredText(problemStatement);
+    
+    // If structured extraction yields too little content, use fallback
+    if (problemHTML.length < 100) {
+      console.log('[LC Helper] ⚠️ Structured extraction too short (' + problemHTML.length + ' chars), using HTML fallback');
+      problemHTML = cleanHTMLFallback(problemStatement);
+    }
+
+    // Check if problem has images/graphs
+    const hasImages = problemStatement.querySelectorAll('img, svg, canvas').length > 0;
+
+    // Extract examples (for reference, but LLM will parse from HTML)
+    const examples = extractExamples();
     const examplesText = examples.map((ex, i) => {
       return `Example ${i + 1}:\n  Input:\n    ${(ex.input || '').split('\n').join('\n    ')}\n  Output:\n    ${(ex.output || '').split('\n').join('\n    ')}`;
     }).join('\n\n');
 
-    // Extract constraints from time/memory limits
-    const constraints = [];
-    if (textData?.timeLimit) constraints.push(textData.timeLimit);
-    if (textData?.memoryLimit) constraints.push(textData.memoryLimit);
-    
-    // Try to extract constraints from input spec (often contains constraint info)
-    if (textData?.inputSpec) {
-      const constraintMatches = textData.inputSpec.match(/\d+\s*≤\s*[^≤]+≤\s*\d+/g);
-      if (constraintMatches && constraintMatches.length > 0) {
-        constraints.push(...constraintMatches);
-      }
-    }
+    // Extract time/memory limits (for metadata)
+    const timeLimit = document.querySelector('.time-limit')?.textContent.trim() || '';
+    const memoryLimit = document.querySelector('.memory-limit')?.textContent.trim() || '';
+    const constraints = [timeLimit, memoryLimit].filter(c => c).join('\n');
 
-    // Build return object (compatible with existing code)
     const baseData = {
-      title: textData?.title || htmlData?.title || '',
-      description: textData?.description || textData?.statement || '',
-      constraints: constraints.join('\n'),
+      title: title,
+      description: problemHTML, // Send HTML as description (LLM will parse it)
+      html: problemHTML, // Also include in html field for consistency
+      constraints: constraints,
       difficulty: difficulty,
       problemRating: problemRating,
       tags: tags,
-      inputFormat: textData?.inputSpec || '',
-      outputFormat: textData?.outputSpec || '',
       examples: examplesText,
       examplesCount: examples.length,
       url: window.location.href,
-      // No API metadata - pure DOM scraping
-      solvedCount: null,
-      apiTags: null,
-      // HTML version (best for LLM - preserves all formatting and LaTeX)
-      html: htmlData?.html || (problemStatement ? problemStatement.innerHTML : null)
+      hasImages: hasImages
     };
+
+    // Log extracted data summary
+    console.log('\n' + '='.repeat(80));
+    console.log('LC Helper - FINAL PROBLEM DATA SUMMARY');
+    console.log('='.repeat(80));
+    console.log('📡 Extraction Method: Structured Text (optimized for tokens)');
+    console.log('📌 Title:', baseData.title);
+    console.log('📊 Difficulty:', baseData.difficulty);
+    console.log('⭐ Rating:', problemRating || 'Unknown');
+    console.log('🏷️ Tags:', baseData.tags || 'None found');
+    console.log('📝 Description Length:', problemHTML.length, 'characters');
+    console.log('📋 Examples Count:', examples.length);
+    console.log('🖼️ Has Images:', hasImages);
+    console.log('🔗 URL:', baseData.url);
+    console.log('='.repeat(80));
+    console.log('📦 WHAT WILL BE SENT TO LLM:');
+    console.log('-'.repeat(80));
+    console.log(problemHTML);
+    console.log('='.repeat(80) + '\n');
+
+    // Capture images if available
+    if (hasImages && typeof html2canvas !== 'undefined') {
+      try {
+        const canvas = await html2canvas(problemStatement, {
+          allowTaint: true,
+          useCORS: true,
+          scale: 1.5,
+          logging: false,
+          backgroundColor: '#ffffff'
+        });
+
+        const optimizedImage = optimizeImageData(canvas);
+
+        return {
+          ...baseData,
+          hasImages: true,
+          imageData: optimizedImage
+        };
+      } catch (error) {
+        console.error('LC Helper: Failed to capture image from Codeforces:', error);
+      }
+    }
 
     return baseData;
   }
@@ -1189,28 +1613,28 @@
   // Optimize image data to reduce payload size
   function optimizeImageData(canvas, maxWidth = 1200, maxHeight = 1600, quality = 0.8) {
     let { width, height } = canvas;
-    
+
     // Calculate scale factor if image is too large
     const scaleX = maxWidth / width;
     const scaleY = maxHeight / height;
     const scale = Math.min(scaleX, scaleY, 1); // Don't upscale
-    
+
     if (scale < 1) {
       // Need to resize
       const newWidth = Math.floor(width * scale);
       const newHeight = Math.floor(height * scale);
-      
+
       const resizedCanvas = document.createElement('canvas');
       resizedCanvas.width = newWidth;
       resizedCanvas.height = newHeight;
-      
+
       const ctx = resizedCanvas.getContext('2d');
       ctx.drawImage(canvas, 0, 0, newWidth, newHeight);
-      
+
       // Use JPEG for better compression
       return resizedCanvas.toDataURL('image/jpeg', quality);
     }
-    
+
     // If small enough, use JPEG with compression
     return canvas.toDataURL('image/jpeg', quality);
   }
@@ -1227,30 +1651,36 @@
 
   function showError(message) {
     const body = panel.querySelector('.lch-panel-body');
-    
+
     // Check if it's a quota error and add helpful action
     const isQuotaError = message.toLowerCase().includes('quota') || message.toLowerCase().includes('exhausted');
     const isApiKeyError = message.toLowerCase().includes('api key') || message.toLowerCase().includes('not configured');
-    
+
     // Make error messages more suggestive without buttons
     if (isApiKeyError) {
       message = 'API key not configured. Configure it via the extension icon → Settings tab.';
     }
-    
+
     body.innerHTML = `
       <div class="lch-error">
         <div class="lch-error-icon">${isQuotaError ? '⚠️' : '😕'}</div>
         <p class="lch-error-message">${escapeHtml(message)}</p>
-        <button class="lch-retry-btn">Try Again</button>
+        <div class="lch-error-buttons">
+          <button class="lch-back-btn">Back</button>
+          <button class="lch-retry-btn">Try Again</button>
+        </div>
       </div>
     `;
 
     body.querySelector('.lch-retry-btn').addEventListener('click', loadHints);
+    body.querySelector('.lch-back-btn').addEventListener('click', async () => {
+      await showQuickActions();
+    });
   }
 
   async function showSettingsPrompt() {
     const body = panel.querySelector('.lch-panel-body');
-    
+
     // Set currentProblemData even without API key so favorite button works
     if (!currentProblemData) {
       try {
@@ -1267,14 +1697,14 @@
         console.log('LC Helper: Could not extract problem data for favorites:', e.message);
       }
     }
-    
+
     // Check if problem is in favorites
     let isFavorite = false;
     try {
       const favResponse = await safeSendMessage({ type: 'IS_FAVORITE', url: window.location.href });
       isFavorite = favResponse?.isFavorite || false;
-    } catch (e) {}
-    
+    } catch (e) { }
+
     body.innerHTML = `
       <div class="lch-settings-prompt">
         <div class="lch-settings-icon">🔑</div>
@@ -1292,7 +1722,7 @@
       </div>
       ` : ''}
     `;
-    
+
     // Add event listeners
     const settingsBtn = body.querySelector('#openSettingsBtn');
     if (settingsBtn) {
@@ -1300,7 +1730,7 @@
         chrome.runtime.sendMessage({ type: 'OPEN_SETTINGS' });
       });
     }
-    
+
     // Add favorite button handler if button exists
     const favoriteBtn = body.querySelector('#favoriteBtn');
     if (favoriteBtn) {
@@ -1310,47 +1740,152 @@
     }
   }
 
+  // Helper function to extract clean text from potential JSON/markdown-wrapped content
+  function extractCleanExplanation(str) {
+    if (!str || typeof str !== 'string') return str;
+    
+    let cleaned = str.trim();
+    
+    // Try to extract from markdown code blocks first
+    const codeBlockMatch = cleaned.match(/```(?:json)?\s*([\s\S]*?)```/);
+    if (codeBlockMatch) {
+      cleaned = codeBlockMatch[1].trim();
+    } else {
+      // Check for unclosed code blocks
+      const unclosedMatch = cleaned.match(/```(?:json)?\s*([\s\S]*)/);
+      if (unclosedMatch) {
+        cleaned = unclosedMatch[1].trim();
+      }
+    }
+    
+    // If cleaned looks like JSON, try to extract explanation
+    if (cleaned.startsWith('{') || cleaned.startsWith('[')) {
+      try {
+        const parsed = JSON.parse(cleaned);
+        if (parsed && parsed.explanation) {
+          return { explanation: parsed.explanation, keyPoints: parsed.keyPoints };
+        }
+      } catch (e) {
+        // Try to extract explanation field with regex
+        const explanationMatch = cleaned.match(/"explanation"\s*:\s*"((?:[^"\\]|\\.)*)"/);
+        if (explanationMatch) {
+          try {
+            return { explanation: JSON.parse('"' + explanationMatch[1] + '"') };
+          } catch (e2) {
+            return { explanation: explanationMatch[1].replace(/\\n/g, '\n').replace(/\\"/g, '"') };
+          }
+        }
+      }
+    }
+    
+    return null;
+  }
+
   async function showExplanation(data) {
     const body = panel.querySelector('.lch-panel-body');
-    
+    const header = panel.querySelector('.lch-panel-header');
+
+    // Hide the panel header when showing explanation
+    if (header) {
+      header.style.display = 'none';
+    }
+
     let isFavorite = false;
     try {
       const favResponse = await safeSendMessage({ type: 'IS_FAVORITE', url: window.location.href });
       isFavorite = favResponse?.isFavorite || false;
-    } catch (e) {}
+    } catch (e) { }
 
-    const formattedExplanation = parseMarkdown(data.explanation || '');
+    // Parse response if it's a JSON string (matching leetcode.js logic)
+    let explanationData = data;
+    if (typeof data === 'string') {
+      try {
+        explanationData = JSON.parse(data);
+      } catch (e) {
+        // If parsing fails, treat the whole string as explanation
+        explanationData = { explanation: data };
+      }
+    }
+
+    // Handle cases where explanation contains JSON or markdown-wrapped JSON
+    if (explanationData && explanationData.explanation && typeof explanationData.explanation === 'string') {
+      const explanationStr = explanationData.explanation.trim();
+      
+      // Check if explanation looks like JSON or markdown-wrapped JSON
+      if (explanationStr.startsWith('{') || explanationStr.startsWith('`') || 
+          explanationStr.startsWith('[') || explanationStr.startsWith('"') ||
+          explanationStr.includes('```json') || explanationStr.includes('"explanation"')) {
+        
+        const extracted = extractCleanExplanation(explanationStr);
+        if (extracted && extracted.explanation) {
+          explanationData = { ...explanationData, ...extracted };
+        } else {
+          // Try direct JSON parse for simple cases
+          try {
+            let jsonStr = explanationStr;
+            if (jsonStr.startsWith('"') && jsonStr.endsWith('"')) {
+              jsonStr = JSON.parse(jsonStr);
+            }
+            const parsed = JSON.parse(jsonStr);
+            if (parsed && typeof parsed === 'object' && parsed.explanation) {
+              explanationData = { ...explanationData, ...parsed };
+            } else if (parsed && typeof parsed === 'object') {
+              explanationData = { ...explanationData, ...parsed };
+            }
+          } catch (e) {
+            // If all parsing fails, use as is
+            console.log('[LC Helper] Explanation is not JSON, using as markdown:', e.message);
+          }
+        }
+      }
+    }
+
+    const explanationText = explanationData.explanation || '';
+    const keyPoints = explanationData.keyPoints;
+    const formattedExplanation = parseMarkdown(explanationText);
+
+    // Check if explanation is from cache
+    const isCached = data.cached === true;
 
     body.innerHTML = `
-      <div class="lch-explanation-section">
-        <div class="lch-explanation-header">
-          <span class="lch-explanation-icon">📖</span>
-          <h3 class="lch-explanation-title">Problem Explanation</h3>
+      <div class="lch-explanation-fullview">
+        <div class="lch-explanation-toolbar">
+          <button class="lch-toolbar-btn" id="backToMain" title="Back to menu">
+            <svg width="18" height="18" viewBox="0 0 16 16">
+              <path d="M10 14L4 8l6-6"/>
+            </svg>
+          </button>
+          ${isCached ? `<button class="lch-toolbar-btn lch-refresh-small" id="refreshExplanation" title="Regenerate explanation">
+            <svg width="16" height="16" viewBox="0 0 16 16">
+              <path d="M13.5 8c0 3-2.5 5.5-5.5 5.5S2.5 11 2.5 8 5 2.5 8 2.5c1.5 0 2.9.6 3.9 1.6"/>
+              <path d="M12 4.5V1.5L15 4.5H12z"/>
+            </svg>
+          </button>` : ''}
         </div>
-        <div class="lch-explanation-content">${formattedExplanation}</div>
-        ${data.keyPoints ? `
-        <div class="lch-key-points">
-          <h4 class="lch-key-points-title">Key Points:</h4>
-          <ul class="lch-key-points-list">
-            ${data.keyPoints.map(point => `<li>${parseMarkdown(point)}</li>`).join('')}
-          </ul>
+        <div class="lch-explanation-reader">
+          <div class="lch-explanation-text">${formattedExplanation}</div>
+          ${keyPoints && Array.isArray(keyPoints) && keyPoints.length > 0 ? `
+          <div class="lch-key-points-reader">
+            <h4 class="lch-key-points-heading">Key Points</h4>
+            <ul class="lch-key-points-items">
+              ${keyPoints.map(point => `<li>${parseMarkdown(point)}</li>`).join('')}
+            </ul>
+          </div>
+          ` : ''}
         </div>
-        ` : ''}
-        <div class="lch-explanation-actions">
-          <button class="lch-get-hints-after-explanation" id="getHintsAfterExplanation">
-            💡 Now Get Hints
+        <div class="lch-explanation-footer">
+          <button class="lch-footer-btn lch-footer-hints" id="getHintsAfterExplanation">
+            💡 Get Hints
+          </button>
+          <button class="lch-footer-btn lch-footer-fav ${isFavorite ? 'active' : ''}" id="favoriteBtn">
+            ${isFavorite ? '❤️' : '🤍'}
           </button>
         </div>
-      </div>
-      <div class="lch-actions-section">
-        <button class="lch-favorite-btn ${isFavorite ? 'active' : ''}" id="favoriteBtn">
-          ${isFavorite ? '❤️ Favorited' : '🤍 Add to Favorites'}
-        </button>
       </div>
     `;
 
     // Trigger MathJax rendering if available (Codeforces uses MathJax)
-    const explanationContent = body.querySelector('.lch-explanation-content');
+    const explanationContent = body.querySelector('.lch-explanation-text');
     if (explanationContent && window.MathJax && window.MathJax.typesetPromise) {
       try {
         window.MathJax.typesetPromise([explanationContent]).catch((err) => {
@@ -1368,13 +1903,30 @@
       }
     }
 
+    // Add back button listener
+    const backBtn = body.querySelector('#backToMain');
+    if (backBtn) {
+      backBtn.addEventListener('click', () => {
+        showQuickActions();
+      });
+    }
+
+    // Add refresh handler if cached
+    const refreshBtn = body.querySelector('#refreshExplanation');
+    if (refreshBtn) {
+      refreshBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        explainProblem(true); // Force refresh
+      });
+    }
+
     const getHintsBtn = body.querySelector('#getHintsAfterExplanation');
     if (getHintsBtn) {
       getHintsBtn.addEventListener('click', () => {
         loadHints();
       });
     }
-    
+
     const favoriteBtn = body.querySelector('#favoriteBtn');
     if (favoriteBtn) {
       favoriteBtn.addEventListener('click', async () => {
@@ -1385,10 +1937,16 @@
 
   async function showHints(data) {
     const body = panel.querySelector('.lch-panel-body');
-    
+    const header = panel.querySelector('.lch-panel-header');
+
+    // Hide the panel header when showing hints
+    if (header) {
+      header.style.display = 'none';
+    }
+
     const hintLabels = ['Gentle Push', 'Stronger Nudge', 'Almost There'];
     const hintClasses = ['hint-1', 'hint-2', 'hint-3'];
-    
+
     const isCached = data.cached === true;
     const cacheInfo = isCached ? `
       <div class="lch-cache-info">
@@ -1396,73 +1954,102 @@
         <button class="lch-refresh-btn" title="Regenerate hints">🔄 Refresh</button>
       </div>
     ` : '';
-    
+
     // Check if problem is in favorites
     let isFavorite = false;
     try {
       const favResponse = await safeSendMessage({ type: 'IS_FAVORITE', url: window.location.href });
       isFavorite = favResponse?.isFavorite || false;
-    } catch (e) {}
+    } catch (e) { }
 
     body.innerHTML = `
-      ${data.topic ? `<div class="lch-topic-section">
-        <div class="lch-topic-label">Problem Topic</div>
-        <div class="lch-topic-badge">${escapeHtml(data.topic)}</div>
-        ${cacheInfo}
-      </div>` : `<div class="lch-topic-section">${cacheInfo}</div>`}
-      <div class="lch-hints-section">
-        ${data.hints.map((hint, i) => `
-          <div class="lch-hint-card">
-            <div class="lch-hint-header" data-hint="${i}">
-              <div class="lch-hint-number">
-                <span class="lch-hint-badge ${hintClasses[i]}">${i + 1}</span>
-                <span class="lch-hint-title">${hintLabels[i]}</span>
+      <div class="lch-explanation-fullview">
+        <div class="lch-explanation-toolbar">
+          <button class="lch-toolbar-btn" id="backToMain" title="Back to menu">
+            <svg width="18" height="18" viewBox="0 0 16 16">
+              <path d="M10 14L4 8l6-6"/>
+            </svg>
+          </button>
+          ${isCached ? `<button class="lch-toolbar-btn lch-refresh-small" id="refreshHints" title="Regenerate hints">
+            <svg width="16" height="16" viewBox="0 0 16 16">
+              <path d="M13.5 8c0 3-2.5 5.5-5.5 5.5S2.5 11 2.5 8 5 2.5 8 2.5c1.5 0 2.9.6 3.9 1.6"/>
+              <path d="M12 4.5V1.5L15 4.5H12z"/>
+            </svg>
+          </button>` : ''}
+        </div>
+        <div class="lch-explanation-reader">
+          ${data.topic ? `
+          <div style="margin-bottom: 24px; padding-bottom: 16px; border-bottom: 1px solid rgba(255,255,255,0.1);">
+            <div style="color: #888; font-size: 14px; text-transform: uppercase; margin-bottom: 8px; font-weight: bold;">Problem Topic</div>
+            <div style="display: inline-block; background: rgba(139, 92, 246, 0.2); color: #a78bfa; padding: 4px 12px; border-radius: 12px; font-size: 14px;">${escapeHtml(data.topic)}</div>
+          </div>
+          ` : ''}
+          ${data.hints.map((hint, i) => `
+            <div class="lch-hint-card">
+              <div class="lch-hint-header" data-hint="${i}">
+                <div class="lch-hint-number">
+                  <span class="lch-hint-badge ${hintClasses[i]}">${i + 1}</span>
+                  <span class="lch-hint-title">${hintLabels[i]}</span>
+                </div>
+                <button class="lch-hint-reveal-btn">Reveal</button>
               </div>
-              <button class="lch-hint-reveal-btn">Reveal</button>
+              <div class="lch-hint-content" data-hint="${i}">
+                ${formatHint(hint, i)}
+              </div>
             </div>
-            <div class="lch-hint-content" data-hint="${i}">
-              ${formatHint(hint, i)}
+          `).join('')}
+        </div>
+        <div class="lch-explanation-footer">
+          <button class="lch-footer-btn lch-footer-fav ${isFavorite ? 'active' : ''}" id="favoriteBtn">
+            ${isFavorite ? '❤️' : '🤍'}
+          </button>
+          <div class="lch-feedback-section" id="feedbackSection" style="display: flex; align-items: center; gap: 12px;">
+            <span class="lch-feedback-label" style="color: #888; font-size: 14px;">Were these hints helpful?</span>
+            <div class="lch-feedback-buttons" style="display: flex; gap: 8px;">
+              <button class="lch-feedback-btn positive" data-rating="up" title="Helpful" style="background: transparent; border: 1px solid rgba(255,255,255,0.2); padding: 6px 12px; border-radius: 6px; cursor: pointer;">👍</button>
+              <button class="lch-feedback-btn negative" data-rating="down" title="Not helpful" style="background: transparent; border: 1px solid rgba(255,255,255,0.2); padding: 6px 12px; border-radius: 6px; cursor: pointer;">👎</button>
             </div>
           </div>
-        `).join('')}
-      </div>
-      <div class="lch-actions-section">
-        <button class="lch-favorite-btn ${isFavorite ? 'active' : ''}" id="favoriteBtn">
-          ${isFavorite ? '❤️ Favorited' : '🤍 Add to Favorites'}
-        </button>
-      </div>
-      <div class="lch-feedback-section" id="feedbackSection">
-        <span class="lch-feedback-label">Were these hints helpful?</span>
-        <div class="lch-feedback-buttons">
-          <button class="lch-feedback-btn positive" data-rating="up" title="Helpful">👍</button>
-          <button class="lch-feedback-btn negative" data-rating="down" title="Not helpful">👎</button>
         </div>
       </div>
     `;
 
+    // Add back button listener
+    const backBtn = body.querySelector('#backToMain');
+    if (backBtn) {
+      backBtn.addEventListener('click', () => {
+        // Show header again when going back
+        if (header) {
+          header.style.display = '';
+        }
+        showQuickActions();
+      });
+    }
+
+    // Add reveal handlers
     body.querySelectorAll('.lch-hint-header').forEach(header => {
       header.addEventListener('click', () => {
         const hintIndex = header.dataset.hint;
         const content = body.querySelector(`.lch-hint-content[data-hint="${hintIndex}"]`);
         const btn = header.querySelector('.lch-hint-reveal-btn');
-        
+
         content.classList.toggle('revealed');
         btn.textContent = content.classList.contains('revealed') ? 'Hide' : 'Reveal';
-        });
       });
-    
-    const refreshBtn = body.querySelector('.lch-refresh-btn');
+    });
+
+    const refreshBtn = body.querySelector('#refreshHints');
     if (refreshBtn) {
       refreshBtn.addEventListener('click', (e) => {
         e.stopPropagation();
         loadHints(true);
       });
     }
-    
+
     body.querySelectorAll('.lch-feedback-btn').forEach(btn => {
       btn.addEventListener('click', () => handleFeedback(btn.dataset.rating, data));
     });
-    
+
     // Add favorite button handler
     const favoriteBtn = body.querySelector('#favoriteBtn');
     if (favoriteBtn) {
@@ -1471,13 +2058,13 @@
       });
     }
   }
-  
+
   // Toggle favorite status
   async function toggleFavorite(btn) {
     if (!isExtensionContextValid() || !currentProblemData) return;
-    
+
     const isCurrentlyFavorite = btn.classList.contains('active');
-    
+
     try {
       if (isCurrentlyFavorite) {
         const id = `codeforces_${generateCacheKey(currentProblemData.url)}`;
@@ -1500,10 +2087,10 @@
       console.error('LC Helper: Error toggling favorite:', e);
     }
   }
-  
+
   function handleFeedback(rating, hintData) {
     const feedbackSection = panel.querySelector('#feedbackSection');
-    
+
     if (rating === 'up') {
       feedbackSection.innerHTML = `
         <div class="lch-feedback-thanks">
@@ -1521,7 +2108,7 @@
         </div>
       `;
       console.log('Negative feedback:', hintData.topic);
-      
+
       const regenerateBtn = feedbackSection.querySelector('.lch-feedback-regenerate-btn');
       if (regenerateBtn) {
         regenerateBtn.addEventListener('click', () => {
@@ -1530,56 +2117,56 @@
       }
     }
   }
-  
+
   // Format hint text professionally
   function formatHint(hint, hintIndex) {
     if (!hint) return '';
-    
+
     // Parse markdown and escape HTML
     let formatted = parseMarkdown(hint);
-    
+
     // Add visual indicators for different hint levels
     const indicators = ['💡', '🔍', '🎯'];
     const indicator = indicators[hintIndex] || '💡';
-    
+
     return `<div class="lch-hint-text">${indicator} ${formatted}</div>`;
   }
-  
+
   function escapeHtml(text) {
     if (!text) return '';
     const div = document.createElement('div');
     div.textContent = text;
     return div.innerHTML;
   }
-  
+
   function parseMarkdown(text) {
     if (!text) return '';
-    
+
     // Process LaTeX notation - extract and replace with placeholders BEFORE escaping HTML
     // Convert \(...\) to inline math and \[...\] to display math
     // Use MathJax format that Codeforces already has loaded
     const mathPlaceholders = [];
     let processedText = text;
-    
+
     // Process display math blocks \[...\] (non-greedy match)
-    processedText = processedText.replace(/\\\[([\s\S]*?)\\\]/g, function(match, content) {
+    processedText = processedText.replace(/\\\[([\s\S]*?)\\\]/g, function (match, content) {
       const placeholder = `__MATH_DISPLAY_${mathPlaceholders.length}__`;
       // Don't escape the LaTeX content - MathJax needs raw LaTeX
       mathPlaceholders.push(`<script type="math/tex; mode=display">${content.trim()}</script>`);
       return placeholder;
     });
-    
+
     // Process inline math \(...\) (non-greedy, handle newlines in content)
-    processedText = processedText.replace(/\\\(([\s\S]*?)\\\)/g, function(match, content) {
+    processedText = processedText.replace(/\\\(([\s\S]*?)\\\)/g, function (match, content) {
       const placeholder = `__MATH_INLINE_${mathPlaceholders.length}__`;
       // Don't escape the LaTeX content - MathJax needs raw LaTeX
       mathPlaceholders.push(`<script type="math/tex">${content}</script>`);
       return placeholder;
     });
-    
+
     // Now escape HTML (placeholders will be escaped, which is fine)
     let html = escapeHtml(processedText);
-    
+
     // Restore MathJax script tags (unescaped, as they're proper HTML)
     mathPlaceholders.forEach((mathTag, index) => {
       // Replace the placeholder (which was escaped as regular text)
@@ -1592,16 +2179,16 @@
         html = html.replace(inlinePattern, mathTag);
       }
     });
-    
+
     // Split into lines for better processing
     const lines = html.split('\n');
     const processedLines = [];
     let inParagraph = false;
-    
+
     for (let i = 0; i < lines.length; i++) {
       let line = lines[i].trim();
       const nextLine = i < lines.length - 1 ? lines[i + 1].trim() : '';
-      
+
       // Headers
       if (line.startsWith('### ')) {
         if (inParagraph) {
@@ -1625,7 +2212,7 @@
         processedLines.push(`<h1>${line.substring(2)}</h1>`);
         continue;
       }
-      
+
       // Code blocks
       if (line.startsWith('```')) {
         if (inParagraph) {
@@ -1642,21 +2229,21 @@
         processedLines.push(`<pre><code class="language-${language}">${escapeHtml(codeContent.trim())}</code></pre>`);
         continue;
       }
-      
+
       // Inline code
       if (line.includes('`')) {
         line = line.replace(/`([^`]+)`/g, '<code>$1</code>');
       }
-      
+
       // Bold and italic
       let processedLine = line
         .replace(/\*\*\*(.+?)\*\*\*/g, '<strong><em>$1</em></strong>')
         .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
         .replace(/\*(.+?)\*/g, '<em>$1</em>');
-      
+
       // Links
       processedLine = processedLine.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank">$1</a>');
-      
+
       // Empty line - close paragraph if open
       if (!processedLine) {
         if (inParagraph) {
@@ -1665,30 +2252,30 @@
         }
         continue;
       }
-      
+
       // Regular line - start paragraph if needed
       if (!inParagraph) {
         processedLines.push('<p>');
         inParagraph = true;
       }
-      
+
       processedLines.push(processedLine);
-      
+
       // Close paragraph if next line is empty or a header
       if (!nextLine || nextLine.startsWith('#') || nextLine.startsWith('```')) {
         processedLines.push('</p>');
         inParagraph = false;
       }
     }
-    
+
     // Close any open paragraph
     if (inParagraph) {
       processedLines.push('</p>');
     }
-    
+
     return processedLines.join('\n');
   }
-  
+
   function generateCacheKey(url) {
     if (!url) return '';
     return url

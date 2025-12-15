@@ -215,3 +215,5 @@ function generateCacheKey(url) {
 - Uses `browser-polyfill.js` for cross-browser compatibility
 - All content scripts are injected with `browser-polyfill.js` first
 
+
+-Dont create .md or documentation file before asking and if not neccessary 

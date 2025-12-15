@@ -8,7 +8,7 @@ importScripts('/utils/analytics.js');
 // Initialize on install or update
 chrome.runtime.onInstalled.addListener(async (details) => {
   console.log('LC Helper installed/updated:', details.reason);
-  
+
   // Track installation/update
   if (typeof LCAnalytics !== 'undefined') {
     LCAnalytics.trackEvent('extension_installed', {
@@ -16,12 +16,12 @@ chrome.runtime.onInstalled.addListener(async (details) => {
       version: chrome.runtime.getManifest().version
     });
   }
-  
+
   fetchAndCacheContests();
-  
+
   // Set up periodic contest refresh (every 6 hours)
   chrome.alarms.create('refreshContests', { periodInMinutes: 360 });
-  
+
   // Always initialize streak system on install/update
   await initializeStreakSystem();
 });
@@ -42,7 +42,7 @@ chrome.tabs.onRemoved.addListener(async (tabId) => {
   // Find all active timers and stop the one matching this tab ID
   const allStorage = await chrome.storage.local.get(null);
   const timerEntries = Object.entries(allStorage).filter(([key]) => key.startsWith('timer_'));
-  
+
   for (const [timerKey, timerData] of timerEntries) {
     if (timerData.tabId === tabId) {
       // Stop the timer for this tab
@@ -60,17 +60,17 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
   } else if (alarm.name.startsWith('contest_')) {
     // Contest reminder notification
     const contestId = alarm.name.replace('contest_', '');
-    
+
     // Check if notifications are enabled
     const { notifyContests } = await chrome.storage.sync.get('notifyContests');
     if (notifyContests === false) {
       console.log('LC Helper: Contest notifications are disabled');
       return;
     }
-    
+
     const { contests } = await chrome.storage.local.get('contests');
     const contest = contests?.find(c => c.id === contestId);
-    
+
     if (contest) {
       const reminderMinutes = await getReminderTime();
       chrome.notifications.create(contestId, {
@@ -102,10 +102,10 @@ chrome.notifications.onClicked.addListener(async (notificationId) => {
     // Find active timer from storage
     const allStorage = await chrome.storage.local.get(null);
     const timerEntries = Object.entries(allStorage).filter(([key]) => key.startsWith('timer_'));
-    
+
     if (timerEntries.length > 0) {
       const [timerKey, timerData] = timerEntries[0];
-      
+
       // Find tab with problem URL
       const tabs = await chrome.tabs.query({ url: timerData.url });
       if (tabs.length > 0) {
@@ -113,8 +113,8 @@ chrome.notifications.onClicked.addListener(async (notificationId) => {
         chrome.tabs.update(tab.id, { active: true });
         // Try to open hints panel
         setTimeout(() => {
-          chrome.tabs.sendMessage(tab.id, { 
-            type: 'SHOW_HINTS_PANEL' 
+          chrome.tabs.sendMessage(tab.id, {
+            type: 'SHOW_HINTS_PANEL'
           }).catch(() => {
             // If message fails, tab might not have content script loaded
           });
@@ -127,9 +127,9 @@ chrome.notifications.onClicked.addListener(async (notificationId) => {
           const tab = matchingTabs[0];
           chrome.tabs.update(tab.id, { active: true });
           setTimeout(() => {
-            chrome.tabs.sendMessage(tab.id, { 
-              type: 'SHOW_HINTS_PANEL' 
-            }).catch(() => {});
+            chrome.tabs.sendMessage(tab.id, {
+              type: 'SHOW_HINTS_PANEL'
+            }).catch(() => { });
           }, 500);
         }
       }
@@ -137,11 +137,11 @@ chrome.notifications.onClicked.addListener(async (notificationId) => {
     chrome.notifications.clear(notificationId);
     return;
   }
-  
+
   // Handle contest notifications
   const { contests } = await chrome.storage.local.get('contests');
   const contest = contests?.find(c => c.id === notificationId);
-  
+
   if (contest) {
     chrome.tabs.create({ url: contest.url });
   }
@@ -153,10 +153,10 @@ chrome.notifications.onButtonClicked.addListener(async (notificationId, buttonIn
     // Find active timer from storage
     const allStorage = await chrome.storage.local.get(null);
     const timerEntries = Object.entries(allStorage).filter(([key]) => key.startsWith('timer_'));
-    
+
     if (timerEntries.length > 0) {
       const [timerKey, timerData] = timerEntries[0];
-      
+
       if (buttonIndex === 0) {
         // "Take a Hint" button - find tab with problem URL and open hints panel
         const tabs = await chrome.tabs.query({ url: timerData.url });
@@ -166,8 +166,8 @@ chrome.notifications.onButtonClicked.addListener(async (notificationId, buttonIn
           chrome.tabs.update(tab.id, { active: true });
           // Wait a bit for tab to activate, then send message
           setTimeout(() => {
-            chrome.tabs.sendMessage(tab.id, { 
-              type: 'SHOW_HINTS_PANEL' 
+            chrome.tabs.sendMessage(tab.id, {
+              type: 'SHOW_HINTS_PANEL'
             }).catch(() => {
               // If message fails, tab might not have content script loaded
               console.log('LC Helper: Could not send message to tab');
@@ -181,9 +181,9 @@ chrome.notifications.onButtonClicked.addListener(async (notificationId, buttonIn
             const tab = matchingTabs[0];
             chrome.tabs.update(tab.id, { active: true });
             setTimeout(() => {
-              chrome.tabs.sendMessage(tab.id, { 
-                type: 'SHOW_HINTS_PANEL' 
-              }).catch(() => {});
+              chrome.tabs.sendMessage(tab.id, {
+                type: 'SHOW_HINTS_PANEL'
+              }).catch(() => { });
             }, 500);
           }
         }
@@ -197,12 +197,12 @@ chrome.notifications.onButtonClicked.addListener(async (notificationId, buttonIn
     chrome.notifications.clear(notificationId);
     return;
   }
-  
+
   // Handle contest notifications
   if (buttonIndex === 0) {
     const { contests } = await chrome.storage.local.get('contests');
     const contest = contests?.find(c => c.id === notificationId);
-    
+
     if (contest) {
       chrome.tabs.create({ url: contest.url });
     }
@@ -241,131 +241,142 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 });
 
 async function handleMessage(message, sender, sendResponse) {
-  switch (message.type) {
-    case 'GET_CONTESTS':
-      const contests = await getContests();
-      sendResponse({ contests });
-      break;
-      
-    case 'REFRESH_CONTESTS':
-      await fetchAndCacheContests();
-      sendResponse({ success: true });
-      break;
-      
-    case 'TOGGLE_CONTEST_NOTIFICATION':
-      await toggleContestNotification(message.contestId, message.enabled);
-      sendResponse({ success: true });
-      break;
-      
-    case 'UPDATE_ALARMS':
-      await updateContestAlarms();
-      sendResponse({ success: true });
-      break;
-      
-    case 'GET_HINTS':
-      const hints = await generateHints(message.problem);
-      sendResponse(hints);
-      break;
+  try {
+    switch (message.type) {
+      case 'GET_CONTESTS':
+        const contests = await getContests();
+        sendResponse({ contests });
+        break;
 
-    case 'EXPLAIN_PROBLEM':
-      const explanation = await explainProblem(message.problem);
-      sendResponse(explanation);
-      break;
+      case 'REFRESH_CONTESTS':
+        await fetchAndCacheContests();
+        sendResponse({ success: true });
+        break;
 
-    case 'GET_API_KEY':
-      // Never return the actual API key - only indicate if it exists
-      const { key: apiKeyCheck, error: apiKeyError } = await getApiKeySafely();
-      sendResponse({ 
-        hasApiKey: !!apiKeyCheck,
-        error: apiKeyError || null
+      case 'TOGGLE_CONTEST_NOTIFICATION':
+        await toggleContestNotification(message.contestId, message.enabled);
+        sendResponse({ success: true });
+        break;
+
+      case 'UPDATE_ALARMS':
+        await updateContestAlarms();
+        sendResponse({ success: true });
+        break;
+
+      case 'GET_HINTS':
+        const hints = await generateHints(message.problem);
+        sendResponse(hints);
+        break;
+
+      case 'EXPLAIN_PROBLEM':
+        const explanation = await explainProblem(message.problem);
+        sendResponse(explanation);
+        break;
+
+      case 'GET_API_KEY':
+        // Never return the actual API key - only indicate if it exists
+        const { key: apiKeyCheck, error: apiKeyError } = await getApiKeySafely();
+        sendResponse({
+          hasApiKey: !!apiKeyCheck,
+          error: apiKeyError || null
+        });
+        break;
+
+      case 'GET_STREAK_DATA':
+        const { streakData } = await chrome.storage.local.get('streakData');
+        sendResponse({ streakData: streakData?.unified || {} });
+        break;
+
+      case 'REFRESH_UNIFIED_STREAK':
+        const refreshResult = await refreshUnifiedStreak();
+        sendResponse(refreshResult);
+        break;
+
+      // Daily Stats
+      case 'GET_DAILY_STATS':
+        const dailyStats = await getDailyStats();
+        sendResponse({ dailyStats });
+        break;
+
+      case 'SYNC_TODAY_COUNT_FROM_APIS':
+        const syncResult = await syncTodayCountFromAPIs();
+        sendResponse({ success: true, dailyStats: syncResult });
+        break;
+
+      // Favorites
+      case 'GET_FAVORITES':
+        const favorites = await getFavorites();
+        sendResponse({ favorites });
+        break;
+
+      case 'ADD_FAVORITE':
+        const addResult = await addFavorite(message.problem);
+        sendResponse(addResult);
+        break;
+
+      case 'REMOVE_FAVORITE':
+        const removeResult = await removeFavorite(message.id);
+        sendResponse(removeResult);
+        break;
+
+      case 'IS_FAVORITE':
+        const isFav = await isFavorite(message.url);
+        sendResponse({ isFavorite: isFav });
+        break;
+
+      // Timer
+      case 'START_TIMER':
+        const tabId = sender?.tab?.id;
+        const timerResult = await startProblemTimer(message.problem, tabId);
+        sendResponse(timerResult);
+        break;
+
+      case 'GET_TIMER':
+        const timerData = await getActiveTimer(message.url);
+        sendResponse({ timer: timerData });
+        break;
+
+      case 'STOP_TIMER':
+        await stopProblemTimer(message.url);
+        sendResponse({ success: true });
+        break;
+
+      case 'TEST_TIMER_NOTIFICATION':
+        // Test handler to manually trigger 30-minute notification
+        const testTimerResult = await testTimerNotification(message.url);
+        sendResponse(testTimerResult);
+        break;
+
+      case 'TEST_SCRAPING_ACCURACY':
+        // Test handler to verify scraping accuracy by asking LLM to reconstruct the problem
+        const testResult = await testScrapingAccuracy(message.problem);
+        sendResponse(testResult);
+        break;
+
+      case 'OPEN_POPUP':
+        // Open extension popup/settings
+        // Since we don't have an options page defined, open the popup HTML in a new tab
+        chrome.tabs.create({ url: chrome.runtime.getURL('popup/popup.html') });
+        sendResponse({ success: true });
+        break;
+
+      case 'SUBMIT_FEEDBACK':
+        const feedbackResult = await submitFeedback(message.feedback);
+        sendResponse(feedbackResult);
+        break;
+
+      default:
+        sendResponse({ error: 'Unknown message type' });
+    }
+  } catch (error) {
+    console.error('LC Helper Background Error:', error);
+    sendResponse({ error: error.message || 'Unknown background error' });
+
+    if (typeof LCHErrorTracking !== 'undefined') {
+      LCHErrorTracking.trackError(error, {
+        tags: { type: 'background_message_handler', messageType: message.type }
       });
-      break;
-      
-    case 'GET_STREAK_DATA':
-      const { streakData } = await chrome.storage.local.get('streakData');
-      sendResponse({ streakData: streakData?.unified || {} });
-      break;
-      
-    case 'REFRESH_UNIFIED_STREAK':
-      const refreshResult = await refreshUnifiedStreak();
-      sendResponse(refreshResult);
-      break;
-    
-    // Daily Stats
-    case 'GET_DAILY_STATS':
-      const dailyStats = await getDailyStats();
-      sendResponse({ dailyStats });
-      break;
-      
-    case 'SYNC_TODAY_COUNT_FROM_APIS':
-      const syncResult = await syncTodayCountFromAPIs();
-      sendResponse({ success: true, dailyStats: syncResult });
-      break;
-    
-    // Favorites
-    case 'GET_FAVORITES':
-      const favorites = await getFavorites();
-      sendResponse({ favorites });
-      break;
-      
-    case 'ADD_FAVORITE':
-      const addResult = await addFavorite(message.problem);
-      sendResponse(addResult);
-      break;
-      
-    case 'REMOVE_FAVORITE':
-      const removeResult = await removeFavorite(message.id);
-      sendResponse(removeResult);
-      break;
-      
-    case 'IS_FAVORITE':
-      const isFav = await isFavorite(message.url);
-      sendResponse({ isFavorite: isFav });
-      break;
-    
-    // Timer
-    case 'START_TIMER':
-      const tabId = sender?.tab?.id;
-      const timerResult = await startProblemTimer(message.problem, tabId);
-      sendResponse(timerResult);
-      break;
-      
-    case 'GET_TIMER':
-      const timerData = await getActiveTimer(message.url);
-      sendResponse({ timer: timerData });
-      break;
-      
-    case 'STOP_TIMER':
-      await stopProblemTimer(message.url);
-      sendResponse({ success: true });
-      break;
-    
-    case 'TEST_TIMER_NOTIFICATION':
-      // Test handler to manually trigger 30-minute notification
-      const testTimerResult = await testTimerNotification(message.url);
-      sendResponse(testTimerResult);
-      break;
-
-    case 'TEST_SCRAPING_ACCURACY':
-      // Test handler to verify scraping accuracy by asking LLM to reconstruct the problem
-      const testResult = await testScrapingAccuracy(message.problem);
-      sendResponse(testResult);
-      break;
-
-    case 'OPEN_POPUP':
-      // Open extension popup/settings
-      // Since we don't have an options page defined, open the popup HTML in a new tab
-      chrome.tabs.create({ url: chrome.runtime.getURL('popup/popup.html') });
-      sendResponse({ success: true });
-      break;
-    
-    case 'SUBMIT_FEEDBACK':
-      const feedbackResult = await submitFeedback(message.feedback);
-      sendResponse(feedbackResult);
-      break;
-      
-    default:
-      sendResponse({ error: 'Unknown message type' });
+    }
   }
 }
 
@@ -373,9 +384,9 @@ async function handleMessage(message, sender, sendResponse) {
 async function fetchAndCacheContests() {
   try {
     const contests = await fetchAllContests();
-    await chrome.storage.local.set({ 
-      contests, 
-      lastFetch: Date.now() 
+    await chrome.storage.local.set({
+      contests,
+      lastFetch: Date.now()
     });
     await updateContestAlarms();
     return contests;
@@ -395,42 +406,42 @@ async function fetchAndCacheContests() {
 
 async function getContests() {
   const { contests, lastFetch } = await chrome.storage.local.get(['contests', 'lastFetch']);
-  
+
   // Refresh if cache is older than 1 hour
   if (!contests || !lastFetch || Date.now() - lastFetch > 3600000) {
     return await fetchAndCacheContests();
   }
-  
+
   return contests;
 }
 
 async function fetchAllContests() {
   console.log('Fetching contests from all platforms...');
-  
+
   const [codeforces, leetcode, codechef] = await Promise.allSettled([
     fetchCodeforcesContests(),
     fetchLeetCodeContests(),
     fetchCodeChefContests()
   ]);
-  
+
   const allContests = [
     ...(codeforces.status === 'fulfilled' ? codeforces.value : []),
     ...(leetcode.status === 'fulfilled' ? leetcode.value : []),
     ...(codechef.status === 'fulfilled' ? codechef.value : [])
   ];
-  
+
   console.log('Total contests fetched:', allContests.length, {
     codeforces: codeforces.status === 'fulfilled' ? codeforces.value.length : 0,
     leetcode: leetcode.status === 'fulfilled' ? leetcode.value.length : 0,
     codechef: codechef.status === 'fulfilled' ? codechef.value.length : 0
   });
-  
+
   // Sort by start time
   allContests.sort((a, b) => new Date(a.startTime) - new Date(b.startTime));
-  
+
   // Get notified contests from storage
   const { notifiedContests = [] } = await chrome.storage.local.get('notifiedContests');
-  
+
   // Add notified status
   return allContests.map(c => ({
     ...c,
@@ -442,22 +453,22 @@ async function fetchCodeforcesContests() {
   try {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
-    
+
     const response = await fetch('https://codeforces.com/api/contest.list', {
       method: 'GET',
       headers: { 'Accept': 'application/json' },
       signal: controller.signal
     });
-    
+
     clearTimeout(timeoutId);
-    
+
     const data = await response.json();
-    
+
     if (data.status !== 'OK') {
       console.log('LC Helper: Codeforces API returned error');
       return [];
     }
-    
+
     const contests = data.result
       .filter(c => c.phase === 'BEFORE')
       .slice(0, 10)
@@ -470,7 +481,7 @@ async function fetchCodeforcesContests() {
         duration: c.durationSeconds / 60
       }))
       .filter(c => c.startTime); // Remove any with invalid timestamps
-    
+
     console.log('Codeforces contests fetched:', contests.length);
     return contests;
   } catch (error) {
@@ -487,15 +498,15 @@ async function fetchLeetCodeContests() {
     try {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
-      
+
       const response = await fetch('https://kontests.net/api/v1/leet_code', {
         method: 'GET',
         headers: { 'Accept': 'application/json' },
         signal: controller.signal
       });
-      
+
       clearTimeout(timeoutId);
-      
+
       if (response.ok) {
         const data = await response.json();
         const contests = data
@@ -513,7 +524,7 @@ async function fetchLeetCodeContests() {
             duration: parseDuration(c.duration)
           }))
           .filter(c => c.startTime); // Remove any with invalid timestamps
-        
+
         console.log('LeetCode contests fetched:', contests.length);
         return contests;
       }
@@ -523,17 +534,18 @@ async function fetchLeetCodeContests() {
         console.log('LC Helper: LeetCode API unavailable, using fallback');
       }
     }
-    
+
     // Fallback: Return estimated weekly contest
+    // LeetCode Weekly Contests are typically on Sundays at 2:30 AM UTC
     const now = new Date();
     const nextWeekly = new Date(now);
-    nextWeekly.setDate(now.getDate() + (7 - now.getDay()) % 7); // Next Sunday
-    nextWeekly.setHours(2, 30, 0, 0); // 2:30 AM UTC (8:00 AM IST)
-    
-    if (nextWeekly < now) {
-      nextWeekly.setDate(nextWeekly.getDate() + 7);
+    nextWeekly.setUTCDate(now.getUTCDate() + (7 - now.getUTCDay()) % 7); // Next Sunday in UTC
+    nextWeekly.setUTCHours(2, 30, 0, 0); // 2:30 AM UTC
+
+    if (nextWeekly <= now) {
+      nextWeekly.setUTCDate(nextWeekly.getUTCDate() + 7);
     }
-    
+
     return [{
       id: 'lc_weekly_mock',
       name: 'Weekly Contest',
@@ -554,15 +566,15 @@ async function fetchCodeChefContests() {
     try {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
-      
+
       const response = await fetch('https://kontests.net/api/v1/code_chef', {
         method: 'GET',
         headers: { 'Accept': 'application/json' },
         signal: controller.signal
       });
-      
+
       clearTimeout(timeoutId);
-      
+
       if (response.ok) {
         const data = await response.json();
         const contests = data
@@ -580,7 +592,7 @@ async function fetchCodeChefContests() {
             duration: parseDuration(c.duration)
           }))
           .filter(c => c.startTime); // Remove any with invalid timestamps
-        
+
         console.log('CodeChef contests fetched:', contests.length);
         return contests;
       }
@@ -590,22 +602,22 @@ async function fetchCodeChefContests() {
         console.log('LC Helper: Kontests.net unavailable for CodeChef, trying direct API');
       }
     }
-    
+
     // Try direct CodeChef API as fallback
     try {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 10000);
-      
+
       const response = await fetch('https://www.codechef.com/api/list/contests/all?sort_by=START&sorting_order=asc&offset=0&mode=all', {
         signal: controller.signal
       });
-      
+
       clearTimeout(timeoutId);
-      
+
       if (response.ok) {
         const data = await response.json();
         const futureContests = data.future_contests || [];
-        
+
         return futureContests
           .slice(0, 10)
           .map(c => ({
@@ -624,7 +636,7 @@ async function fetchCodeChefContests() {
         console.log('LC Helper: CodeChef API unavailable');
       }
     }
-    
+
     return [];
   } catch (error) {
     console.log('LC Helper: Error fetching CodeChef contests');
@@ -636,7 +648,7 @@ async function fetchCodeChefContests() {
 // Handles various input formats: ISO strings (with/without timezone), Unix timestamps, Date objects
 function normalizeToISO(timestamp) {
   if (!timestamp) return null;
-  
+
   try {
     // If it's already a Date object, convert directly
     if (timestamp instanceof Date) {
@@ -646,7 +658,7 @@ function normalizeToISO(timestamp) {
       }
       return timestamp.toISOString();
     }
-    
+
     // Try parsing as Date (handles ISO strings with/without timezone, Unix timestamps, etc.)
     // JavaScript Date constructor automatically handles:
     // - ISO 8601 strings: "2024-12-14T02:30:00Z" or "2024-12-14T02:30:00+05:30"
@@ -657,7 +669,7 @@ function normalizeToISO(timestamp) {
       console.warn('LC Helper: Invalid timestamp format:', timestamp);
       return null;
     }
-    
+
     // Return as ISO 8601 UTC string (always in UTC, ends with 'Z')
     return date.toISOString();
   } catch (error) {
@@ -668,13 +680,13 @@ function normalizeToISO(timestamp) {
 
 function parseDuration(durationStr) {
   if (!durationStr) return null;
-  
+
   // Parse duration strings like "2:00:00" or "1 days, 2:00:00"
   const parts = durationStr.split(':');
   if (parts.length >= 2) {
     let hours = parseInt(parts[0]);
     const minutes = parseInt(parts[1]);
-    
+
     // Check for days
     if (parts[0].includes('days')) {
       const dayMatch = parts[0].match(/(\d+)\s*days?,?\s*(\d+)/);
@@ -682,10 +694,10 @@ function parseDuration(durationStr) {
         hours = parseInt(dayMatch[1]) * 24 + parseInt(dayMatch[2]);
       }
     }
-    
+
     return hours * 60 + minutes;
   }
-  
+
   return null;
 }
 
@@ -694,7 +706,7 @@ async function toggleContestNotification(contestId, enabled) {
   const { notifiedContests = [] } = await chrome.storage.local.get('notifiedContests');
   const { contests } = await chrome.storage.local.get('contests');
   const contest = contests?.find(c => c.id === contestId);
-  
+
   let updated;
   if (enabled) {
     updated = [...new Set([...notifiedContests, contestId])];
@@ -705,9 +717,9 @@ async function toggleContestNotification(contestId, enabled) {
     await chrome.alarms.clear(`contest_${contestId}`);
     console.log('LC Helper: Disabling reminder for contest:', contest?.name || contestId);
   }
-  
+
   await chrome.storage.local.set({ notifiedContests: updated });
-  
+
   if (enabled) {
     await setContestAlarm(contestId);
   }
@@ -716,16 +728,16 @@ async function toggleContestNotification(contestId, enabled) {
 async function setContestAlarm(contestId) {
   const { contests } = await chrome.storage.local.get('contests');
   const contest = contests?.find(c => c.id === contestId);
-  
+
   if (!contest) {
     console.log('LC Helper: Contest not found for alarm:', contestId);
     return;
   }
-  
+
   const reminderMinutes = await getReminderTime();
   const startTime = new Date(contest.startTime).getTime();
   const alarmTime = startTime - (reminderMinutes * 60 * 1000);
-  
+
   if (alarmTime > Date.now()) {
     try {
       await chrome.alarms.create(`contest_${contestId}`, {
@@ -743,7 +755,7 @@ async function setContestAlarm(contestId) {
 
 async function updateContestAlarms() {
   const { notifiedContests = [] } = await chrome.storage.local.get('notifiedContests');
-  
+
   for (const contestId of notifiedContests) {
     await setContestAlarm(contestId);
   }
@@ -756,20 +768,25 @@ async function getReminderTime() {
 
 // Backend API Configuration
 // Update this to your production backend URL when deploying
-const API_BASE_URL = 'http://localhost:3000/api/v1'; // Change to https://api.lchelper.com/api/v1 for production
+// Backend API Configuration
+// Set to 'production' when deploying, 'development' for local testing
+const API_ENV = 'development'; // Change to 'production' before launch
+const API_BASE_URL = API_ENV === 'production'
+  ? 'https://api.lchelper.com/api/v1'
+  : 'http://localhost:3000/api/v1';
 
 // Generate hints via backend service
 async function generateHintsViaService(problem, platform) {
   try {
     const { authToken } = await chrome.storage.sync.get('authToken');
-    
+
     if (!authToken) {
-      return { 
+      return {
         error: 'Not authenticated. Please login in settings.',
-        requiresAuth: true 
+        requiresAuth: true
       };
     }
-    
+
     const response = await fetch(`${API_BASE_URL}/hints/generate`, {
       method: 'POST',
       headers: {
@@ -781,45 +798,45 @@ async function generateHintsViaService(problem, platform) {
         platform: platform
       })
     });
-    
+
     if (response.status === 401) {
       // Token expired or invalid
       await chrome.storage.sync.remove('authToken');
-      return { 
+      return {
         error: 'Session expired. Please login again.',
-        requiresAuth: true 
+        requiresAuth: true
       };
     }
-    
+
     if (response.status === 402) {
       // Subscription expired
-      return { 
+      return {
         error: 'Subscription expired. Please renew your subscription.',
-        requiresPayment: true 
+        requiresPayment: true
       };
     }
-    
+
     if (response.status === 429) {
       // Rate limited
       const retryAfter = response.headers.get('Retry-After') || '60';
-      return { 
+      return {
         error: 'Rate limit exceeded. Please try again later.',
         retryAfter: parseInt(retryAfter)
       };
     }
-    
+
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({}));
-      return { 
+      return {
         error: errorData.message || 'Service unavailable. Please try again later.'
       };
     }
-    
+
     const data = await response.json();
     return data;
   } catch (error) {
     console.error('LC Helper: Service error:', error);
-    return { 
+    return {
       error: 'Service unavailable. Please check your connection or try again later.'
     };
   }
@@ -829,7 +846,7 @@ async function generateHintsViaService(problem, platform) {
 async function generateHints(problem) {
   // Generate cache key from problem URL or title
   const cacheKey = `hints_${generateCacheKey(problem.url || problem.title)}`;
-  
+
   // Check if we should force refresh
   if (!problem.forceRefresh) {
     // Try to get cached hints
@@ -839,7 +856,7 @@ async function generateHints(problem) {
       return { ...cached[cacheKey], cached: true };
     }
   }
-  
+
   // Detect platform from URL
   let platform = 'codeforces'; // default to CP-focused
   if (problem.url) {
@@ -852,14 +869,14 @@ async function generateHints(problem) {
     }
     // Future: add more interview-focused platforms (gfg, etc.) here
   }
-  
+
   // Check service mode
   const { serviceMode } = await chrome.storage.sync.get('serviceMode');
-  
+
   if (serviceMode === 'lch-service') {
     // Use backend service
     const result = await generateHintsViaService(problem, platform);
-    
+
     // Cache the result if successful
     if (result && !result.error) {
       const cacheData = {
@@ -871,19 +888,19 @@ async function generateHints(problem) {
       await chrome.storage.local.set({ [cacheKey]: cacheData });
       console.log('Cached hints from service for:', problem.title);
     }
-    
+
     return result;
   } else {
     // Use BYOK (Bring Your Own Key) mode
     const { key: apiKey, provider: apiProvider, error } = await getApiKeySafely();
-    
+
     if (error || !apiKey) {
       return { error: error || 'API key not configured. Add your API key in settings.' };
     }
-    
+
     const provider = apiProvider;
     let result;
-    
+
     if (provider === 'gemini') {
       result = await generateHintsGemini(problem, apiKey, platform);
     } else if (provider === 'claude') {
@@ -898,7 +915,7 @@ async function generateHints(problem) {
       // Default to OpenAI
       result = await generateHintsOpenAI(problem, apiKey, platform);
     }
-    
+
     // Cache the result if successful
     if (result && !result.error) {
       const cacheData = {
@@ -910,7 +927,7 @@ async function generateHints(problem) {
       await chrome.storage.local.set({ [cacheKey]: cacheData });
       console.log('Cached hints for:', problem.title);
     }
-    
+
     return result;
   }
 }
@@ -919,14 +936,14 @@ async function generateHints(problem) {
 async function getApiKeySafely() {
   try {
     const { apiKey, apiProvider } = await chrome.storage.sync.get(['apiKey', 'apiProvider']);
-    
+
     if (!apiKey) {
       return { key: null, provider: null, error: 'API key not configured. Add your API key in settings.' };
     }
-    
+
     // Never log the actual key - only log that it exists and its length
     console.log('LC Helper: Using API key (provider: ' + (apiProvider || 'gemini') + ', length: ' + apiKey.length + ')');
-    
+
     return { key: apiKey, provider: apiProvider || 'gemini' };
   } catch (error) {
     console.error('LC Helper: Error retrieving API key:', error.message);
@@ -950,14 +967,14 @@ function generateCacheKey(input) {
 async function explainProblemViaService(problem, platform) {
   try {
     const { authToken } = await chrome.storage.sync.get('authToken');
-    
+
     if (!authToken) {
-      return { 
+      return {
         error: 'Not authenticated. Please login in settings.',
-        requiresAuth: true 
+        requiresAuth: true
       };
     }
-    
+
     const response = await fetch(`${API_BASE_URL}/hints/explain`, {
       method: 'POST',
       headers: {
@@ -969,42 +986,42 @@ async function explainProblemViaService(problem, platform) {
         platform: platform
       })
     });
-    
+
     if (response.status === 401) {
       await chrome.storage.sync.remove('authToken');
-      return { 
+      return {
         error: 'Session expired. Please login again.',
-        requiresAuth: true 
+        requiresAuth: true
       };
     }
-    
+
     if (response.status === 402) {
-      return { 
+      return {
         error: 'Subscription expired. Please renew your subscription.',
-        requiresPayment: true 
+        requiresPayment: true
       };
     }
-    
+
     if (response.status === 429) {
       const retryAfter = response.headers.get('Retry-After') || '60';
-      return { 
+      return {
         error: 'Rate limit exceeded. Please try again later.',
         retryAfter: parseInt(retryAfter)
       };
     }
-    
+
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({}));
-      return { 
+      return {
         error: errorData.message || 'Service unavailable. Please try again later.'
       };
     }
-    
+
     const data = await response.json();
     return data;
   } catch (error) {
     console.error('LC Helper: Service error:', error);
-    return { 
+    return {
       error: 'Service unavailable. Please check your connection or try again later.'
     };
   }
@@ -1013,14 +1030,17 @@ async function explainProblemViaService(problem, platform) {
 // Explain problem in simpler terms
 async function explainProblem(problem) {
   const cacheKey = `explain_${generateCacheKey(problem.url || problem.title)}`;
-  
-  // Check cache
-  const cached = await chrome.storage.local.get(cacheKey);
-  if (cached[cacheKey]) {
-    console.log('Using cached explanation for:', problem.title);
-    return { ...cached[cacheKey], cached: true };
+
+  // Check if we should force refresh
+  if (!problem.forceRefresh) {
+    // Check cache
+    const cached = await chrome.storage.local.get(cacheKey);
+    if (cached[cacheKey]) {
+      console.log('Using cached explanation for:', problem.title);
+      return { ...cached[cacheKey], cached: true };
+    }
   }
-  
+
   // Detect platform from URL
   let platform = 'codeforces'; // default
   if (problem.url) {
@@ -1032,14 +1052,14 @@ async function explainProblem(problem) {
       platform = 'codeforces';
     }
   }
-  
+
   // Check service mode
   const { serviceMode } = await chrome.storage.sync.get('serviceMode');
-  
+
   if (serviceMode === 'lch-service') {
     // Use backend service
     const result = await explainProblemViaService(problem, platform);
-    
+
     // Cache the result if successful
     if (result && !result.error) {
       const cacheData = {
@@ -1051,19 +1071,19 @@ async function explainProblem(problem) {
       await chrome.storage.local.set({ [cacheKey]: cacheData });
       console.log('Cached explanation from service for:', problem.title);
     }
-    
+
     return result;
   } else {
     // Use BYOK mode
     const { key: apiKey, provider: apiProvider, error } = await getApiKeySafely();
-    
+
     if (error || !apiKey) {
       return { error: error || 'API key not configured. Add your API key in settings.' };
     }
-    
+
     const provider = apiProvider;
     let result;
-    
+
     if (provider === 'gemini') {
       result = await explainProblemGemini(problem, apiKey, platform);
     } else if (provider === 'claude') {
@@ -1078,7 +1098,7 @@ async function explainProblem(problem) {
       // Default to OpenAI
       result = await explainProblemOpenAI(problem, apiKey, platform);
     }
-    
+
     // Cache the result if successful
     if (result && !result.error) {
       const cacheData = {
@@ -1090,7 +1110,7 @@ async function explainProblem(problem) {
       await chrome.storage.local.set({ [cacheKey]: cacheData });
       console.log('Cached explanation for:', problem.title);
     }
-    
+
     return result;
   }
 }
@@ -1116,15 +1136,15 @@ async function explainProblemGemini(problem, apiKey, platform = 'codeforces') {
       platform: platform
     }, null, 2));
     console.log('='.repeat(80));
-    
+
     const difficulty = problem.difficulty || 'Unknown';
     const existingTags = problem.tags || '';
-    
+
     // Format examples for better context
-    const examplesText = problem.examples ? 
-      `\n\nSAMPLE TEST CASES:\n${problem.examples}\n\nIMPORTANT: Use these exact examples in your explanation. Walk through each example step-by-step to show how the input leads to the output.` : 
+    const examplesText = problem.examples ?
+      `\n\nSAMPLE TEST CASES:\n${problem.examples}\n\nIMPORTANT: Use these exact examples in your explanation. Walk through each example step-by-step to show how the input leads to the output.` :
       '\n\nNote: No sample test cases provided. Focus on explaining the problem statement clearly.';
-    
+
     // Use LeetCode-specific prompt for LeetCode, competitive programming prompt for others
     let prompt;
     if (platform === 'leetcode') {
@@ -1205,24 +1225,16 @@ OUTPUT FORMAT (STRICT JSON)
 
 ═══════════════════════════════════════════════════════════════
 
-Return ONLY this JSON:
+Return ONLY valid JSON. Use \\n for newlines inside strings, NOT literal line breaks.
 
 {
-
-  "explanation": "Clear, friendly explanation with **bold** for key terms, *italics* for emphasis, and \`code\` for variables. Break into paragraphs using \\n\\n.",
-
+  "explanation": "Clear explanation with **bold** for key terms, *italics* for emphasis, and \`code\` for variables.\\n\\nUse \\\\n\\\\n for paragraph breaks.",
   "keyPoints": [
-
     "First key insight about understanding the problem",
-
     "Second important detail about input/structure",
-
     "Third clarification from sample walkthrough",
-
     "Fourth tricky case or rule to remember"
-
   ]
-
 }
 
 ═══════════════════════════════════════════════════════════════
@@ -1352,24 +1364,16 @@ OUTPUT FORMAT (STRICT JSON)
 
 ═══════════════════════════════════════════════════════════════
 
-Return ONLY valid JSON with this exact structure:
+Return ONLY valid JSON. Use \\n for newlines inside strings, NOT literal line breaks.
 
 {
-
-  "explanation": "A clear, well-structured explanation. Use **bold** for important terms, *italics* for emphasis, and \`code\` for variables. Break into paragraphs with \\n\\n. Follow the problem-modeling process: story → stripped model → goal → constraints → examples → tricky points.",
-
+  "explanation": "A clear explanation. Use **bold** for key terms and \\\\n\\\\n for paragraph breaks.",
   "keyPoints": [
-
-    "First key insight about the model (e.g., what the core object really is)",
-
+    "First key insight about the model",
     "Second important detail about inputs/constraints",
-
     "Third clarification from the sample walkthrough",
-
-    "Fourth notable tricky or unusual condition the student must not overlook"
-
+    "Fourth notable tricky condition"
   ]
-
 }
 
 ═══════════════════════════════════════════════════════════════
@@ -1410,7 +1414,7 @@ CRITICAL GUIDELINES
 
 Now provide your explanation as JSON:`;
     }
-    
+
     // Log the exact prompt being sent to LLM for debugging
     console.log('='.repeat(80));
     console.log('LC Helper - EXPLAIN PROBLEM - Prompt sent to LLM:');
@@ -1433,48 +1437,29 @@ Now provide your explanation as JSON:`;
     console.log('='.repeat(80));
 
     const parts = [{ text: prompt }];
-    
-    // Handle images - support both imageData (base64) and imageUrls (URLs)
-    if (problem.hasImages) {
-      let base64Data = null;
-      let mimeType = 'image/jpeg';
-      
-      // Priority 1: Use imageData (base64 from DOM scraping) if available
-      if (problem.imageData) {
-        const matches = problem.imageData.match(/^data:([^;]+);base64,(.+)$/);
-        mimeType = matches ? matches[1] : 'image/jpeg';
-        base64Data = matches ? matches[2] : problem.imageData;
-      }
-      // Priority 2: Fetch image URLs and convert to base64
-      else if (problem.imageUrls && problem.imageUrls.length > 0) {
-        // Use the first image URL (Gemini can handle multiple, but we'll start with one)
-        try {
-          const imageUrl = problem.imageUrls[0].url;
-          const imageResponse = await fetch(imageUrl);
-          const imageBlob = await imageResponse.blob();
-          mimeType = imageBlob.type || 'image/jpeg';
-          base64Data = await new Promise((resolve, reject) => {
-            const reader = new FileReader();
-            reader.onloadend = () => {
-              const base64 = reader.result.split(',')[1]; // Remove data URL prefix
-              resolve(base64);
-            };
-            reader.onerror = reject;
-            reader.readAsDataURL(imageBlob);
-          });
-        } catch (e) {
-          console.error('LC Helper: Failed to fetch image for Gemini:', e);
-          // Continue without image if fetch fails
-        }
-      }
-      
-      if (base64Data) {
+
+    // Handle images - use only imageData (base64 from html2canvas)
+    // Note: We don't fetch imageUrls due to CORS restrictions from LeetCode/CDN
+    if (problem.hasImages && problem.imageData) {
+      try {
+        // Extract base64 data (remove data:image/jpeg;base64, or data:image/png;base64, prefix)
+        const base64Data = problem.imageData.replace(/^data:image\/\w+;base64,/, '');
+
+        // Detect MIME type from the original data URL
+        const mimeTypeMatch = problem.imageData.match(/^data:image\/(\w+);base64,/);
+        const mimeType = mimeTypeMatch ? `image/${mimeTypeMatch[1]}` : 'image/jpeg';
+
         parts.push({
           inline_data: {
             mime_type: mimeType,
             data: base64Data
           }
         });
+
+        console.log('Gemini: Including image data in explanation request');
+      } catch (imageError) {
+        console.warn('Gemini: Failed to process image data, continuing with text-only:', imageError.message);
+        // Continue without image if processing fails
       }
     }
 
@@ -1499,28 +1484,30 @@ Now provide your explanation as JSON:`;
 
     const data = await response.json();
     const content = data.candidates[0].content.parts[0].text;
-    
+
     // Parse JSON from response (should be valid JSON due to response_mime_type)
     try {
       const parsed = JSON.parse(content);
       if (parsed.explanation && parsed.keyPoints) {
         return parsed;
       }
+      // If parsed but missing fields, try to use what we have
+      if (parsed.explanation) {
+        return { explanation: parsed.explanation, keyPoints: parsed.keyPoints || [] };
+      }
     } catch (e) {
-      // Fallback: try to extract JSON if response_mime_type didn't work
-      const jsonMatch = content.match(/\{[\s\S]*\}/);
-      if (jsonMatch) {
-        try {
-          return JSON.parse(jsonMatch[0]);
-        } catch (e2) {
-          console.error('Failed to parse JSON:', e2);
-        }
+      // Fallback: try to extract JSON using robust extraction
+      const extracted = extractJSONFromResponse(content);
+      if (extracted && extracted.explanation) {
+        return extracted;
       }
     }
-    
-    // Fallback: return as explanation if JSON parsing fails
+
+    // Fallback: extract meaningful text from response instead of raw JSON/markdown
+    const cleanText = extractTextFromResponse(content);
+    console.log('LC Helper: Using extracted text fallback for explanation');
     return {
-      explanation: content,
+      explanation: cleanText || 'Failed to parse explanation. Please try again.',
       keyPoints: []
     };
   } catch (error) {
@@ -1536,10 +1523,10 @@ async function explainProblemOpenAI(problem, apiKey, platform = 'codeforces') {
     const hasImages = (problem.hasImages && (problem.imageData || (problem.imageUrls && problem.imageUrls.length > 0)));
     let model = hasImages ? 'gpt-4o' : 'gpt-4o-mini';
     let useImages = hasImages;
-    
+
     // Format examples for better context
-    const examplesText = problem.examples ? 
-      `\n\n**SAMPLE TEST CASES:**\n${problem.examples}\n\nIMPORTANT: Use these exact examples in your explanation. Walk through each example step-by-step to show how the input leads to the output.` : 
+    const examplesText = problem.examples ?
+      `\n\n**SAMPLE TEST CASES:**\n${problem.examples}\n\nIMPORTANT: Use these exact examples in your explanation. Walk through each example step-by-step to show how the input leads to the output.` :
       '\n\nNote: No sample test cases provided. Focus on explaining the problem statement clearly.';
 
     // Use LeetCode-specific prompt for LeetCode, competitive programming prompt for others
@@ -1603,18 +1590,13 @@ Your explanation must include:
    - Clarify weird or ambiguous parts of the statement.
 
 ═══════════════════════════════════════════════════════════════
-OUTPUT FORMAT
+OUTPUT FORMAT (JSON)
 ═══════════════════════════════════════════════════════════════
 
-Return valid JSON with this structure:
+Return valid JSON. IMPORTANT: Use \\n for newlines inside strings, not literal line breaks.
 {
-  "explanation": "Clear, friendly explanation with **bold** for key terms, *italics* for emphasis, and \`code\` for variables. Break into paragraphs using \\n\\n.",
-  "keyPoints": [
-    "First key insight about understanding the problem",
-    "Second important detail about input/structure",
-    "Third clarification from sample walkthrough",
-    "Fourth tricky case or rule to remember"
-  ]
+  "explanation": "Clear explanation with **bold** for key terms.\\n\\nUse \\\\n\\\\n for paragraphs.",
+  "keyPoints": ["Key insight 1", "Key insight 2", "Key insight 3", "Key insight 4"]
 }`;
     } else {
       // Codeforces/CodeChef competitive programming focused prompt
@@ -1692,18 +1674,13 @@ Your explanation must help the student understand:
    - Highlight patterns or structural weirdness, but NOT solution strategies.
 
 ═══════════════════════════════════════════════════════════════
-OUTPUT FORMAT
+OUTPUT FORMAT (JSON)
 ═══════════════════════════════════════════════════════════════
 
-Return valid JSON with this structure:
+Return valid JSON. IMPORTANT: Use \\n for newlines inside strings, not literal line breaks.
 {
-  "explanation": "A clear, well-structured explanation. Use **bold** for important terms, *italics* for emphasis, and \`code\` for variables. Break into paragraphs with \\n\\n. Follow the problem-modeling process: story → stripped model → goal → constraints → examples → tricky points.",
-  "keyPoints": [
-    "First key insight about the model (e.g., what the core object really is)",
-    "Second important detail about inputs/constraints",
-    "Third clarification from the sample walkthrough",
-    "Fourth notable tricky or unusual condition the student must not overlook"
-  ]
+  "explanation": "Clear explanation with **bold** for key terms.\\n\\nUse \\\\n\\\\n for paragraphs.",
+  "keyPoints": ["Key insight 1", "Key insight 2", "Key insight 3", "Key insight 4"]
 }`;
     }
 
@@ -1714,42 +1691,22 @@ Return valid JSON with this structure:
       }
     ];
 
-    // Handle images - support both imageData (base64) and imageUrls (URLs)
-    if (problem.hasImages) {
-      // Priority 1: Use imageData (base64 from DOM scraping) if available
-      if (problem.imageData) {
+    // Handle images - use only imageData (base64 from html2canvas)
+    // Note: We don't fetch imageUrls due to CORS restrictions from LeetCode/CDN
+    if (problem.hasImages && problem.imageData) {
+      try {
+        // OpenAI accepts data URLs directly
         userContent.push({
           type: 'image_url',
           image_url: {
             url: problem.imageData
           }
         });
-      }
-      // Priority 2: Fetch image URLs and convert to base64 (for BYOK compatibility)
-      else if (problem.imageUrls && problem.imageUrls.length > 0) {
-        try {
-          const imageUrl = problem.imageUrls[0].url; // Use first image
-          const imageResponse = await fetch(imageUrl);
-          const imageBlob = await imageResponse.blob();
-          const base64Data = await new Promise((resolve, reject) => {
-            const reader = new FileReader();
-            reader.onloadend = () => {
-              resolve(reader.result); // This includes the data URL prefix
-            };
-            reader.onerror = reject;
-            reader.readAsDataURL(imageBlob);
-          });
-          
-          userContent.push({
-            type: 'image_url',
-            image_url: {
-              url: base64Data // OpenAI accepts data URLs
-            }
-          });
-        } catch (e) {
-          console.error('LC Helper: Failed to fetch image for OpenAI (explain):', e);
-          // Continue without image if fetch fails
-        }
+
+        console.log('OpenAI: Including image data in explanation request');
+      } catch (imageError) {
+        console.warn('OpenAI: Failed to process image data, continuing with text-only:', imageError.message);
+        // Continue without image if processing fails
       }
     }
 
@@ -1776,21 +1733,21 @@ Return valid JSON with this structure:
         response_format: { type: "json_object" }
       })
     });
-    
+
     let data = await response.json();
-    
+
     // If gpt-4o fails (user doesn't have access), fallback to gpt-4o-mini without images
     if (data.error && model === 'gpt-4o' && hasImages) {
       console.log('LC Helper: gpt-4o not available for explanation, falling back to gpt-4o-mini (images will be skipped)');
-      
+
       // Remove images from content and retry with gpt-4o-mini
       const textOnlyContent = userContent.filter(item => item.type === 'text');
       model = 'gpt-4o-mini';
       useImages = false;
-      
+
       // Update prompt to mention images were detected but can't be analyzed
       const updatedUserText = userText + '\n\n⚠️ Note: This problem contains images/graphs, but your API key doesn\'t have access to vision models (gpt-4o). The explanation is based on text description only.';
-      
+
       response = await fetch('https://api.openai.com/v1/chat/completions', {
         method: 'POST',
         headers: {
@@ -1814,23 +1771,23 @@ Return valid JSON with this structure:
           response_format: { type: "json_object" }
         })
       });
-      
+
       data = await response.json();
     }
-    
+
     if (data.error) {
       const friendlyError = formatApiError(data.error.message, 'openai');
       // Add specific message for vision model access issues
       if (hasImages && model === 'gpt-4o') {
-        return { 
-          error: friendlyError + '\n\n💡 Tip: This problem contains images. To analyze images, you need an OpenAI API key with access to gpt-4o model. Alternatively, use Gemini which supports vision with all API keys.' 
+        return {
+          error: friendlyError + '\n\n💡 Tip: This problem contains images. To analyze images, you need an OpenAI API key with access to gpt-4o model. Alternatively, use Gemini which supports vision with all API keys.'
         };
       }
       return { error: friendlyError };
     }
-    
+
     const content = data.choices[0].message.content;
-    
+
     // Parse JSON from response (should be valid JSON due to response_format)
     try {
       const parsed = JSON.parse(content);
@@ -1838,20 +1795,18 @@ Return valid JSON with this structure:
         return parsed;
       }
     } catch (e) {
-      // Fallback: try to extract JSON if response_format didn't work
-      const jsonMatch = content.match(/\{[\s\S]*\}/);
-      if (jsonMatch) {
-        try {
-          return JSON.parse(jsonMatch[0]);
-        } catch (e2) {
-          console.error('Failed to parse JSON:', e2);
-        }
+      // Fallback: try to extract JSON using robust extraction
+      const extracted = extractJSONFromResponse(content);
+      if (extracted && extracted.explanation) {
+        return extracted;
       }
     }
-    
-    // Fallback: return as explanation
+
+    // Fallback: extract meaningful text from response instead of raw JSON/markdown
+    const cleanText = extractTextFromResponse(content);
+    console.log('LC Helper: Using extracted text fallback for explanation (OpenAI)');
     return {
-      explanation: content,
+      explanation: cleanText || 'Failed to parse explanation. Please try again.',
       keyPoints: []
     };
   } catch (error) {
@@ -1864,9 +1819,9 @@ Return valid JSON with this structure:
 // Convert API errors to user-friendly messages
 function formatApiError(errorMessage, provider = 'gemini') {
   if (!errorMessage) return 'An error occurred. Please try again.';
-  
+
   const message = errorMessage.toLowerCase();
-  
+
   // Quota/limit exceeded errors
   if (message.includes('quota') || message.includes('limit') || message.includes('exceeded')) {
     if (message.includes('limit: 0')) {
@@ -1874,43 +1829,513 @@ function formatApiError(errorMessage, provider = 'gemini') {
     }
     return 'API quota exceeded. Try again later or upgrade your plan.';
   }
-  
+
   // Invalid API key errors
   if (message.includes('invalid') && (message.includes('api key') || message.includes('key'))) {
     return 'Invalid API key. Check your settings and try again.';
   }
-  
+
   // Authentication errors
   if (message.includes('unauthorized') || message.includes('permission') || message.includes('forbidden')) {
     return 'API key not authorized. Check your key in settings.';
   }
-  
+
   // Rate limiting
   if (message.includes('rate limit') || message.includes('too many requests')) {
     return 'Too many requests. Please wait a moment and try again.';
   }
-  
+
   // Network errors
   if (message.includes('network') || message.includes('fetch') || message.includes('connection')) {
     return 'Network error. Check your internet connection.';
   }
-  
+
   // Billing errors
   if (message.includes('billing') || message.includes('payment')) {
     return 'Billing issue. Enable billing in your API account.';
   }
-  
+
   // Default: return shortened version of original error
   if (message.length > 100) {
     return 'API error occurred. Check your API key and try again.';
   }
-  
+
   return errorMessage;
+}
+
+// Helper function to fix JSON with unescaped newlines/special chars in string values
+// LLM APIs sometimes return JSON with literal newlines inside strings instead of \n
+function fixMalformedJSON(jsonStr) {
+  if (!jsonStr || typeof jsonStr !== 'string') return jsonStr;
+  
+  // First, try parsing as-is - if it works, no fix needed
+  try {
+    JSON.parse(jsonStr);
+    return jsonStr;
+  } catch (e) {
+    // Need to fix malformed JSON
+  }
+  
+  let result = '';
+  let inString = false;
+  let escapeNext = false;
+  
+  for (let i = 0; i < jsonStr.length; i++) {
+    const char = jsonStr[i];
+    const charCode = jsonStr.charCodeAt(i);
+    
+    if (escapeNext) {
+      result += char;
+      escapeNext = false;
+      continue;
+    }
+    
+    if (char === '\\') {
+      result += char;
+      escapeNext = true;
+      continue;
+    }
+    
+    if (char === '"') {
+      result += char;
+      inString = !inString;
+      continue;
+    }
+    
+    // If we're inside a string, escape special characters
+    if (inString) {
+      if (char === '\n') {
+        result += '\\n';
+      } else if (char === '\r') {
+        result += '\\r';
+      } else if (char === '\t') {
+        result += '\\t';
+      } else if (charCode < 32) {
+        // Escape other control characters
+        result += '\\u' + charCode.toString(16).padStart(4, '0');
+      } else {
+        result += char;
+      }
+    } else {
+      result += char;
+    }
+  }
+  
+  return result;
+}
+
+// Helper function to extract and parse JSON from LLM responses
+// Handles markdown code blocks, nested JSON, and various response formats
+function extractJSONFromResponse(content) {
+  if (!content || typeof content !== 'string') {
+    console.error('LC Helper: extractJSONFromResponse - Invalid content:', typeof content);
+    return null;
+  }
+
+  // Log the raw content for debugging (truncated)
+  console.log('LC Helper: Extracting JSON from response (first 500 chars):', content.substring(0, 500));
+
+  // Pre-process: Fix malformed JSON with unescaped newlines
+  let normalizedContent = content;
+  
+  // Method 1: Try direct JSON parse first (simplest case)
+  const trimmed = content.trim();
+  if (trimmed.startsWith('{') && trimmed.endsWith('}')) {
+    try {
+      const parsed = JSON.parse(trimmed);
+      console.log('LC Helper: Successfully parsed direct JSON');
+      return parsed;
+    } catch (e) {
+      // Try fixing malformed JSON (unescaped newlines in strings)
+      console.log('LC Helper: Direct parse failed, trying to fix malformed JSON...');
+      try {
+        const fixed = fixMalformedJSON(trimmed);
+        const parsed = JSON.parse(fixed);
+        console.log('LC Helper: Successfully parsed JSON after fixing malformed content');
+        return parsed;
+      } catch (e2) {
+        console.warn('LC Helper: Fix malformed JSON failed:', e2.message);
+        // Continue to other methods
+      }
+    }
+  }
+
+  // Method 2: Try to extract from markdown code blocks (```json ... ``` or ``` ... ```)
+  // Use a more robust regex that handles various code block formats
+  const codeBlockPatterns = [
+    /```json\s*([\s\S]*?)```/g,  // ```json ... ```
+    /```\s*([\s\S]*?)```/g,       // ``` ... ```
+    /```json\s*([\s\S]*)$/g,      // ```json ... (unclosed)
+    /```\s*([\s\S]*)$/g           // ``` ... (unclosed)
+  ];
+  
+  for (const regex of codeBlockPatterns) {
+    regex.lastIndex = 0; // Reset regex state
+    let match;
+    while ((match = regex.exec(normalizedContent)) !== null) {
+      let jsonStr = match[1].trim();
+      
+      // Remove any trailing incomplete markdown
+      jsonStr = jsonStr.replace(/```\s*$/, '').trim();
+      
+      // Skip if empty or doesn't look like JSON
+      if (!jsonStr || (!jsonStr.startsWith('{') && !jsonStr.startsWith('['))) {
+        continue;
+      }
+      
+      // Try parsing strategies in order: direct, fix malformed, repair incomplete
+      const parseStrategies = [
+        () => JSON.parse(jsonStr),
+        () => JSON.parse(fixMalformedJSON(jsonStr)),
+        () => JSON.parse(repairIncompleteJSON(jsonStr)),
+        () => JSON.parse(fixMalformedJSON(repairIncompleteJSON(jsonStr)))
+      ];
+      
+      for (const strategy of parseStrategies) {
+        try {
+          const parsed = strategy();
+          console.log('LC Helper: Successfully extracted JSON from code block');
+          return parsed;
+        } catch (e) {
+          // Try next strategy
+        }
+      }
+    }
+  }
+
+  // Method 3: Try to find JSON object using balanced brace matching
+  // This handles cases where JSON is embedded in text
+  const jsonObjects = findBalancedJSON(normalizedContent);
+  for (const jsonStr of jsonObjects) {
+    // Try parsing strategies in order
+    const parseStrategies = [
+      () => JSON.parse(jsonStr),
+      () => JSON.parse(fixMalformedJSON(jsonStr)),
+      () => JSON.parse(repairIncompleteJSON(jsonStr)),
+      () => JSON.parse(fixMalformedJSON(repairIncompleteJSON(jsonStr)))
+    ];
+    
+    for (const strategy of parseStrategies) {
+      try {
+        const parsed = strategy();
+        console.log('LC Helper: Successfully extracted JSON using brace matching');
+        return parsed;
+      } catch (e) {
+        // Try next strategy
+      }
+    }
+  }
+
+  // Method 4: Fallback to simple regex (greedy match)
+  const jsonMatch = content.match(/\{[\s\S]*\}/);
+  if (jsonMatch) {
+    const parseStrategies = [
+      () => JSON.parse(jsonMatch[0]),
+      () => JSON.parse(fixMalformedJSON(jsonMatch[0])),
+      () => JSON.parse(repairIncompleteJSON(jsonMatch[0])),
+      () => JSON.parse(fixMalformedJSON(repairIncompleteJSON(jsonMatch[0])))
+    ];
+    
+    for (const strategy of parseStrategies) {
+      try {
+        const parsed = strategy();
+        console.log('LC Helper: Successfully extracted JSON using regex fallback');
+        return parsed;
+      } catch (e) {
+        // Try next strategy
+      }
+    }
+  }
+
+  // Method 5: Try to find JSON array (in case response is just an array)
+  const arrayMatch = content.match(/\[[\s\S]*\]/);
+  if (arrayMatch) {
+    const arrayStrategies = [
+      () => JSON.parse(arrayMatch[0]),
+      () => JSON.parse(fixMalformedJSON(arrayMatch[0]))
+    ];
+    
+    for (const strategy of arrayStrategies) {
+      try {
+        const parsed = strategy();
+        // If it's an array, wrap it in an object with hints property
+        if (Array.isArray(parsed) && parsed.length === 3) {
+          console.log('LC Helper: Found array, converting to hints object');
+          return { hints: parsed };
+        }
+        return parsed;
+      } catch (e) {
+        // Try next strategy
+      }
+    }
+  }
+
+  // Method 6: Try to extract incomplete JSON and repair it
+  const incompleteJsonMatch = content.match(/\{[\s\S]*/);
+  if (incompleteJsonMatch) {
+    const incompleteStrategies = [
+      () => repairIncompleteJSON(incompleteJsonMatch[0]),
+      () => fixMalformedJSON(repairIncompleteJSON(incompleteJsonMatch[0]))
+    ];
+    
+    for (const repairStrategy of incompleteStrategies) {
+      const repaired = repairStrategy();
+      if (repaired) {
+        try {
+          const parsed = JSON.parse(repaired);
+          console.log('LC Helper: Successfully extracted and repaired incomplete JSON');
+          return parsed;
+        } catch (e) {
+          // Try next strategy
+        }
+      }
+    }
+  }
+
+  console.error('LC Helper: Failed to extract JSON from response');
+  console.error('LC Helper: Full response content:', content);
+  return null;
+}
+
+/**
+ * Normalize hints from various response formats to a consistent array format.
+ * Handles both array and object formats from different AI providers.
+ * @param {Object} parsed - The parsed JSON response
+ * @returns {Object|null} - Normalized response with hints as array, or null if no hints found
+ */
+function normalizeHintsResponse(parsed) {
+  if (!parsed) return null;
+  
+  // Case 1: hints is already an array with at least 3 items - perfect!
+  if (parsed.hints && Array.isArray(parsed.hints) && parsed.hints.length >= 3) {
+    return parsed;
+  }
+  
+  // Case 2: hints is an array but with less than 3 items - pad it
+  if (parsed.hints && Array.isArray(parsed.hints) && parsed.hints.length > 0) {
+    console.log('LC Helper: Padding hints array from', parsed.hints.length, 'to 3 items');
+    while (parsed.hints.length < 3) {
+      parsed.hints.push('(Additional hint not available)');
+    }
+    return parsed;
+  }
+  
+  // Case 3: hints is an object with gentle/stronger/almost keys (Claude format)
+  if (parsed.hints && typeof parsed.hints === 'object' && !Array.isArray(parsed.hints)) {
+    const hintsObj = parsed.hints;
+    const hints = [
+      hintsObj.gentle || hintsObj.hint1 || hintsObj['1'] || hintsObj.first || '',
+      hintsObj.stronger || hintsObj.hint2 || hintsObj['2'] || hintsObj.second || '',
+      hintsObj.almost || hintsObj.hint3 || hintsObj['3'] || hintsObj.third || ''
+    ].filter(h => h && typeof h === 'string' && h.trim());
+    
+    if (hints.length > 0) {
+      console.log('LC Helper: Converted object hints format to array');
+      while (hints.length < 3) hints.push('(Additional hint not available)');
+      return { ...parsed, hints };
+    }
+  }
+  
+  // Case 4: hints at top level with hint1/hint2/hint3 keys
+  if (parsed.hint1 || parsed.hint_1 || parsed.Hint1) {
+    const hints = [
+      parsed.hint1 || parsed.hint_1 || parsed.Hint1 || '',
+      parsed.hint2 || parsed.hint_2 || parsed.Hint2 || '',
+      parsed.hint3 || parsed.hint_3 || parsed.Hint3 || ''
+    ].filter(h => h && typeof h === 'string' && h.trim());
+    
+    if (hints.length > 0) {
+      console.log('LC Helper: Extracted hints from hint1/hint2/hint3 format');
+      while (hints.length < 3) hints.push('(Additional hint not available)');
+      return { ...parsed, hints };
+    }
+  }
+  
+  // Case 5: Array at root level (some models return just the array)
+  if (Array.isArray(parsed) && parsed.length > 0) {
+    console.log('LC Helper: Response is array at root level, wrapping in hints object');
+    const hints = parsed.slice(0, 3);
+    while (hints.length < 3) hints.push('(Additional hint not available)');
+    return { hints };
+  }
+  
+  // Could not normalize
+  console.warn('LC Helper: Could not normalize hints response:', JSON.stringify(parsed).substring(0, 300));
+  return null;
+}
+
+// Helper to find balanced JSON objects in content
+function findBalancedJSON(content) {
+  const results = [];
+  let braceCount = 0;
+  let startIndex = -1;
+  let inString = false;
+  let escapeNext = false;
+
+  for (let i = 0; i < content.length; i++) {
+    const char = content[i];
+
+    if (escapeNext) {
+      escapeNext = false;
+      continue;
+    }
+
+    if (char === '\\') {
+      escapeNext = true;
+      continue;
+    }
+
+    if (char === '"' && !escapeNext) {
+      inString = !inString;
+      continue;
+    }
+
+    if (inString) continue;
+
+    if (char === '{') {
+      if (braceCount === 0) {
+        startIndex = i;
+      }
+      braceCount++;
+    } else if (char === '}') {
+      braceCount--;
+      if (braceCount === 0 && startIndex !== -1) {
+        // Found a complete JSON object
+        results.push(content.substring(startIndex, i + 1));
+        startIndex = -1;
+      }
+    }
+  }
+
+  return results;
+}
+
+// Helper to extract plain text from content that may contain markdown-wrapped JSON
+// Used as fallback when JSON extraction fails
+function extractTextFromResponse(content) {
+  if (!content || typeof content !== 'string') {
+    return '';
+  }
+
+  let text = content.trim();
+
+  // Remove markdown code blocks first
+  text = text.replace(/```(?:json)?\s*[\s\S]*?```/g, '').trim();
+  text = text.replace(/```(?:json)?\s*[\s\S]*$/g, '').trim();
+
+  // If the remaining text looks like JSON, try to extract the explanation field
+  if (text.startsWith('{') || text.includes('"explanation"')) {
+    try {
+      const parsed = JSON.parse(text);
+      if (parsed.explanation) {
+        return parsed.explanation;
+      }
+    } catch (e) {
+      // Not valid JSON, continue
+    }
+    
+    // Try to extract explanation field with regex
+    const explanationMatch = text.match(/"explanation"\s*:\s*"((?:[^"\\]|\\.)*)"/);
+    if (explanationMatch) {
+      try {
+        // Unescape the JSON string
+        return JSON.parse('"' + explanationMatch[1] + '"');
+      } catch (e) {
+        return explanationMatch[1].replace(/\\n/g, '\n').replace(/\\"/g, '"');
+      }
+    }
+  }
+
+  // If no JSON-like content, return the cleaned text
+  // Remove any remaining partial JSON-like structures
+  text = text.replace(/^\s*\{[\s\S]*$/, '').trim();
+  
+  return text || content;
+}
+
+// Helper function to repair incomplete JSON
+function repairIncompleteJSON(jsonStr) {
+  if (!jsonStr || typeof jsonStr !== 'string') return null;
+  
+  let repaired = jsonStr.trim();
+  
+  // Remove any trailing incomplete markdown or whitespace
+  repaired = repaired.replace(/```\s*$/, '').trim();
+  
+  // Check if we're in the middle of a string
+  let inString = false;
+  let escapeNext = false;
+  let lastQuoteIndex = -1;
+  
+  for (let i = 0; i < repaired.length; i++) {
+    if (escapeNext) {
+      escapeNext = false;
+      continue;
+    }
+    if (repaired[i] === '\\') {
+      escapeNext = true;
+      continue;
+    }
+    if (repaired[i] === '"') {
+      inString = !inString;
+      lastQuoteIndex = i;
+    }
+  }
+  
+  // If we're in a string (odd number of unescaped quotes), close it
+  if (inString) {
+    // Find where the string should end - look for common patterns
+    // If the last part looks like incomplete text, just close the quote
+    const afterLastQuote = repaired.substring(lastQuoteIndex + 1);
+    if (afterLastQuote.trim().length > 0 && !afterLastQuote.trim().match(/^[,}\]]/)) {
+      // We're in the middle of a string value - close it
+      repaired += '"';
+    }
+  }
+  
+  // Count brackets and braces to close them
+  let openBraces = (repaired.match(/\{/g) || []).length;
+  let closeBraces = (repaired.match(/\}/g) || []).length;
+  let openBrackets = (repaired.match(/\[/g) || []).length;
+  let closeBrackets = (repaired.match(/\]/g) || []).length;
+  
+  // Close brackets first (inner structures)
+  while (closeBrackets < openBrackets) {
+    repaired += ']';
+    closeBrackets++;
+  }
+  
+  // Then close braces (outer structure)
+  while (closeBraces < openBraces) {
+    repaired += '}';
+    closeBraces++;
+  }
+  
+  return repaired;
 }
 
 async function generateHintsGemini(problem, apiKey, platform = 'codeforces') {
   try {
-    // Log the complete problem object received
+    // Helper function to truncate text while preserving important content
+    const truncateText = (text, maxLength, suffix = '...[truncated]') => {
+      if (!text || text.length <= maxLength) return text || '';
+      return text.substring(0, maxLength - suffix.length) + suffix;
+    };
+
+    // Truncate long fields to prevent hitting token limits
+    // Keep description reasonable but allow enough for complex problems
+    const MAX_DESCRIPTION_LENGTH = 6000;
+    const MAX_EXAMPLES_LENGTH = 2000;
+    const MAX_FORMAT_LENGTH = 1000;
+    const MAX_HTML_LENGTH = 8000;
+
+    const truncatedDescription = truncateText(problem.description, MAX_DESCRIPTION_LENGTH);
+    const truncatedExamples = truncateText(problem.examples, MAX_EXAMPLES_LENGTH);
+    const truncatedInputFormat = truncateText(problem.inputFormat, MAX_FORMAT_LENGTH);
+    const truncatedOutputFormat = truncateText(problem.outputFormat, MAX_FORMAT_LENGTH);
+    const truncatedHtml = truncateText(problem.html, MAX_HTML_LENGTH);
+
+    // Log the complete problem object received (with truncated values for logging)
     console.log('='.repeat(80));
     console.log('LC Helper - GET HINTS - Received Problem Object:');
     console.log('='.repeat(80));
@@ -1919,21 +2344,21 @@ async function generateHintsGemini(problem, apiKey, platform = 'codeforces') {
       difficulty: problem.difficulty,
       tags: problem.tags,
       constraints: problem.constraints,
-      description: problem.description,
-      inputFormat: problem.inputFormat,
-      outputFormat: problem.outputFormat,
-      examples: problem.examples,
-      examplesCount: problem.examplesCount,
+      descriptionLength: problem.description?.length || 0,
+      descriptionTruncated: problem.description?.length > MAX_DESCRIPTION_LENGTH,
+      inputFormat: truncatedInputFormat?.substring(0, 200),
+      outputFormat: truncatedOutputFormat?.substring(0, 200),
+      examplesLength: problem.examples?.length || 0,
       url: problem.url,
       hasImages: problem.hasImages,
       platform: platform
     }, null, 2));
     console.log('='.repeat(80));
-    
+
     // Enhanced context extraction
     const difficulty = problem.difficulty || 'Unknown';
     const existingTags = problem.tags || '';
-    
+
     // Use LeetCode interview-focused prompt for LeetCode, CP-focused prompt for others
     let prompt;
     if (platform === 'leetcode') {
@@ -2069,13 +2494,13 @@ NOW ANALYZE THIS ${difficulty.toUpperCase()} PROBLEM:
 Title: ${problem.title}
 ${existingTags ? `Platform Tags: ${existingTags}` : ''}
 Constraints: ${problem.constraints || 'Not specified'}
-Description: ${problem.description}
-${problem.examples ? `\n\nSample Test Cases:\n${problem.examples}` : ''}
-${problem.inputFormat ? `\n\nInput Format:\n${problem.inputFormat}` : ''}
-${problem.outputFormat ? `\n\nOutput Format:\n${problem.outputFormat}` : ''}
+Description: ${truncatedDescription}
+${truncatedExamples ? `\n\nSample Test Cases:\n${truncatedExamples}` : ''}
+${truncatedInputFormat ? `\n\nInput Format:\n${truncatedInputFormat}` : ''}
+${truncatedOutputFormat ? `\n\nOutput Format:\n${truncatedOutputFormat}` : ''}
 
 ${problem.hasImages ? 'Note: This problem includes images/graphs in the problem statement. Analyze them carefully along with the text description.' : ''}
-${problem.examples ? '\nIMPORTANT: Use the sample test cases to verify your understanding. The hints should guide toward a solution that works for these examples.' : ''}
+${truncatedExamples ? '\nIMPORTANT: Use the sample test cases to verify your understanding. The hints should guide toward a solution that works for these examples.' : ''}
 
 Now generate the three hints as JSON.`;
     } else {
@@ -2261,24 +2686,24 @@ Title: ${problem.title}
 ${existingTags ? `Platform Tags: ${existingTags}` : ''}
 Constraints: ${problem.constraints || 'Not specified'}
 
-${problem.html ? `**Problem Statement (HTML with LaTeX math notation):**
+${truncatedHtml ? `**Problem Statement (HTML with LaTeX math notation):**
 
 The problem statement is provided as HTML below. It contains LaTeX mathematical notation embedded in <script type="math/tex"> tags. Modern LLMs can parse this HTML and LaTeX notation naturally.
 
-${problem.html}
+${truncatedHtml}
 
-**Note:** The HTML above contains the complete problem statement with all formatting and mathematical notation preserved. Parse the LaTeX math expressions (in <script type="math/tex"> tags) to understand the mathematical content.` : `Description: ${problem.description}
-${problem.inputFormat ? `\n\nInput Format:\n${problem.inputFormat}` : ''}
-${problem.outputFormat ? `\n\nOutput Format:\n${problem.outputFormat}` : ''}`}
+**Note:** The HTML above contains the complete problem statement with all formatting and mathematical notation preserved. Parse the LaTeX math expressions (in <script type="math/tex"> tags) to understand the mathematical content.` : `Description: ${truncatedDescription}
+${truncatedInputFormat ? `\n\nInput Format:\n${truncatedInputFormat}` : ''}
+${truncatedOutputFormat ? `\n\nOutput Format:\n${truncatedOutputFormat}` : ''}`}
 
-${problem.examples ? `\n\nSample Test Cases:\n${problem.examples}` : ''}
+${truncatedExamples ? `\n\nSample Test Cases:\n${truncatedExamples}` : ''}
 
 ${problem.hasImages ? 'Note: This problem includes images/graphs in the problem statement. Analyze them carefully along with the text description.' : ''}
-${problem.examples ? '\nIMPORTANT: Use the sample test cases to verify your understanding. The hints should guide toward a solution that works for these examples.' : ''}
+${truncatedExamples ? '\nIMPORTANT: Use the sample test cases to verify your understanding. The hints should guide toward a solution that works for these examples.' : ''}
 
 Now generate the hints as JSON.`;
     }
-    
+
     // Log the exact prompt being sent to LLM for debugging
     console.log('='.repeat(80));
     console.log('LC Helper - GET HINTS - Prompt sent to LLM:');
@@ -2302,53 +2727,33 @@ Now generate the hints as JSON.`;
 
     // Build parts array - include image if available
     const parts = [{ text: prompt }];
-    
-    // Handle images - support both imageData (base64) and imageUrls (URLs)
-    if (problem.hasImages) {
-      let base64Data = null;
-      let mimeType = 'image/jpeg';
-      
-      // Priority 1: Use imageData (base64 from DOM scraping) if available
-      if (problem.imageData) {
-        // Extract base64 data and mime type from data URL
-        const matches = problem.imageData.match(/^data:([^;]+);base64,(.+)$/);
-        mimeType = matches ? matches[1] : 'image/jpeg';
-        base64Data = matches ? matches[2] : problem.imageData;
-      }
-      // Priority 2: Fetch image URLs and convert to base64
-      else if (problem.imageUrls && problem.imageUrls.length > 0) {
-        // Use the first image URL (Gemini can handle multiple, but we'll start with one)
-        try {
-          const imageUrl = problem.imageUrls[0].url;
-          const imageResponse = await fetch(imageUrl);
-          const imageBlob = await imageResponse.blob();
-          mimeType = imageBlob.type || 'image/jpeg';
-          base64Data = await new Promise((resolve, reject) => {
-            const reader = new FileReader();
-            reader.onloadend = () => {
-              const base64 = reader.result.split(',')[1]; // Remove data URL prefix
-              resolve(base64);
-            };
-            reader.onerror = reject;
-            reader.readAsDataURL(imageBlob);
-          });
-        } catch (e) {
-          console.error('LC Helper: Failed to fetch image for Gemini:', e);
-          // Continue without image if fetch fails
-        }
-      }
-      
-      if (base64Data) {
+
+    // Handle images - use only imageData (base64 from html2canvas)
+    // Note: We don't fetch imageUrls due to CORS restrictions from LeetCode/CDN
+    if (problem.hasImages && problem.imageData) {
+      try {
+        // Extract base64 data (remove data:image/jpeg;base64, or data:image/png;base64, prefix)
+        const base64Data = problem.imageData.replace(/^data:image\/\w+;base64,/, '');
+
+        // Detect MIME type from the original data URL
+        const mimeTypeMatch = problem.imageData.match(/^data:image\/(\w+);base64,/);
+        const mimeType = mimeTypeMatch ? `image/${mimeTypeMatch[1]}` : 'image/jpeg';
+
         parts.push({
           inline_data: {
             mime_type: mimeType,
             data: base64Data
           }
         });
+
+        console.log('Gemini: Including image data in hints request');
+      } catch (imageError) {
+        console.warn('Gemini: Failed to process image data, continuing with text-only:', imageError.message);
+        // Continue without image if processing fails
       }
     }
 
-    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`, {
+    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -2359,29 +2764,51 @@ Now generate the hints as JSON.`;
         }],
         generationConfig: {
           temperature: 0.5,  // Lowered from 0.7 for more consistent hints
-          maxOutputTokens: 2048,
+          maxOutputTokens: 4096,  // Increased to handle longer responses
           topP: 0.9,
-          topK: 40
+          topK: 40,
+          response_mime_type: "application/json"  // Force JSON output - prevents markdown wrapping
         }
       })
     });
-    
+
     const data = await response.json();
-    
+
     if (data.error) {
       const friendlyError = formatApiError(data.error.message, 'gemini');
       return { error: friendlyError };
     }
-    
+
+    // Check if the API actually truncated the response
+    const finishReason = data.candidates?.[0]?.finishReason;
     const content = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
     
-    // Parse JSON from response
-    const jsonMatch = content.match(/\{[\s\S]*\}/);
-    if (jsonMatch) {
-      return JSON.parse(jsonMatch[0]);
+    console.log('LC Helper: Gemini response finishReason:', finishReason);
+    console.log('LC Helper: Gemini response content length:', content.length);
+    console.log('LC Helper: Gemini response content (first 500 chars):', content.substring(0, 500));
+
+    // If the API explicitly says it hit token limit, report that
+    if (finishReason === 'MAX_TOKENS') {
+      console.error('LC Helper: Gemini response was truncated due to MAX_TOKENS');
+      return { error: 'Response was truncated due to token limit. Please try again with a shorter problem description.' };
+    }
+
+    // Parse JSON from response using robust extraction
+    const parsed = extractJSONFromResponse(content);
+    if (parsed) {
+      console.log('LC Helper: Parsed Gemini hints response:', JSON.stringify(parsed, null, 2).substring(0, 500));
     }
     
-    return { error: 'Failed to parse response. Please try again.' };
+    // Use the helper function to normalize hints from various formats
+    const normalized = normalizeHintsResponse(parsed);
+    if (normalized) {
+      return normalized;
+    }
+
+    // If we couldn't parse or normalize, provide a helpful error
+    console.error('LC Helper: Failed to extract/normalize hints from Gemini response');
+    console.error('LC Helper: Full response content:', content);
+    return { error: 'Failed to parse AI response. Please try again.' };
   } catch (error) {
     console.error('Error generating hints with Gemini:', error);
     const friendlyError = formatApiError(error.message, 'gemini');
@@ -2391,14 +2818,14 @@ Now generate the hints as JSON.`;
 
 async function generateHintsOpenAI(problem, apiKey, platform = 'codeforces') {
   try {
-    // Use gpt-4o for vision support if images are present (either imageData or imageUrls), otherwise use gpt-4o-mini
+    // Use gpt-5 for vision support if images are present (either imageData or imageUrls), otherwise use gpt-5-mini
     const hasImages = (problem.hasImages && (problem.imageData || (problem.imageUrls && problem.imageUrls.length > 0)));
-    let model = hasImages ? 'gpt-4o' : 'gpt-4o-mini';
+    let model = hasImages ? 'gpt-5' : 'gpt-5-mini';
     let useImages = hasImages;
-    
+
     const difficulty = problem.difficulty || 'Unknown';
     const existingTags = problem.tags || '';
-    
+
     // Use LeetCode interview-focused prompt for LeetCode, CP-focused prompt for others
     let systemPrompt, userText;
     if (platform === 'leetcode') {
@@ -2548,45 +2975,22 @@ Remember: DO NOT give the solution, code, or exact data structures. Guide the us
       }
     ];
 
-    // Add images if present - support both imageData (base64) and imageUrls (URLs)
-    if (problem.hasImages) {
-      // Priority 1: Use imageData (base64 from DOM scraping) if available
-      if (problem.imageData) {
-        // OpenAI accepts the full data URL directly
+    // Handle images - use only imageData (base64 from html2canvas)
+    // Note: We don't fetch imageUrls due to CORS restrictions from LeetCode/CDN
+    if (problem.hasImages && problem.imageData) {
+      try {
+        // OpenAI accepts data URLs directly
         userContent.push({
           type: 'image_url',
           image_url: {
             url: problem.imageData
           }
         });
-      }
-      // Priority 2: Fetch image URLs and convert to base64 (for BYOK compatibility)
-      else if (problem.imageUrls && problem.imageUrls.length > 0) {
-        // Fetch and convert image URLs to base64 (similar to Gemini implementation)
-        // This ensures compatibility when URLs require authentication or aren't publicly accessible
-        try {
-          const imageUrl = problem.imageUrls[0].url; // Use first image (OpenAI supports multiple, but we'll start with one)
-          const imageResponse = await fetch(imageUrl);
-          const imageBlob = await imageResponse.blob();
-          const base64Data = await new Promise((resolve, reject) => {
-            const reader = new FileReader();
-            reader.onloadend = () => {
-              resolve(reader.result); // This includes the data URL prefix
-            };
-            reader.onerror = reject;
-            reader.readAsDataURL(imageBlob);
-          });
-          
-          userContent.push({
-            type: 'image_url',
-            image_url: {
-              url: base64Data // OpenAI accepts data URLs
-            }
-          });
-        } catch (e) {
-          console.error('LC Helper: Failed to fetch image for OpenAI:', e);
-          // Continue without image if fetch fails
-        }
+
+        console.log('OpenAI: Including image data in hints request');
+      } catch (imageError) {
+        console.warn('OpenAI: Failed to process image data, continuing with text-only:', imageError.message);
+        // Continue without image if processing fails
       }
     }
 
@@ -2609,26 +3013,45 @@ Remember: DO NOT give the solution, code, or exact data structures. Guide the us
           }
         ],
         temperature: 0.7,
-        max_tokens: 2048
+        max_tokens: 3072,  // Increased from 2048 to handle longer responses
+        response_format: { type: "json_object" }  // Force JSON output
       })
     });
-    
+
     const data = await response.json();
-    
+
     if (data.error) {
       const friendlyError = formatApiError(data.error.message, 'openai');
       return { error: friendlyError };
     }
+
+    // Check if the API truncated the response
+    const finishReason = data.choices?.[0]?.finish_reason;
+    const content = data.choices?.[0]?.message?.content || '';
     
-    const content = data.choices[0].message.content;
-    
-    // Parse JSON from response
-    const jsonMatch = content.match(/\{[\s\S]*\}/);
-    if (jsonMatch) {
-      return JSON.parse(jsonMatch[0]);
+    console.log('LC Helper: OpenAI response finish_reason:', finishReason);
+    console.log('LC Helper: OpenAI response content length:', content.length);
+
+    if (finishReason === 'length') {
+      console.error('LC Helper: OpenAI response was truncated due to length limit');
+      return { error: 'Response was truncated due to token limit. Please try again with a shorter problem description.' };
+    }
+
+    // Parse JSON from response using robust extraction
+    const parsed = extractJSONFromResponse(content);
+    if (parsed) {
+      console.log('LC Helper: Parsed OpenAI hints response:', JSON.stringify(parsed, null, 2).substring(0, 500));
     }
     
-    return { error: 'Failed to parse response. Please try again.' };
+    // Use the helper function to normalize hints from various formats
+    const normalized = normalizeHintsResponse(parsed);
+    if (normalized) {
+      return normalized;
+    }
+
+    console.error('LC Helper: Failed to extract/normalize hints from OpenAI response');
+    console.error('LC Helper: Full response content:', content);
+    return { error: 'Failed to parse AI response. Please try again.' };
   } catch (error) {
     console.error('Error generating hints with OpenAI:', error);
     const friendlyError = formatApiError(error.message, 'openai');
@@ -2644,18 +3067,18 @@ async function generateHintsClaude(problem, apiKey, platform = 'codeforces') {
   try {
     const difficulty = problem.difficulty || 'Unknown';
     const existingTags = problem.tags || '';
-    
-    const systemPrompt = platform === 'leetcode' 
+
+    const systemPrompt = platform === 'leetcode'
       ? 'You are a world-class LeetCode interview coach. Provide three progressive hints without revealing the solution.'
       : 'You are a world-class competitive programming coach. Provide three progressive hints without revealing the solution.';
-    
+
     const userPrompt = `Analyze this problem and generate three progressive hints:
 
 Title: ${problem.title}
 ${existingTags ? `Tags: ${existingTags}` : ''}
 Difficulty: ${difficulty}
 Constraints: ${problem.constraints || 'Not specified'}
-Description: ${problem.description}
+${problem.hasImages ? 'Note: This problem includes images/graphs. Analyze them carefully along with the text description.\n' : ''}Description: ${problem.description}
 ${problem.examples ? `\n\nExamples:\n${problem.examples}` : ''}
 
 Return JSON:
@@ -2670,6 +3093,38 @@ Return JSON:
   "spaceComplexity": "Space complexity analysis"
 }`;
 
+    // Build content array - start with text
+    const content = [{
+      type: 'text',
+      text: userPrompt
+    }];
+
+    // Add image if available
+    if (problem.hasImages && problem.imageData) {
+      try {
+        // Extract base64 data (remove data:image/jpeg;base64, or data:image/png;base64, prefix)
+        const base64Data = problem.imageData.replace(/^data:image\/\w+;base64,/, '');
+
+        // Detect MIME type from the original data URL
+        const mimeTypeMatch = problem.imageData.match(/^data:image\/(\w+);base64,/);
+        const mimeType = mimeTypeMatch ? `image/${mimeTypeMatch[1]}` : 'image/jpeg';
+
+        content.push({
+          type: 'image',
+          source: {
+            type: 'base64',
+            media_type: mimeType,
+            data: base64Data
+          }
+        });
+
+        console.log('Claude: Including image data in hints request');
+      } catch (imageError) {
+        console.warn('Claude: Failed to process image data, continuing with text-only:', imageError.message);
+        // Continue without image if processing fails
+      }
+    }
+
     const response = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: {
@@ -2678,12 +3133,12 @@ Return JSON:
         'anthropic-version': '2023-06-01'
       },
       body: JSON.stringify({
-        model: 'claude-3-5-sonnet-20241022',
-        max_tokens: 2048,
+        model: 'claude-3-5-haiku-20241022',
+        max_tokens: 3072,  // Increased from 2048 to handle longer responses
         system: systemPrompt,
         messages: [{
           role: 'user',
-          content: userPrompt
+          content: content
         }]
       })
     });
@@ -2694,14 +3149,34 @@ Return JSON:
     }
 
     const data = await response.json();
-    const content = data.content[0].text;
     
-    const jsonMatch = content.match(/\{[\s\S]*\}/);
-    if (jsonMatch) {
-      return JSON.parse(jsonMatch[0]);
+    // Check if response was truncated
+    const stopReason = data.stop_reason;
+    console.log('LC Helper: Claude response stop_reason:', stopReason);
+    
+    if (stopReason === 'max_tokens') {
+      console.error('LC Helper: Claude response was truncated due to max_tokens');
+      return { error: 'Response was truncated due to token limit. Please try again with a shorter problem description.' };
     }
     
-    return { error: 'Failed to parse response. Please try again.' };
+    const responseText = data.content?.[0]?.text || '';
+    console.log('LC Helper: Claude response length:', responseText.length);
+
+    // Parse JSON from response using robust extraction
+    const parsed = extractJSONFromResponse(responseText);
+    if (parsed) {
+      console.log('LC Helper: Parsed Claude hints response:', JSON.stringify(parsed, null, 2).substring(0, 500));
+    }
+    
+    // Use the helper function to normalize hints from various formats
+    const normalized = normalizeHintsResponse(parsed);
+    if (normalized) {
+      return normalized;
+    }
+
+    console.error('LC Helper: Failed to extract/normalize hints from Claude response');
+    console.error('LC Helper: Full response content:', responseText);
+    return { error: 'Failed to parse AI response. Please try again.' };
   } catch (error) {
     console.error('Error generating hints with Claude:', error);
     const friendlyError = formatApiError(error.message, 'claude');
@@ -2714,10 +3189,42 @@ async function explainProblemClaude(problem, apiKey, platform = 'codeforces') {
     const prompt = `Explain this problem in simpler terms:
 
 Title: ${problem.title}
-Description: ${problem.description}
+${problem.hasImages ? 'Note: This problem includes images/graphs. Analyze them carefully along with the text description.\n' : ''}Description: ${problem.description}
 ${problem.examples ? `\nExamples:\n${problem.examples}` : ''}
 
 Provide a clear explanation with key concepts and approach.`;
+
+    // Build content array - start with text
+    const content = [{
+      type: 'text',
+      text: prompt
+    }];
+
+    // Add image if available
+    if (problem.hasImages && problem.imageData) {
+      try {
+        // Extract base64 data (remove data:image/jpeg;base64, or data:image/png;base64, prefix)
+        const base64Data = problem.imageData.replace(/^data:image\/\w+;base64,/, '');
+
+        // Detect MIME type from the original data URL
+        const mimeTypeMatch = problem.imageData.match(/^data:image\/(\w+);base64,/);
+        const mimeType = mimeTypeMatch ? `image/${mimeTypeMatch[1]}` : 'image/jpeg';
+
+        content.push({
+          type: 'image',
+          source: {
+            type: 'base64',
+            media_type: mimeType,
+            data: base64Data
+          }
+        });
+
+        console.log('Claude: Including image data in explanation request');
+      } catch (imageError) {
+        console.warn('Claude: Failed to process image data, continuing with text-only:', imageError.message);
+        // Continue without image if processing fails
+      }
+    }
 
     const response = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
@@ -2727,11 +3234,11 @@ Provide a clear explanation with key concepts and approach.`;
         'anthropic-version': '2023-06-01'
       },
       body: JSON.stringify({
-        model: 'claude-3-5-sonnet-20241022',
+        model: 'claude-3-5-haiku-20241022',
         max_tokens: 2048,
         messages: [{
           role: 'user',
-          content: prompt
+          content: content
         }]
       })
     });
@@ -2743,7 +3250,7 @@ Provide a clear explanation with key concepts and approach.`;
 
     const data = await response.json();
     const explanation = data.content[0].text;
-    
+
     return {
       explanation: explanation,
       keyConcepts: [],
@@ -2764,17 +3271,17 @@ async function generateHintsGroq(problem, apiKey, platform = 'codeforces') {
   try {
     const difficulty = problem.difficulty || 'Unknown';
     const existingTags = problem.tags || '';
-    
-    const systemPrompt = platform === 'leetcode' 
+
+    const systemPrompt = platform === 'leetcode'
       ? 'You are a world-class LeetCode interview coach. Provide three progressive hints without revealing the solution.'
       : 'You are a world-class competitive programming coach. Provide three progressive hints without revealing the solution.';
-    
+
     const userPrompt = `Analyze this problem and generate three progressive hints:
 
 Title: ${problem.title}
 ${existingTags ? `Tags: ${existingTags}` : ''}
 Difficulty: ${difficulty}
-Description: ${problem.description}
+${problem.hasImages ? 'Note: This problem includes images/graphs. Analyze them carefully along with the text description.\n' : ''}Description: ${problem.description}
 ${problem.examples ? `\n\nExamples:\n${problem.examples}` : ''}
 
 Return JSON:
@@ -2789,6 +3296,33 @@ Return JSON:
   "spaceComplexity": "Space complexity"
 }`;
 
+    // Build user message content - start with text
+    const userContent = [{
+      type: 'text',
+      text: userPrompt
+    }];
+
+    // Add image if available (Groq supports vision models)
+    if (problem.hasImages && problem.imageData) {
+      try {
+        // Groq accepts data URLs directly in image_url format
+        userContent.push({
+          type: 'image_url',
+          image_url: {
+            url: problem.imageData
+          }
+        });
+        console.log('Groq: Including image data in request');
+      } catch (imageError) {
+        console.warn('Groq: Failed to process image data, continuing with text-only:', imageError.message);
+      }
+    }
+
+    // Use vision model if images are present, otherwise use standard model
+    const model = (problem.hasImages && problem.imageData)
+      ? 'llama-3.2-90b-vision-preview'  // Vision-capable model
+      : 'llama-3.3-70b-versatile';      // Standard model
+
     const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
       method: 'POST',
       headers: {
@@ -2796,13 +3330,14 @@ Return JSON:
         'Authorization': `Bearer ${apiKey}`
       },
       body: JSON.stringify({
-        model: 'llama-3.1-70b-versatile',
+        model: model,
         messages: [
           { role: 'system', content: systemPrompt },
-          { role: 'user', content: userPrompt }
+          { role: 'user', content: userContent }
         ],
         temperature: 0.7,
-        max_tokens: 2048
+        max_tokens: 3072,  // Increased from 2048 to handle longer responses
+        response_format: { type: "json_object" }  // Force JSON output
       })
     });
 
@@ -2812,14 +3347,31 @@ Return JSON:
     }
 
     const data = await response.json();
-    const content = data.choices[0].message.content;
     
-    const jsonMatch = content.match(/\{[\s\S]*\}/);
-    if (jsonMatch) {
-      return JSON.parse(jsonMatch[0]);
+    // Check if response was truncated
+    const finishReason = data.choices?.[0]?.finish_reason;
+    const content = data.choices?.[0]?.message?.content || '';
+    
+    console.log('LC Helper: Groq response finish_reason:', finishReason);
+    console.log('LC Helper: Groq response content length:', content.length);
+
+    if (finishReason === 'length') {
+      console.error('LC Helper: Groq response was truncated due to length limit');
+      return { error: 'Response was truncated due to token limit. Please try again with a shorter problem description.' };
     }
+
+    // Parse JSON from response using robust extraction
+    const parsed = extractJSONFromResponse(content);
     
-    return { error: 'Failed to parse response. Please try again.' };
+    // Use the helper function to normalize hints from various formats
+    const normalized = normalizeHintsResponse(parsed);
+    if (normalized) {
+      return normalized;
+    }
+
+    console.error('LC Helper: Failed to extract/normalize hints from Groq response');
+    console.error('LC Helper: Full response content:', content);
+    return { error: 'Failed to parse AI response. Please try again.' };
   } catch (error) {
     console.error('Error generating hints with Groq:', error);
     return { error: formatApiError(error.message, 'groq') };
@@ -2831,8 +3383,34 @@ async function explainProblemGroq(problem, apiKey, platform = 'codeforces') {
     const prompt = `Explain this problem in simpler terms:
 
 Title: ${problem.title}
-Description: ${problem.description}
+${problem.hasImages ? 'Note: This problem includes images/graphs. Analyze them carefully along with the text description.\n' : ''}Description: ${problem.description}
 ${problem.examples ? `\nExamples:\n${problem.examples}` : ''}`;
+
+    // Build user message content - start with text
+    const userContent = [{
+      type: 'text',
+      text: prompt
+    }];
+
+    // Add image if available
+    if (problem.hasImages && problem.imageData) {
+      try {
+        userContent.push({
+          type: 'image_url',
+          image_url: {
+            url: problem.imageData
+          }
+        });
+        console.log('Groq: Including image data in explanation request');
+      } catch (imageError) {
+        console.warn('Groq: Failed to process image data, continuing with text-only:', imageError.message);
+      }
+    }
+
+    // Use vision model if images are present
+    const model = (problem.hasImages && problem.imageData)
+      ? 'llama-3.2-90b-vision-preview'
+      : 'llama-3.3-70b-versatile';
 
     const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
       method: 'POST',
@@ -2841,9 +3419,9 @@ ${problem.examples ? `\nExamples:\n${problem.examples}` : ''}`;
         'Authorization': `Bearer ${apiKey}`
       },
       body: JSON.stringify({
-        model: 'llama-3.1-70b-versatile',
+        model: model,
         messages: [
-          { role: 'user', content: prompt }
+          { role: 'user', content: userContent }
         ],
         temperature: 0.7,
         max_tokens: 2048
@@ -2857,7 +3435,7 @@ ${problem.examples ? `\nExamples:\n${problem.examples}` : ''}`;
 
     const data = await response.json();
     const explanation = data.choices[0].message.content;
-    
+
     return {
       explanation: explanation,
       keyConcepts: [],
@@ -2878,17 +3456,17 @@ async function generateHintsTogether(problem, apiKey, platform = 'codeforces') {
   try {
     const difficulty = problem.difficulty || 'Unknown';
     const existingTags = problem.tags || '';
-    
-    const systemPrompt = platform === 'leetcode' 
+
+    const systemPrompt = platform === 'leetcode'
       ? 'You are a world-class LeetCode interview coach. Provide three progressive hints without revealing the solution.'
       : 'You are a world-class competitive programming coach. Provide three progressive hints without revealing the solution.';
-    
+
     const userPrompt = `Analyze this problem and generate three progressive hints:
 
 Title: ${problem.title}
 ${existingTags ? `Tags: ${existingTags}` : ''}
 Difficulty: ${difficulty}
-Description: ${problem.description}
+${problem.hasImages ? 'Note: This problem includes images/graphs. Analyze them carefully along with the text description.\n' : ''}Description: ${problem.description}
 ${problem.examples ? `\n\nExamples:\n${problem.examples}` : ''}
 
 Return JSON:
@@ -2903,6 +3481,33 @@ Return JSON:
   "spaceComplexity": "Space complexity"
 }`;
 
+    // Build user message content - start with text
+    const userContent = [{
+      type: 'text',
+      text: userPrompt
+    }];
+
+    // Add image if available (Together AI supports vision models)
+    if (problem.hasImages && problem.imageData) {
+      try {
+        // Together AI accepts data URLs directly
+        userContent.push({
+          type: 'image_url',
+          image_url: {
+            url: problem.imageData
+          }
+        });
+        console.log('Together AI: Including image data in request');
+      } catch (imageError) {
+        console.warn('Together AI: Failed to process image data, continuing with text-only:', imageError.message);
+      }
+    }
+
+    // Use vision model if images are present, otherwise use standard model
+    const model = (problem.hasImages && problem.imageData)
+      ? 'meta-llama/Llama-3.2-90B-Vision-Instruct-Turbo'  // Vision-capable model
+      : 'meta-llama/Llama-3.3-70B-Instruct-Turbo';    // Standard model
+
     const response = await fetch('https://api.together.xyz/v1/chat/completions', {
       method: 'POST',
       headers: {
@@ -2910,13 +3515,14 @@ Return JSON:
         'Authorization': `Bearer ${apiKey}`
       },
       body: JSON.stringify({
-        model: 'meta-llama/Llama-3.1-70B-Instruct-Turbo',
+        model: model,
         messages: [
           { role: 'system', content: systemPrompt },
-          { role: 'user', content: userPrompt }
+          { role: 'user', content: userContent }
         ],
         temperature: 0.7,
-        max_tokens: 2048
+        max_tokens: 3072,  // Increased from 2048 to handle longer responses
+        response_format: { type: "json_object" }  // Force JSON output
       })
     });
 
@@ -2926,14 +3532,31 @@ Return JSON:
     }
 
     const data = await response.json();
-    const content = data.choices[0].message.content;
     
-    const jsonMatch = content.match(/\{[\s\S]*\}/);
-    if (jsonMatch) {
-      return JSON.parse(jsonMatch[0]);
+    // Check if response was truncated
+    const finishReason = data.choices?.[0]?.finish_reason;
+    const content = data.choices?.[0]?.message?.content || '';
+    
+    console.log('LC Helper: Together AI response finish_reason:', finishReason);
+    console.log('LC Helper: Together AI response content length:', content.length);
+
+    if (finishReason === 'length') {
+      console.error('LC Helper: Together AI response was truncated due to length limit');
+      return { error: 'Response was truncated due to token limit. Please try again with a shorter problem description.' };
     }
+
+    // Parse JSON from response using robust extraction
+    const parsed = extractJSONFromResponse(content);
     
-    return { error: 'Failed to parse response. Please try again.' };
+    // Use the helper function to normalize hints from various formats
+    const normalized = normalizeHintsResponse(parsed);
+    if (normalized) {
+      return normalized;
+    }
+
+    console.error('LC Helper: Failed to extract/normalize hints from Together AI response');
+    console.error('LC Helper: Full response content:', content);
+    return { error: 'Failed to parse AI response. Please try again.' };
   } catch (error) {
     console.error('Error generating hints with Together AI:', error);
     return { error: formatApiError(error.message, 'together') };
@@ -2945,8 +3568,34 @@ async function explainProblemTogether(problem, apiKey, platform = 'codeforces') 
     const prompt = `Explain this problem in simpler terms:
 
 Title: ${problem.title}
-Description: ${problem.description}
+${problem.hasImages ? 'Note: This problem includes images/graphs. Analyze them carefully along with the text description.\n' : ''}Description: ${problem.description}
 ${problem.examples ? `\nExamples:\n${problem.examples}` : ''}`;
+
+    // Build user message content - start with text
+    const userContent = [{
+      type: 'text',
+      text: prompt
+    }];
+
+    // Add image if available
+    if (problem.hasImages && problem.imageData) {
+      try {
+        userContent.push({
+          type: 'image_url',
+          image_url: {
+            url: problem.imageData
+          }
+        });
+        console.log('Together AI: Including image data in explanation request');
+      } catch (imageError) {
+        console.warn('Together AI: Failed to process image data, continuing with text-only:', imageError.message);
+      }
+    }
+
+    // Use vision model if images are present
+    const model = (problem.hasImages && problem.imageData)
+      ? 'meta-llama/Llama-3.2-90B-Vision-Instruct-Turbo'
+      : 'meta-llama/Llama-3.3-70B-Instruct-Turbo';
 
     const response = await fetch('https://api.together.xyz/v1/chat/completions', {
       method: 'POST',
@@ -2955,9 +3604,9 @@ ${problem.examples ? `\nExamples:\n${problem.examples}` : ''}`;
         'Authorization': `Bearer ${apiKey}`
       },
       body: JSON.stringify({
-        model: 'meta-llama/Llama-3.1-70B-Instruct-Turbo',
+        model: model,
         messages: [
-          { role: 'user', content: prompt }
+          { role: 'user', content: userContent }
         ],
         temperature: 0.7,
         max_tokens: 2048
@@ -2971,7 +3620,7 @@ ${problem.examples ? `\nExamples:\n${problem.examples}` : ''}`;
 
     const data = await response.json();
     const explanation = data.choices[0].message.content;
-    
+
     return {
       explanation: explanation,
       keyConcepts: [],
@@ -2992,17 +3641,17 @@ async function generateHintsHuggingFace(problem, apiKey, platform = 'codeforces'
   try {
     const difficulty = problem.difficulty || 'Unknown';
     const existingTags = problem.tags || '';
-    
-    const systemPrompt = platform === 'leetcode' 
+
+    const systemPrompt = platform === 'leetcode'
       ? 'You are a world-class LeetCode interview coach. Provide three progressive hints without revealing the solution.'
       : 'You are a world-class competitive programming coach. Provide three progressive hints without revealing the solution.';
-    
+
     const userPrompt = `Analyze this problem and generate three progressive hints:
 
 Title: ${problem.title}
 ${existingTags ? `Tags: ${existingTags}` : ''}
 Difficulty: ${difficulty}
-Description: ${problem.description}
+${problem.hasImages ? 'Note: This problem includes images/graphs. Analyze them carefully along with the text description.\n' : ''}Description: ${problem.description}
 ${problem.examples ? `\n\nExamples:\n${problem.examples}` : ''}
 
 Return JSON:
@@ -3017,14 +3666,32 @@ Return JSON:
   "spaceComplexity": "Space complexity"
 }`;
 
-    const response = await fetch('https://api-inference.huggingface.co/models/meta-llama/Meta-Llama-3.1-70B-Instruct', {
+    // Hugging Face Inference API format - use vision model if images present
+    const model = (problem.hasImages && problem.imageData)
+      ? 'HuggingFaceM4/idefics2-8b-base'  // Vision-capable model
+      : 'meta-llama/Llama-3.3-70B-Instruct';  // Standard model
+
+    // Build inputs - for vision models, include image in inputs
+    let inputs;
+    if (problem.hasImages && problem.imageData && model.includes('idefics')) {
+      // Idefics2 format: accepts image as part of inputs
+      inputs = {
+        question: userPrompt,
+        image: problem.imageData  // Data URL format
+      };
+    } else {
+      // Standard text-only format
+      inputs = `<|system|>\n${systemPrompt}\n<|user|>\n${userPrompt}\n<|assistant|>\n`;
+    }
+
+    const response = await fetch(`https://api-inference.huggingface.co/models/${model}`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${apiKey}`
       },
       body: JSON.stringify({
-        inputs: `<|system|>\n${systemPrompt}\n<|user|>\n${userPrompt}\n<|assistant|>\n`,
+        inputs: inputs,
         parameters: {
           temperature: 0.7,
           max_new_tokens: 2048,
@@ -3039,14 +3706,22 @@ Return JSON:
     }
 
     const data = await response.json();
-    const content = Array.isArray(data) ? data[0].generated_text : data.generated_text;
+    const content = Array.isArray(data) ? data[0]?.generated_text : data.generated_text;
     
-    const jsonMatch = content.match(/\{[\s\S]*\}/);
-    if (jsonMatch) {
-      return JSON.parse(jsonMatch[0]);
+    console.log('LC Helper: HuggingFace response content length:', content?.length || 0);
+
+    // Parse JSON from response using robust extraction
+    const parsed = extractJSONFromResponse(content || '');
+    
+    // Use the helper function to normalize hints from various formats
+    const normalized = normalizeHintsResponse(parsed);
+    if (normalized) {
+      return normalized;
     }
-    
-    return { error: 'Failed to parse response. Please try again.' };
+
+    console.error('LC Helper: Failed to extract/normalize hints from HuggingFace response');
+    console.error('LC Helper: Full response content:', content);
+    return { error: 'Failed to parse AI response. Please try again.' };
   } catch (error) {
     console.error('Error generating hints with Hugging Face:', error);
     return { error: formatApiError(error.message, 'huggingface') };
@@ -3058,17 +3733,33 @@ async function explainProblemHuggingFace(problem, apiKey, platform = 'codeforces
     const prompt = `Explain this problem in simpler terms:
 
 Title: ${problem.title}
-Description: ${problem.description}
+${problem.hasImages ? 'Note: This problem includes images/graphs. Analyze them carefully along with the text description.\n' : ''}Description: ${problem.description}
 ${problem.examples ? `\nExamples:\n${problem.examples}` : ''}`;
 
-    const response = await fetch('https://api-inference.huggingface.co/models/meta-llama/Meta-Llama-3.1-70B-Instruct', {
+    // Use vision model if images present
+    const model = (problem.hasImages && problem.imageData)
+      ? 'HuggingFaceM4/idefics2-8b-base'
+      : 'meta-llama/Llama-3.3-70B-Instruct';
+
+    // Build inputs - for vision models, include image
+    let inputs;
+    if (problem.hasImages && problem.imageData && model.includes('idefics')) {
+      inputs = {
+        question: prompt,
+        image: problem.imageData
+      };
+    } else {
+      inputs = `<|user|>\n${prompt}\n<|assistant|>\n`;
+    }
+
+    const response = await fetch(`https://api-inference.huggingface.co/models/${model}`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${apiKey}`
       },
       body: JSON.stringify({
-        inputs: `<|user|>\n${prompt}\n<|assistant|>\n`,
+        inputs: inputs,
         parameters: {
           temperature: 0.7,
           max_new_tokens: 2048,
@@ -3084,7 +3775,7 @@ ${problem.examples ? `\nExamples:\n${problem.examples}` : ''}`;
 
     const data = await response.json();
     const explanation = Array.isArray(data) ? data[0].generated_text : data.generated_text;
-    
+
     return {
       explanation: explanation,
       keyConcepts: [],
@@ -3104,7 +3795,7 @@ ${problem.examples ? `\nExamples:\n${problem.examples}` : ''}`;
 // Ensure streak data exists (called on every service worker start)
 async function ensureStreakDataExists() {
   const { streakData } = await chrome.storage.local.get('streakData');
-  
+
   if (!streakData) {
     console.log('Unified streak data not found, initializing...');
     await chrome.storage.local.set({
@@ -3136,35 +3827,35 @@ async function ensureStreakDataExists() {
 
 async function initializeStreakSystem() {
   await ensureStreakDataExists();
-  
+
   // Set up unified streak sync alarm (every 6 hours)
   chrome.alarms.create('unifiedStreakSync', {
     periodInMinutes: 360 // 6 hours
   });
-  
+
   // Set up daily reminder alarm (8 PM)
   chrome.alarms.create('dailyStreakReminder', {
     when: getDailyReminderTime(),
     periodInMinutes: 1440
   });
-  
+
   // Set up daily stats reset alarm (4 AM)
   chrome.alarms.create('dailyStatsReset', {
     when: getNextResetTime(),
     periodInMinutes: 1440 // 24 hours
   });
-  
+
   // Set up today count auto-refresh alarm (every 15 minutes)
   chrome.alarms.create('refreshTodayCount', {
     periodInMinutes: 15
   });
-  
+
   // Initial sync
   await syncUnifiedStreak();
-  
+
   // Initial refresh of today's count
   syncTodayCountFromAPIs().catch(err => console.log('Initial today count sync failed:', err));
-  
+
   console.log('Unified streak system fully initialized with alarms');
 }
 
@@ -3178,7 +3869,7 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
   } else if (alarm.name === 'dailyStatsReset') {
     // Reset daily stats at 4 AM
     const today = getTodayDateString();
-    await chrome.storage.local.set({ 
+    await chrome.storage.local.set({
       dailyStats: { date: today, count: 0, problems: [] }
     });
     console.log('Daily stats reset for:', today);
@@ -3199,12 +3890,12 @@ async function handleTimerAlarm(alarmName) {
   const timerKey = alarmName; // timer_xxx format matches storage key
   const result = await chrome.storage.local.get(timerKey);
   const timerData = result[timerKey];
-  
+
   if (timerData && !timerData.reminderSent) {
     // Mark reminder as sent
     timerData.reminderSent = true;
     await chrome.storage.local.set({ [timerKey]: timerData });
-    
+
     // Send notification
     chrome.notifications.create(`timerReminder_${Date.now()}`, {
       type: 'basic',
@@ -3220,7 +3911,7 @@ async function handleTimerAlarm(alarmName) {
     }).catch((error) => {
       console.error('LC Helper: Failed to create timer notification:', error);
     });
-    
+
     console.log('Timer reminder sent for:', timerData.title);
   }
 }
@@ -3231,11 +3922,11 @@ async function handleTimerStopAlarm(alarmName) {
   const timerKey = `timer_${cacheKey}`;
   const result = await chrome.storage.local.get(timerKey);
   const timerData = result[timerKey];
-  
+
   if (timerData) {
     // Stop the timer
     await stopProblemTimer(timerData.url);
-    
+
     // Try to notify the tab if it's still open
     if (timerData.tabId) {
       try {
@@ -3253,7 +3944,7 @@ async function handleTimerStopAlarm(alarmName) {
         console.log('LC Helper: Timer tab already closed');
       }
     }
-    
+
     console.log('Timer stopped after 1 hour for:', timerData.title);
   }
 }
@@ -3264,17 +3955,17 @@ async function handleTimerStopAlarm(alarmName) {
 
 async function syncUnifiedStreak() {
   console.log('Starting unified streak sync...');
-  
+
   try {
     // Get usernames from settings
-    const { leetcodeUsername, codeforcesUsername, codechefUsername } = 
+    const { leetcodeUsername, codeforcesUsername, codechefUsername } =
       await chrome.storage.sync.get(['leetcodeUsername', 'codeforcesUsername', 'codechefUsername']);
-    
+
     if (!leetcodeUsername && !codeforcesUsername && !codechefUsername) {
       console.log('No usernames configured, skipping sync');
       return;
     }
-    
+
     // Fetch data from all platforms in parallel (with delay for Codeforces)
     const results = await Promise.allSettled([
       leetcodeUsername ? fetchLeetCodeActivity(leetcodeUsername) : Promise.resolve(null),
@@ -3283,16 +3974,16 @@ async function syncUnifiedStreak() {
       }, 2000)), // 2 second delay for Codeforces rate limiting
       codechefUsername ? fetchCodeChefActivity(codechefUsername) : Promise.resolve(null)
     ]);
-    
+
     const leetcodeData = results[0].status === 'fulfilled' ? results[0].value : null;
     const codeforcesData = results[1].status === 'fulfilled' ? results[1].value : null;
     const codechefData = results[2].status === 'fulfilled' ? results[2].value : null;
-    
+
     console.log('Fetched platform data:', { leetcodeData, codeforcesData, codechefData });
-    
+
     // Calculate unified streak
     const unifiedStreakData = calculateUnifiedStreak(leetcodeData, codeforcesData, codechefData);
-    
+
     // Store data
     await chrome.storage.local.set({
       streakData: {
@@ -3305,9 +3996,9 @@ async function syncUnifiedStreak() {
       },
       lastSyncTime: Date.now()
     });
-    
+
     console.log('Unified streak calculated:', unifiedStreakData);
-    
+
   } catch (error) {
     console.error('Error syncing unified streak:', error);
   }
@@ -3330,7 +4021,7 @@ async function fetchLeetCodeActivity(username) {
         }
       }
     `;
-    
+
     const response = await fetch('https://leetcode.com/graphql/', {
       method: 'POST',
       headers: {
@@ -3341,31 +4032,31 @@ async function fetchLeetCodeActivity(username) {
         variables: { username }
       })
     });
-    
+
     if (!response.ok) {
       throw new Error(`LeetCode API error: ${response.status}`);
     }
-    
+
     const data = await response.json();
     const calendar = data.data?.matchedUser?.userCalendar;
-    
+
     if (!calendar) {
       throw new Error('Invalid LeetCode response');
     }
-    
+
     // Parse submission calendar (timestamps as keys)
     const submissionCalendar = JSON.parse(calendar.submissionCalendar || '{}');
     const activityDates = Object.keys(submissionCalendar).map(timestamp => {
       const date = new Date(parseInt(timestamp) * 1000);
       return formatDateToYYYYMMDD(date);
     });
-    
+
     return {
       dates: activityDates,
       totalActiveDays: calendar.totalActiveDays,
       platform: 'leetcode'
     };
-    
+
   } catch (error) {
     console.error('Error fetching LeetCode activity:', error);
     return null;
@@ -3381,32 +4072,32 @@ async function fetchCodeforcesActivity(username) {
         headers: { 'Accept': 'application/json' }
       }
     );
-    
+
     if (!response.ok) {
       throw new Error(`Codeforces API error: ${response.status}`);
     }
-    
+
     const data = await response.json();
-    
+
     if (data.status !== 'OK') {
       throw new Error('Invalid Codeforces response');
     }
-    
+
     // Filter accepted submissions and extract unique dates
     const acceptedSubmissions = data.result.filter(s => s.verdict === 'OK');
     const uniqueDates = new Set();
-    
+
     acceptedSubmissions.forEach(submission => {
       const date = new Date(submission.creationTimeSeconds * 1000);
       uniqueDates.add(formatDateToYYYYMMDD(date));
     });
-    
+
     return {
       dates: Array.from(uniqueDates),
       totalActiveDays: uniqueDates.size,
       platform: 'codeforces'
     };
-    
+
   } catch (error) {
     console.error('Error fetching Codeforces activity:', error);
     return null;
@@ -3422,27 +4113,27 @@ async function fetchCodeChefActivity(username) {
         headers: { 'Accept': 'application/json' }
       }
     );
-    
+
     if (!response.ok) {
       throw new Error(`CodeChef API error: ${response.status}`);
     }
-    
+
     const data = await response.json();
-    
+
     if (!data.heatmap) {
       throw new Error('Invalid CodeChef response');
     }
-    
+
     // Heatmap already has dates in YYYY-MM-DD format
     const activityDates = Object.keys(data.heatmap).filter(date => data.heatmap[date] > 0);
-    
+
     return {
       dates: activityDates,
       totalActiveDays: activityDates.length,
       platform: 'codechef',
       apiStreak: data.streak // Optional: API-provided streak for reference
     };
-    
+
   } catch (error) {
     console.error('Error fetching CodeChef activity:', error);
     return null;
@@ -3461,19 +4152,19 @@ function calculateUnifiedStreak(leetcodeData, codeforcesData, codechefData) {
     codeforces: 0,
     codechef: 0
   };
-  
+
   if (leetcodeData?.dates) {
     leetcodeData.dates.forEach(date => allDates.add(date));
   }
-  
+
   if (codeforcesData?.dates) {
     codeforcesData.dates.forEach(date => allDates.add(date));
   }
-  
+
   if (codechefData?.dates) {
     codechefData.dates.forEach(date => allDates.add(date));
   }
-  
+
   if (allDates.size === 0) {
     return {
       currentStreak: 0,
@@ -3483,10 +4174,10 @@ function calculateUnifiedStreak(leetcodeData, codeforcesData, codechefData) {
       platformBreakdown
     };
   }
-  
+
   // Sort dates chronologically
   const sortedDates = Array.from(allDates).sort();
-  
+
   // Calculate individual platform streaks (for breakdown)
   if (leetcodeData?.dates) {
     platformBreakdown.leetcode = calculateCurrentStreak(leetcodeData.dates.sort());
@@ -3497,13 +4188,13 @@ function calculateUnifiedStreak(leetcodeData, codeforcesData, codechefData) {
   if (codechefData?.dates) {
     platformBreakdown.codechef = calculateCurrentStreak(codechefData.dates.sort());
   }
-  
+
   // Calculate current streak from merged dates
   const currentStreak = calculateCurrentStreak(sortedDates);
-  
+
   // Calculate longest streak from merged dates
   const longestStreak = calculateLongestStreak(sortedDates);
-  
+
   return {
     currentStreak,
     longestStreak,
@@ -3515,22 +4206,22 @@ function calculateUnifiedStreak(leetcodeData, codeforcesData, codechefData) {
 
 function calculateCurrentStreak(sortedDates) {
   if (sortedDates.length === 0) return 0;
-  
+
   const today = getTodayDateString();
   const yesterday = getYesterdayDateString();
-  
+
   // Get most recent date
   const mostRecent = sortedDates[sortedDates.length - 1];
-  
+
   // Current streak only counts if last activity was today or yesterday
   if (mostRecent !== today && mostRecent !== yesterday) {
     return 0;
   }
-  
+
   // Count backwards from most recent date
   let streak = 0;
   let currentDate = mostRecent === today ? today : yesterday;
-  
+
   for (let i = sortedDates.length - 1; i >= 0; i--) {
     if (sortedDates[i] === currentDate) {
       streak++;
@@ -3540,23 +4231,23 @@ function calculateCurrentStreak(sortedDates) {
       break;
     }
   }
-  
+
   return streak;
 }
 
 function calculateLongestStreak(sortedDates) {
   if (sortedDates.length === 0) return 0;
-  
+
   let maxStreak = 1;
   let currentStreak = 1;
-  
+
   for (let i = 1; i < sortedDates.length; i++) {
     const prevDate = new Date(sortedDates[i - 1]);
     const currDate = new Date(sortedDates[i]);
-    
+
     // Check if dates are consecutive
     const diffDays = Math.floor((currDate - prevDate) / (1000 * 60 * 60 * 24));
-    
+
     if (diffDays === 1) {
       currentStreak++;
       maxStreak = Math.max(maxStreak, currentStreak);
@@ -3564,22 +4255,22 @@ function calculateLongestStreak(sortedDates) {
       currentStreak = 1;
     }
   }
-  
+
   return maxStreak;
 }
 
 // Send daily reminder notification
 async function sendStreakReminder() {
   const { streakData, notifyDaily } = await chrome.storage.local.get(['streakData', 'notifyDaily']);
-  
+
   // Check if user has enabled daily reminders (default true)
   if (notifyDaily === false) return;
   if (!streakData?.unified) return;
-  
+
   const today = getTodayDateString();
   const currentStreak = streakData.unified.currentStreak || 0;
   const lastActiveDate = streakData.unified.lastActiveDate;
-  
+
   // Only send reminder if user hasn't been active today
   if (lastActiveDate !== today) {
     let message;
@@ -3588,7 +4279,7 @@ async function sendStreakReminder() {
     } else {
       message = `🌟 Start a new streak today! Solve on LeetCode, Codeforces, or CodeChef.`;
     }
-    
+
     chrome.notifications.create('dailyReminder', {
       type: 'basic',
       iconUrl: chrome.runtime.getURL('assets/icon128.png'),
@@ -3641,12 +4332,12 @@ function getNextResetTime() {
   const now = new Date();
   const resetTime = new Date(now);
   resetTime.setHours(4, 0, 0, 0);
-  
+
   // If it's already past 4 AM today, schedule for tomorrow 4 AM
   if (resetTime <= now) {
     resetTime.setDate(resetTime.getDate() + 1);
   }
-  
+
   return resetTime.getTime();
 }
 
@@ -3655,12 +4346,12 @@ function getDailyReminderTime() {
   const now = new Date();
   const reminder = new Date(now);
   reminder.setHours(20, 0, 0, 0);
-  
+
   if (reminder <= now) {
     // If already past 8 PM today, schedule for tomorrow
     reminder.setDate(reminder.getDate() + 1);
   }
-  
+
   return reminder.getTime();
 }
 
@@ -3671,12 +4362,12 @@ function getDailyReminderTime() {
 async function getDailyStats() {
   const { dailyStats } = await chrome.storage.local.get('dailyStats');
   const today = getTodayDateString();
-  
+
   // If no stats or stats are from a different day, return fresh stats
   if (!dailyStats || dailyStats.date !== today) {
     return { date: today, count: 0, problems: [], apiSynced: false };
   }
-  
+
   return dailyStats;
 }
 
@@ -3684,21 +4375,21 @@ async function getDailyStats() {
 async function syncTodayCountFromAPIs() {
   const today = getTodayDateString();
   let { dailyStats } = await chrome.storage.local.get('dailyStats');
-  
+
   // Reset if from different day
   if (!dailyStats || dailyStats.date !== today) {
     dailyStats = { date: today, count: 0, problems: [], apiSynced: false };
   }
-  
+
   // Get usernames from settings
-  const { leetcodeUsername, codeforcesUsername, codechefUsername } = 
+  const { leetcodeUsername, codeforcesUsername, codechefUsername } =
     await chrome.storage.sync.get(['leetcodeUsername', 'codeforcesUsername', 'codechefUsername']);
-  
+
   if (!leetcodeUsername && !codeforcesUsername && !codechefUsername) {
     console.log('No usernames configured for API sync');
     return dailyStats;
   }
-  
+
   // Fetch today's solved problems from all platforms
   const results = await Promise.allSettled([
     leetcodeUsername ? fetchLeetCodeTodaySubmissions(leetcodeUsername) : Promise.resolve([]),
@@ -3707,31 +4398,31 @@ async function syncTodayCountFromAPIs() {
     }, 2000)), // 2 second delay for Codeforces rate limiting
     codechefUsername ? fetchCodeChefTodaySubmissions(codechefUsername) : Promise.resolve([])
   ]);
-  
+
   const leetcodeProblems = results[0].status === 'fulfilled' ? results[0].value : [];
   const codeforcesProblems = results[1].status === 'fulfilled' ? results[1].value : [];
   const codechefProblems = results[2].status === 'fulfilled' ? results[2].value : [];
-  
+
   // Combine all problems from all platforms
   const allTodayProblems = [
     ...leetcodeProblems,
     ...codeforcesProblems,
     ...codechefProblems
   ];
-  
+
   // Update daily stats with API data
   const existingProblems = new Set(dailyStats.problems || []);
   // Start count from existing problems size to ensure consistency
   // This fixes potential mismatch between count and problems array
   let newCount = existingProblems.size;
-  
+
   allTodayProblems.forEach(problemUrl => {
     if (!existingProblems.has(problemUrl)) {
       existingProblems.add(problemUrl);
       newCount++;
     }
   });
-  
+
   dailyStats = {
     date: today,
     count: newCount,
@@ -3739,10 +4430,10 @@ async function syncTodayCountFromAPIs() {
     apiSynced: true,
     lastApiSync: Date.now()
   };
-  
+
   await chrome.storage.local.set({ dailyStats });
   console.log('Today count synced from APIs:', newCount, 'problems');
-  
+
   return dailyStats;
 }
 
@@ -3759,7 +4450,7 @@ async function fetchLeetCodeTodaySubmissions(username) {
         }
       }
     `;
-    
+
     const response = await fetch('https://leetcode.com/graphql/', {
       method: 'POST',
       headers: {
@@ -3771,31 +4462,31 @@ async function fetchLeetCodeTodaySubmissions(username) {
         variables: { username, limit: 50 }
       })
     });
-    
+
     if (!response.ok) {
       throw new Error(`LeetCode API error: ${response.status}`);
     }
-    
+
     const data = await response.json();
     const submissions = data.data?.recentAcSubmissionList || [];
-    
+
     const today = getTodayDateString();
     const todayProblems = [];
-    
+
     submissions.forEach(submission => {
       const submissionDate = new Date(parseInt(submission.timestamp) * 1000);
       const submissionDateStr = formatDateToYYYYMMDD(submissionDate);
-      
+
       if (submissionDateStr === today) {
         // Create problem URL from titleSlug
         const problemUrl = `https://leetcode.com/problems/${submission.titleSlug}/`;
         todayProblems.push(problemUrl);
       }
     });
-    
+
     console.log('LeetCode today submissions:', todayProblems.length);
     return todayProblems;
-    
+
   } catch (error) {
     console.error('Error fetching LeetCode today submissions:', error);
     return [];
@@ -3812,26 +4503,26 @@ async function fetchCodeforcesTodaySubmissions(username) {
         headers: { 'Accept': 'application/json' }
       }
     );
-    
+
     if (!response.ok) {
       throw new Error(`Codeforces API error: ${response.status}`);
     }
-    
+
     const data = await response.json();
-    
+
     if (data.status !== 'OK') {
       throw new Error('Invalid Codeforces response');
     }
-    
+
     const today = getTodayDateString();
     const todayProblems = [];
-    
+
     // Filter accepted submissions from today
     data.result.forEach(submission => {
       if (submission.verdict === 'OK') {
         const submissionDate = new Date(submission.creationTimeSeconds * 1000);
         const submissionDateStr = formatDateToYYYYMMDD(submissionDate);
-        
+
         if (submissionDateStr === today) {
           // Create problem URL from contest and problem index
           const problemUrl = `https://codeforces.com/problemset/problem/${submission.problem.contestId}/${submission.problem.index}`;
@@ -3841,10 +4532,10 @@ async function fetchCodeforcesTodaySubmissions(username) {
         }
       }
     });
-    
+
     console.log('Codeforces today submissions:', todayProblems.length);
     return todayProblems;
-    
+
   } catch (error) {
     console.error('Error fetching Codeforces today submissions:', error);
     return [];
@@ -3862,18 +4553,18 @@ async function fetchCodeChefTodaySubmissions(username) {
         headers: { 'Accept': 'application/json' }
       }
     );
-    
+
     if (!response.ok) {
       throw new Error(`CodeChef API error: ${response.status}`);
     }
-    
+
     const data = await response.json();
-    
+
     // CodeChef API doesn't provide detailed submission history easily
     // We'll use a workaround: check if user has activity today via heatmap
     const today = getTodayDateString();
     const todayProblems = [];
-    
+
     if (data.heatmap && data.heatmap[today] && data.heatmap[today] > 0) {
       // User has activity today, but we can't get exact problem URLs from this API
       // We'll mark it as active but can't count specific problems
@@ -3881,9 +4572,9 @@ async function fetchCodeChefTodaySubmissions(username) {
       // In the future, could scrape the user's submission page
       console.log('CodeChef user has activity today, but exact problems not available from API');
     }
-    
+
     return todayProblems;
-    
+
   } catch (error) {
     console.error('Error fetching CodeChef today submissions:', error);
     return [];
@@ -3906,14 +4597,14 @@ async function setupDailyResetAlarm() {
 
 async function getFavorites() {
   const { authToken } = await chrome.storage.sync.get('authToken');
-  
+
   // If authenticated, try to get from backend first
   if (authToken) {
     try {
       const response = await fetch(`${API_BASE_URL}/favorites`, {
         headers: { 'Authorization': `Bearer ${authToken}` }
       });
-      
+
       if (response.ok) {
         const data = await response.json();
         // Sync to local storage for offline access
@@ -3927,7 +4618,7 @@ async function getFavorites() {
       console.log('LC Helper: Failed to fetch favorites from backend, using local:', error.message);
     }
   }
-  
+
   // Fallback to local storage
   const { favorites } = await chrome.storage.local.get('favorites');
   return favorites || [];
@@ -3935,10 +4626,10 @@ async function getFavorites() {
 
 async function addFavorite(problem) {
   const { authToken } = await chrome.storage.sync.get('authToken');
-  
+
   // Generate ID
   const id = `${problem.platform}_${generateCacheKey(problem.url)}`;
-  
+
   // If authenticated, save to backend
   if (authToken) {
     try {
@@ -3955,7 +4646,7 @@ async function addFavorite(problem) {
           difficulty: problem.difficulty
         })
       });
-      
+
       if (response.ok) {
         const data = await response.json();
         // Also save locally for offline access
@@ -3980,13 +4671,13 @@ async function addFavorite(problem) {
       console.log('LC Helper: Failed to save favorite to backend, saving locally:', error.message);
     }
   }
-  
+
   // Fallback to local storage
   const { favorites = [] } = await chrome.storage.local.get('favorites');
   if (favorites.some(f => f.id === id)) {
     return { success: false, error: 'Already in favorites' };
   }
-  
+
   const newFavorite = {
     id,
     url: problem.url,
@@ -3995,7 +4686,7 @@ async function addFavorite(problem) {
     difficulty: problem.difficulty || 'Unknown',
     addedAt: Date.now()
   };
-  
+
   favorites.push(newFavorite);
   await chrome.storage.local.set({ favorites });
   return { success: true, favorite: newFavorite };
@@ -4003,7 +4694,7 @@ async function addFavorite(problem) {
 
 async function removeFavorite(id) {
   const { authToken } = await chrome.storage.sync.get('authToken');
-  
+
   // If authenticated, remove from backend
   if (authToken) {
     try {
@@ -4011,7 +4702,7 @@ async function removeFavorite(id) {
         method: 'DELETE',
         headers: { 'Authorization': `Bearer ${authToken}` }
       });
-      
+
       if (response.ok || response.status === 404) {
         // Also remove from local
         const { favorites = [] } = await chrome.storage.local.get('favorites');
@@ -4026,7 +4717,7 @@ async function removeFavorite(id) {
       console.log('LC Helper: Failed to remove favorite from backend, removing locally:', error.message);
     }
   }
-  
+
   // Fallback to local storage
   const { favorites = [] } = await chrome.storage.local.get('favorites');
   const updated = favorites.filter(f => f.id !== id);
@@ -4036,14 +4727,14 @@ async function removeFavorite(id) {
 
 async function isFavorite(url) {
   const { authToken } = await chrome.storage.sync.get('authToken');
-  
+
   // If authenticated, check backend
   if (authToken) {
     try {
       const response = await fetch(`${API_BASE_URL}/favorites/check?url=${encodeURIComponent(url)}`, {
         headers: { 'Authorization': `Bearer ${authToken}` }
       });
-      
+
       if (response.ok) {
         const data = await response.json();
         return data.isFavorite;
@@ -4055,7 +4746,7 @@ async function isFavorite(url) {
       console.log('LC Helper: Failed to check favorite on backend, checking local:', error.message);
     }
   }
-  
+
   // Fallback to local storage
   const { favorites = [] } = await chrome.storage.local.get('favorites');
   return favorites.some(f => f.url === url);
@@ -4068,7 +4759,7 @@ async function isFavorite(url) {
 async function startProblemTimer(problem, tabId) {
   const timerKey = `timer_${generateCacheKey(problem.url)}`;
   const now = Date.now();
-  
+
   // Check if timer already exists for this problem
   const existing = await chrome.storage.local.get(timerKey);
   if (existing[timerKey]) {
@@ -4079,7 +4770,7 @@ async function startProblemTimer(problem, tabId) {
     }
     return { timer: existing[timerKey], isNew: false };
   }
-  
+
   const timerData = {
     url: problem.url,
     title: problem.title,
@@ -4088,23 +4779,23 @@ async function startProblemTimer(problem, tabId) {
     reminderSent: false,
     tabId: tabId || null
   };
-  
+
   await chrome.storage.local.set({ [timerKey]: timerData });
-  
+
   const cacheKey = generateCacheKey(problem.url);
-  
+
   // Set 30-minute alarm for reminder
   chrome.alarms.create(`timer_${cacheKey}`, {
     delayInMinutes: 30
   });
-  
+
   // Set 1-hour alarm to stop timer
   chrome.alarms.create(`timerStop_${cacheKey}`, {
     delayInMinutes: 60
   });
-  
+
   console.log('Timer started for:', problem.title);
-  
+
   return { timer: timerData, isNew: true };
 }
 
@@ -4119,11 +4810,11 @@ async function stopProblemTimer(url) {
   const cacheKey = generateCacheKey(url);
   const alarmName = `timer_${cacheKey}`;
   const stopAlarmName = `timerStop_${cacheKey}`;
-  
+
   await chrome.storage.local.remove(timerKey);
   chrome.alarms.clear(alarmName);
   chrome.alarms.clear(stopAlarmName);
-  
+
   console.log('Timer stopped for:', url);
 }
 
@@ -4132,25 +4823,25 @@ async function testTimerNotification(url) {
   const timerKey = `timer_${generateCacheKey(url)}`;
   const result = await chrome.storage.local.get(timerKey);
   const timerData = result[timerKey];
-  
+
   if (!timerData) {
     return { success: false, error: 'No active timer found for this problem. Please start a timer first.' };
   }
-  
+
   // Reset reminderSent flag so we can test the notification multiple times
   timerData.reminderSent = false;
   await chrome.storage.local.set({ [timerKey]: timerData });
-  
+
   // Manually trigger the notification
   await handleTimerAlarm(`timer_${generateCacheKey(url)}`);
-  
+
   // Also trigger the modal on the page
   try {
     const tabs = await chrome.tabs.query({ url: url });
     if (tabs.length > 0) {
       // Send message to content script to show modal
-      chrome.tabs.sendMessage(tabs[0].id, { 
-        type: 'TEST_TIMER_MODAL' 
+      chrome.tabs.sendMessage(tabs[0].id, {
+        type: 'TEST_TIMER_MODAL'
       }).catch(() => {
         // Tab might not have content script loaded yet
         console.log('LC Helper: Could not send modal message to tab');
@@ -4160,15 +4851,15 @@ async function testTimerNotification(url) {
       const urlPattern = url.split('?')[0] + '*';
       const matchingTabs = await chrome.tabs.query({ url: urlPattern });
       if (matchingTabs.length > 0) {
-        chrome.tabs.sendMessage(matchingTabs[0].id, { 
-          type: 'TEST_TIMER_MODAL' 
-        }).catch(() => {});
+        chrome.tabs.sendMessage(matchingTabs[0].id, {
+          type: 'TEST_TIMER_MODAL'
+        }).catch(() => { });
       }
     }
   } catch (e) {
     console.log('LC Helper: Could not trigger modal:', e.message);
   }
-  
+
   return { success: true, message: 'Notification and modal triggered successfully!' };
 }
 
@@ -4176,20 +4867,20 @@ async function testTimerNotification(url) {
 async function testScrapingAccuracy(problem) {
   try {
     const { key: apiKey, provider: apiProvider, error } = await getApiKeySafely();
-    
+
     if (error || !apiKey) {
-      return { 
-        success: false, 
-        error: error || 'API key not configured. Add your API key in settings to test scraping accuracy.' 
+      return {
+        success: false,
+        error: error || 'API key not configured. Add your API key in settings to test scraping accuracy.'
       };
     }
 
     const provider = apiProvider;
-    
+
 
     // Build the test prompt - ask LLM to convert scraped data to human-readable format
     let testPrompt;
-    
+
     if (problem.html) {
       testPrompt = `Convert the following Codeforces problem statement from HTML with LaTeX notation into a clean, human-readable format.
 
@@ -4257,7 +4948,7 @@ Return your response as a structured JSON object:
     }
 
     let llmResponse;
-    
+
     if (provider === 'gemini') {
       llmResponse = await testScrapingAccuracyGemini(problem, apiKey, testPrompt);
     } else {
@@ -4305,13 +4996,13 @@ Return your response as a structured JSON object:
 async function testScrapingAccuracyGemini(problem, apiKey, testPrompt) {
   try {
     const parts = [{ text: testPrompt }];
-    
+
     // Add image if available
     if (problem.hasImages && problem.imageData) {
       const matches = problem.imageData.match(/^data:([^;]+);base64,(.+)$/);
       const mimeType = matches ? matches[1] : 'image/jpeg';
       const base64Data = matches ? matches[2] : problem.imageData;
-      
+
       parts.push({
         inline_data: {
           mime_type: mimeType,
@@ -4341,13 +5032,13 @@ async function testScrapingAccuracyGemini(problem, apiKey, testPrompt) {
 
     const data = await response.json();
     const text = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
-    
+
     // Try to parse JSON from response
     const jsonMatch = text.match(/\{[\s\S]*\}/);
     if (jsonMatch) {
       return JSON.parse(jsonMatch[0]);
     }
-    
+
     // If no JSON found, return the text as-is
     return { rawResponse: text };
   } catch (error) {
@@ -4367,7 +5058,7 @@ async function submitFeedback(feedback) {
         storedAt: Date.now()
       }
     });
-    
+
     // Track feedback submission
     if (typeof LCAnalytics !== 'undefined') {
       LCAnalytics.trackEvent('feedback_received', {
@@ -4375,7 +5066,7 @@ async function submitFeedback(feedback) {
         has_email: !!feedback.email
       });
     }
-    
+
     // Optionally send to backend API
     // const { authToken } = await chrome.storage.sync.get('authToken');
     // if (authToken) {
@@ -4388,7 +5079,7 @@ async function submitFeedback(feedback) {
     //     body: JSON.stringify(feedback)
     //   });
     // }
-    
+
     console.log('LC Helper: Feedback submitted:', feedback.type);
     return { success: true };
   } catch (error) {
@@ -4406,7 +5097,7 @@ async function submitFeedback(feedback) {
 async function testScrapingAccuracyOpenAI(problem, apiKey, testPrompt) {
   try {
     const userContent = [{ type: 'text', text: testPrompt }];
-    
+
     // Add image if available
     if (problem.hasImages && problem.imageData) {
       userContent.push({
@@ -4441,13 +5132,13 @@ async function testScrapingAccuracyOpenAI(problem, apiKey, testPrompt) {
 
     const data = await response.json();
     const text = data.choices?.[0]?.message?.content || '';
-    
+
     // Try to parse JSON from response
     const jsonMatch = text.match(/\{[\s\S]*\}/);
     if (jsonMatch) {
       return JSON.parse(jsonMatch[0]);
     }
-    
+
     // If no JSON found, return the text as-is
     return { rawResponse: text };
   } catch (error) {

@@ -3,12 +3,26 @@ import express from 'express';
 import jwt from 'jsonwebtoken';
 import { User } from '../models/User.js';
 import { authenticateToken } from '../middleware/auth.js';
-import { standardRateLimiter } from '../middleware/rateLimiter.js';
+import rateLimit from 'express-rate-limit';
 
 const router = express.Router();
 
+// Light registration rate limiter (only prevents spam/DoS, not account farming)
+// Note: Multiple accounts don't matter since API requires paid subscription anyway
+// If users want multiple paying accounts, that's more revenue for us!
+const registrationRateLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 10, // 10 registrations per 15 minutes per IP (spam prevention only)
+  message: {
+    error: 'Too Many Requests',
+    message: 'Too many registration attempts. Please try again in 15 minutes.'
+  },
+  standardHeaders: true,
+  legacyHeaders: false
+});
+
 // Register new user
-router.post('/register', standardRateLimiter, async (req, res, next) => {
+router.post('/register', registrationRateLimiter, async (req, res, next) => {
   try {
     const { email, password } = req.body;
 
@@ -57,8 +71,20 @@ router.post('/register', standardRateLimiter, async (req, res, next) => {
   }
 });
 
+// Login rate limiter (prevents brute force)
+const loginRateLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 10, // 10 login attempts per 15 minutes per IP
+  message: {
+    error: 'Too Many Requests',
+    message: 'Too many login attempts. Please try again in 15 minutes.'
+  },
+  standardHeaders: true,
+  legacyHeaders: false
+});
+
 // Login
-router.post('/login', standardRateLimiter, async (req, res, next) => {
+router.post('/login', loginRateLimiter, async (req, res, next) => {
   try {
     const { email, password } = req.body;
 

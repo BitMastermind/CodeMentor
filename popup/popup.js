@@ -238,8 +238,11 @@ function clearApiKeyError() {
 }
 
 // Backend API Configuration
-// Update this to your production backend URL when deploying
-const API_BASE_URL = 'http://localhost:3000/api/v1'; // Change to https://api.lchelper.com/api/v1 for production
+// Set to 'production' when deploying, 'development' for local testing
+const API_ENV = 'development'; // Change to 'production' before launch
+const API_BASE_URL = API_ENV === 'production' 
+  ? 'https://api.lchelper.com/api/v1'
+  : 'http://localhost:3000/api/v1';
 
 // Authentication Functions
 async function login(email, password) {
@@ -376,7 +379,7 @@ async function getSubscriptionStatus() {
   }
 }
 
-async function createCheckoutSession(tier = 'premium') {
+async function createCheckoutSession(tier = 'premium', preferredGateway = 'auto') {
   try {
     const { authToken } = await chrome.storage.sync.get('authToken');
     if (!authToken) throw new Error('Not authenticated');
@@ -387,7 +390,7 @@ async function createCheckoutSession(tier = 'premium') {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${authToken}`
       },
-      body: JSON.stringify({ tier })
+      body: JSON.stringify({ tier, gateway: preferredGateway })
     });
     
     const data = await response.json();
@@ -395,9 +398,24 @@ async function createCheckoutSession(tier = 'premium') {
       throw new Error(data.message || 'Failed to create checkout session');
     }
     
-    // Open Stripe checkout
-    if (data.url) {
-      chrome.tabs.create({ url: data.url });
+    // Handle both Stripe and Razorpay checkout
+    const gateway = data.gateway || 'stripe';
+    
+    if (gateway === 'razorpay') {
+      // Razorpay: Use shortUrl or url to redirect to payment page
+      const paymentUrl = data.shortUrl || data.url;
+      if (paymentUrl) {
+        chrome.tabs.create({ url: paymentUrl });
+      } else {
+        throw new Error('Razorpay payment URL not provided');
+      }
+    } else {
+      // Stripe: Use standard checkout URL
+      if (data.url) {
+        chrome.tabs.create({ url: data.url });
+      } else {
+        throw new Error('Stripe checkout URL not provided');
+      }
     }
     
     return data;
@@ -620,20 +638,6 @@ function renderContests() {
   contestList.innerHTML = filteredContests.map(contest => {
     const countdown = getCountdown(contest.startTime);
     const countdownClass = countdown.hours < 1 ? 'live' : countdown.hours < 24 ? 'soon' : '';
-    
-    // Debug: Log timezone conversion for first contest (can be removed later)
-    if (filteredContests.indexOf(contest) === 0) {
-      const date = new Date(contest.startTime);
-      const userTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
-      console.log('LC Helper: Contest time conversion', {
-        contest: contest.name,
-        storedUTC: contest.startTime,
-        parsedDate: date.toISOString(),
-        userTimezone: userTimezone,
-        localTime: formatDate(contest.startTime),
-        utcTime: date.toUTCString()
-      });
-    }
 
     return `
       <div class="contest-card" data-url="${contest.url}">
@@ -785,7 +789,7 @@ function formatDate(dateStr) {
   
   try {
     // Parse the date string (should be ISO 8601 UTC format)
-    // JavaScript Date automatically converts UTC to local timezone
+    // When an ISO string ends with 'Z' or is in UTC, JavaScript Date correctly parses it as UTC
     const date = new Date(dateStr);
     
     // Validate the date
@@ -797,8 +801,9 @@ function formatDate(dateStr) {
     // Get user's timezone from browser
     const userTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
     
-    // Format date in user's local timezone
-    // timeZone option ensures it uses the user's actual timezone
+    // Create formatter that uses the user's local timezone
+    // The Date object represents a moment in UTC, and the formatter converts it to user's timezone
+    // No timeZoneName option - we just show the time without timezone label for cleaner UI
     const formatter = new Intl.DateTimeFormat('en-US', {
       weekday: 'short',
       month: 'short',
@@ -806,20 +811,11 @@ function formatDate(dateStr) {
       hour: '2-digit',
       minute: '2-digit',
       hour12: true,
-      timeZone: userTimezone // Explicitly use user's timezone (e.g., 'Asia/Kolkata' for India)
+      timeZone: userTimezone // Format according to user's actual timezone
     });
     
-    const formatted = formatter.format(date);
-    
-    // Debug log (can be removed in production)
-    // console.log('LC Helper: Date formatting:', {
-    //   input: dateStr,
-    //   parsed: date.toISOString(),
-    //   timezone: userTimezone,
-    //   formatted: formatted
-    // });
-    
-    return formatted;
+    // Format the date - this automatically converts from UTC to user's local timezone
+    return formatter.format(date);
   } catch (error) {
     console.error('LC Helper: Error formatting date:', dateStr, error);
     return 'Invalid Date';

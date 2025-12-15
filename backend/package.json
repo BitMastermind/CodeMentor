@@ -24,6 +24,7 @@
     "bcryptjs": "^2.4.3",
     "express-rate-limit": "^7.1.5",
     "stripe": "^14.7.0",
+    "razorpay": "^2.9.2",
     "sqlite3": "^5.1.6",
     "better-sqlite3": "^9.2.2",
     "helmet": "^7.1.0",
