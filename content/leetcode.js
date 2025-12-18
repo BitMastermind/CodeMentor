@@ -2011,6 +2011,12 @@
 
     let formatted = hint.trim();
 
+    // Convert literal \n strings to actual newlines (handles improperly escaped AI responses)
+    // Note: We don't replace \\\\ -> \\ as parseMarkdown handles math notation
+    formatted = formatted
+      .replace(/\\n/g, '\n')
+      .replace(/\\"/g, '"');
+
     // Remove redundant prefixes like "Hint 3:", "Implementation:", "Hint 3: Implementation:"
     formatted = formatted.replace(/^Hint\s+\d+\s*:?\s*/i, '');
     formatted = formatted.replace(/^Implementation\s*:?\s*/i, '');
@@ -2086,8 +2092,63 @@
   function parseMarkdown(text) {
     if (!text) return '';
 
+    let processedText = text;
+
+    // STEP 1: Extract LaTeX math FIRST (before any string replacements that might corrupt it)
+    const mathPlaceholders = [];
+
+    // Process display math blocks \[...\] (non-greedy match)
+    // Handle both single and double-escaped backslashes from JSON
+    processedText = processedText.replace(/\\{1,2}\[([\s\S]*?)\\{1,2}\]/g, function (match, content) {
+      const placeholder = `__MATH_DISPLAY_${mathPlaceholders.length}__`;
+      // Use KaTeX-style span for LeetCode (no MathJax)
+      mathPlaceholders.push(`<span class="lch-math-display">${escapeHtml(content.trim())}</span>`);
+      return placeholder;
+    });
+
+    // Process inline math \(...\) (non-greedy, handle newlines in content)
+    // Handle both single and double-escaped backslashes from JSON
+    processedText = processedText.replace(/\\{1,2}\(([\s\S]*?)\\{1,2}\)/g, function (match, content) {
+      const placeholder = `__MATH_INLINE_${mathPlaceholders.length}__`;
+      mathPlaceholders.push(`<span class="lch-math-inline">${escapeHtml(content)}</span>`);
+      return placeholder;
+    });
+
+    // Also handle $...$ and $$...$$ notation (common in AI responses)
+    // Display math: $$...$$
+    processedText = processedText.replace(/\$\$([\s\S]*?)\$\$/g, function (match, content) {
+      const placeholder = `__MATH_DISPLAY_${mathPlaceholders.length}__`;
+      mathPlaceholders.push(`<span class="lch-math-display">${escapeHtml(content.trim())}</span>`);
+      return placeholder;
+    });
+
+    // Inline math: $...$ (but not $$)
+    processedText = processedText.replace(/(?<!\$)\$(?!\$)([^\$\n]+?)(?<!\$)\$(?!\$)/g, function (match, content) {
+      const placeholder = `__MATH_INLINE_${mathPlaceholders.length}__`;
+      mathPlaceholders.push(`<span class="lch-math-inline">${escapeHtml(content)}</span>`);
+      return placeholder;
+    });
+
+    // STEP 2: Now convert literal \n strings to actual newlines (AFTER extracting math)
+    // This handles cases where AI returns escaped newlines that weren't properly unescaped
+    processedText = processedText
+      .replace(/\\n/g, '\n')  // Convert literal \n to actual newline
+      .replace(/\\"/g, '"');   // Convert escaped quotes
+    // Note: We don't replace \\\\ -> \\ anymore as it can corrupt math notation
+
     // First escape HTML to prevent XSS (but preserve structure)
-    let html = escapeHtml(text);
+    let html = escapeHtml(processedText);
+
+    // Restore math spans
+    mathPlaceholders.forEach((mathTag, index) => {
+      const displayPattern = `__MATH_DISPLAY_${index}__`;
+      const inlinePattern = `__MATH_INLINE_${index}__`;
+      if (html.includes(displayPattern)) {
+        html = html.replace(displayPattern, mathTag);
+      } else if (html.includes(inlinePattern)) {
+        html = html.replace(inlinePattern, mathTag);
+      }
+    });
 
     // Split into lines for better processing
     const lines = html.split('\n');
@@ -2104,6 +2165,30 @@
           processedLines.push('</p>');
           inParagraph = false;
         }
+        continue;
+      }
+
+      // Handle markdown headers (# syntax)
+      if (line.startsWith('### ')) {
+        if (inParagraph) {
+          processedLines.push('</p>');
+          inParagraph = false;
+        }
+        processedLines.push(`<h4 class="lch-explanation-section-header">${line.substring(4)}</h4>`);
+        continue;
+      } else if (line.startsWith('## ')) {
+        if (inParagraph) {
+          processedLines.push('</p>');
+          inParagraph = false;
+        }
+        processedLines.push(`<h4 class="lch-explanation-section-header">${line.substring(3)}</h4>`);
+        continue;
+      } else if (line.startsWith('# ')) {
+        if (inParagraph) {
+          processedLines.push('</p>');
+          inParagraph = false;
+        }
+        processedLines.push(`<h4 class="lch-explanation-section-header">${line.substring(2)}</h4>`);
         continue;
       }
 

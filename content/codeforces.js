@@ -2119,17 +2119,77 @@
   }
 
   // Format hint text professionally
+  // Format hint text professionally (matching LeetCode's implementation)
   function formatHint(hint, hintIndex) {
     if (!hint) return '';
 
-    // Parse markdown and escape HTML
-    let formatted = parseMarkdown(hint);
+    let formatted = hint.trim();
 
-    // Add visual indicators for different hint levels
-    const indicators = ['💡', '🔍', '🎯'];
-    const indicator = indicators[hintIndex] || '💡';
+    // Convert literal \n strings to actual newlines (handles improperly escaped AI responses)
+    // Note: We don't replace \\\\ -> \\ as parseMarkdown handles math notation
+    formatted = formatted
+      .replace(/\\n/g, '\n')
+      .replace(/\\"/g, '"');
 
-    return `<div class="lch-hint-text">${indicator} ${formatted}</div>`;
+    // Remove redundant prefixes like "Hint 3:", "Implementation:", "Hint 3: Implementation:"
+    formatted = formatted.replace(/^Hint\s+\d+\s*:?\s*/i, '');
+    formatted = formatted.replace(/^Implementation\s*:?\s*/i, '');
+    formatted = formatted.trim();
+
+    // Split by numbered list items (1), 2), 3), etc.)
+    // Pattern: number followed by ) and space, capturing everything until next number) or end
+    const listItemRegex = /(\d+\))\s+/g;
+    const matches = [];
+    let match;
+
+    while ((match = listItemRegex.exec(formatted)) !== null) {
+      matches.push({
+        index: match.index,
+        number: match[1],
+        length: match[0].length
+      });
+    }
+
+    // If we found numbered items, process them
+    if (matches.length >= 2) {
+      let htmlList = '<ol class="lch-hint-list">';
+      let lastItemEnd = 0;
+
+      for (let i = 0; i < matches.length; i++) {
+        const start = matches[i].index + matches[i].length;
+        const end = (i < matches.length - 1) ? matches[i + 1].index : formatted.length;
+        let itemText = formatted.substring(start, end).trim();
+        lastItemEnd = end;
+
+        // Clean up trailing periods/spaces
+        itemText = itemText.replace(/^[.\s]+|[.\s]+$/g, '');
+
+        if (itemText) {
+          // Parse markdown in list items
+          htmlList += `<li>${parseMarkdown(itemText)}</li>`;
+        }
+      }
+
+      htmlList += '</ol>';
+
+      // Check for edge cases or additional notes after the last item
+      const remainingText = formatted.substring(lastItemEnd).trim();
+
+      if (remainingText && !remainingText.match(/^\d+\)/)) {
+        // Check if it starts with "Edge cases" or "Edge case"
+        const edgeCaseMatch = remainingText.match(/^(Edge\s+cases?:?\s*)(.+)$/i);
+        if (edgeCaseMatch) {
+          htmlList += `<div class="lch-hint-edge-cases"><strong>Edge Cases:</strong> ${parseMarkdown(edgeCaseMatch[2])}</div>`;
+        } else {
+          htmlList += `<div class="lch-hint-note">${parseMarkdown(remainingText)}</div>`;
+        }
+      }
+
+      return htmlList;
+    }
+
+    // If not a numbered list, parse markdown and return
+    return parseMarkdown(formatted);
   }
 
   function escapeHtml(text) {
@@ -2142,37 +2202,63 @@
   function parseMarkdown(text) {
     if (!text) return '';
 
+    let processedText = text;
+
+    // STEP 1: Extract LaTeX math FIRST (before any string replacements that might corrupt it)
     // Process LaTeX notation - extract and replace with placeholders BEFORE escaping HTML
     // Convert \(...\) to inline math and \[...\] to display math
     // Use MathJax format that Codeforces already has loaded
     const mathPlaceholders = [];
-    let processedText = text;
 
     // Process display math blocks \[...\] (non-greedy match)
-    processedText = processedText.replace(/\\\[([\s\S]*?)\\\]/g, function (match, content) {
+    // Handle both single and double-escaped backslashes from JSON
+    processedText = processedText.replace(/\\{1,2}\[([\s\S]*?)\\{1,2}\]/g, function (match, content) {
       const placeholder = `__MATH_DISPLAY_${mathPlaceholders.length}__`;
       // Don't escape the LaTeX content - MathJax needs raw LaTeX
-      mathPlaceholders.push(`<script type="math/tex; mode=display">${content.trim()}</script>`);
+      mathPlaceholders.push(`<span class="lch-math-display"><script type="math/tex; mode=display">${content.trim()}</script></span>`);
       return placeholder;
     });
 
     // Process inline math \(...\) (non-greedy, handle newlines in content)
-    processedText = processedText.replace(/\\\(([\s\S]*?)\\\)/g, function (match, content) {
+    // Handle both single and double-escaped backslashes from JSON
+    processedText = processedText.replace(/\\{1,2}\(([\s\S]*?)\\{1,2}\)/g, function (match, content) {
       const placeholder = `__MATH_INLINE_${mathPlaceholders.length}__`;
       // Don't escape the LaTeX content - MathJax needs raw LaTeX
-      mathPlaceholders.push(`<script type="math/tex">${content}</script>`);
+      mathPlaceholders.push(`<span class="lch-math-inline"><script type="math/tex">${content}</script></span>`);
       return placeholder;
     });
 
-    // Now escape HTML (placeholders will be escaped, which is fine)
+    // Also handle $...$ and $$...$$ notation (common in AI responses)
+    // Display math: $$...$$
+    processedText = processedText.replace(/\$\$([\s\S]*?)\$\$/g, function (match, content) {
+      const placeholder = `__MATH_DISPLAY_${mathPlaceholders.length}__`;
+      mathPlaceholders.push(`<span class="lch-math-display"><script type="math/tex; mode=display">${content.trim()}</script></span>`);
+      return placeholder;
+    });
+
+    // Inline math: $...$ (but not $$)
+    processedText = processedText.replace(/(?<!\$)\$(?!\$)([^\$\n]+?)(?<!\$)\$(?!\$)/g, function (match, content) {
+      const placeholder = `__MATH_INLINE_${mathPlaceholders.length}__`;
+      mathPlaceholders.push(`<span class="lch-math-inline"><script type="math/tex">${content}</script></span>`);
+      return placeholder;
+    });
+
+    // STEP 2: Now convert literal \n strings to actual newlines (AFTER extracting LaTeX)
+    // This handles cases where AI returns escaped newlines that weren't properly unescaped
+    processedText = processedText
+      .replace(/\\n/g, '\n')  // Convert literal \n to actual newline
+      .replace(/\\"/g, '"');   // Convert escaped quotes
+    // Note: We don't replace \\\\ -> \\ anymore as it can corrupt LaTeX
+
+    // First escape HTML to prevent XSS (but preserve structure)
     let html = escapeHtml(processedText);
 
     // Restore MathJax script tags (unescaped, as they're proper HTML)
     mathPlaceholders.forEach((mathTag, index) => {
       // Replace the placeholder (which was escaped as regular text)
       // Try both display and inline placeholder patterns
-      const displayPattern = escapeHtml(`__MATH_DISPLAY_${index}__`);
-      const inlinePattern = escapeHtml(`__MATH_INLINE_${index}__`);
+      const displayPattern = `__MATH_DISPLAY_${index}__`;
+      const inlinePattern = `__MATH_INLINE_${index}__`;
       if (html.includes(displayPattern)) {
         html = html.replace(displayPattern, mathTag);
       } else if (html.includes(inlinePattern)) {
@@ -2186,86 +2272,73 @@
     let inParagraph = false;
 
     for (let i = 0; i < lines.length; i++) {
-      let line = lines[i].trim();
+      const line = lines[i].trim();
       const nextLine = i < lines.length - 1 ? lines[i + 1].trim() : '';
 
-      // Headers
+      // Skip empty lines (they'll create paragraph breaks)
+      if (!line) {
+        if (inParagraph) {
+          processedLines.push('</p>');
+          inParagraph = false;
+        }
+        continue;
+      }
+
+      // Handle markdown headers (# syntax)
       if (line.startsWith('### ')) {
         if (inParagraph) {
           processedLines.push('</p>');
           inParagraph = false;
         }
-        processedLines.push(`<h3>${line.substring(4)}</h3>`);
+        processedLines.push(`<h4 class="lch-explanation-section-header">${line.substring(4)}</h4>`);
         continue;
       } else if (line.startsWith('## ')) {
         if (inParagraph) {
           processedLines.push('</p>');
           inParagraph = false;
         }
-        processedLines.push(`<h2>${line.substring(3)}</h2>`);
+        processedLines.push(`<h4 class="lch-explanation-section-header">${line.substring(3)}</h4>`);
         continue;
       } else if (line.startsWith('# ')) {
         if (inParagraph) {
           processedLines.push('</p>');
           inParagraph = false;
         }
-        processedLines.push(`<h1>${line.substring(2)}</h1>`);
+        processedLines.push(`<h4 class="lch-explanation-section-header">${line.substring(2)}</h4>`);
         continue;
       }
 
-      // Code blocks
-      if (line.startsWith('```')) {
+      // Detect section headers (lines ending with ':' that are short and followed by content)
+      if (line.endsWith(':') && line.length < 60 && nextLine && !nextLine.startsWith('-') && !nextLine.match(/^\d+\./)) {
         if (inParagraph) {
           processedLines.push('</p>');
           inParagraph = false;
         }
-        const language = line.substring(3).trim();
-        let codeContent = '';
-        i++;
-        while (i < lines.length && !lines[i].trim().startsWith('```')) {
-          codeContent += lines[i] + '\n';
-          i++;
-        }
-        processedLines.push(`<pre><code class="language-${language}">${escapeHtml(codeContent.trim())}</code></pre>`);
+        // Format as section header
+        const headerText = line.slice(0, -1); // Remove the colon
+        processedLines.push(`<h4 class="lch-explanation-section-header">${headerText}</h4>`);
         continue;
       }
 
-      // Inline code
-      if (line.includes('`')) {
-        line = line.replace(/`([^`]+)`/g, '<code>$1</code>');
-      }
-
-      // Bold and italic
-      let processedLine = line
-        .replace(/\*\*\*(.+?)\*\*\*/g, '<strong><em>$1</em></strong>')
-        .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-        .replace(/\*(.+?)\*/g, '<em>$1</em>');
-
-      // Links
-      processedLine = processedLine.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank">$1</a>');
-
-      // Empty line - close paragraph if open
-      if (!processedLine) {
+      // Detect list items (lines starting with "- " or numbered)
+      if (line.match(/^[-•]\s+/) || line.match(/^\d+\.\s+/)) {
         if (inParagraph) {
           processedLines.push('</p>');
           inParagraph = false;
         }
+        const listContent = line.replace(/^[-•]\s+/, '').replace(/^\d+\.\s+/, '');
+        processedLines.push(`<li class="lch-explanation-list-item">${listContent}</li>`);
         continue;
       }
 
-      // Regular line - start paragraph if needed
+      // Regular paragraph content
       if (!inParagraph) {
-        processedLines.push('<p>');
+        processedLines.push('<p class="lch-explanation-paragraph">');
         inParagraph = true;
+      } else {
+        processedLines.push('<br>');
       }
-
-      processedLines.push(processedLine);
-
-      // Close paragraph if next line is empty or a header
-      if (!nextLine || nextLine.startsWith('#') || nextLine.startsWith('```')) {
-        processedLines.push('</p>');
-        inParagraph = false;
-      }
+      processedLines.push(line);
     }
 
     // Close any open paragraph
@@ -2273,7 +2346,30 @@
       processedLines.push('</p>');
     }
 
-    return processedLines.join('\n');
+    html = processedLines.join('');
+
+    // Now process markdown formatting within the HTML
+    // Convert **bold** to <strong> (handle nested cases)
+    html = html.replace(/\*\*([^*]+?)\*\*/g, '<strong class="lch-markdown-bold">$1</strong>');
+
+    // Convert *italic* to <em> (but not if it's part of **bold**)
+    html = html.replace(/(?<!\*)\*([^*\s][^*]*?[^*\s])\*(?!\*)/g, '<em class="lch-markdown-italic">$1</em>');
+
+    // Convert `code` to <code>
+    html = html.replace(/`([^`]+)`/g, '<code class="lch-markdown-code">$1</code>');
+
+    // Wrap consecutive list items in ul tags
+    // Replace patterns like: <li>...</li><li>...</li> with <ul><li>...</li><li>...</li></ul>
+    html = html.replace(/(<li class="lch-explanation-list-item">[\s\S]*?<\/li>(?:\s*<li class="lch-explanation-list-item">[\s\S]*?<\/li>)*)/g,
+      (match) => {
+        // Only wrap if not already wrapped
+        if (!match.includes('<ul')) {
+          return `<ul class="lch-explanation-list">${match}</ul>`;
+        }
+        return match;
+      });
+
+    return html;
   }
 
   function generateCacheKey(url) {
