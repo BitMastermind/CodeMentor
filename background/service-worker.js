@@ -27,16 +27,65 @@ chrome.runtime.onInstalled.addListener(async (details) => {
   await initializeStreakSystem();
 });
 
+// Handle browser startup - reinitialize alarms and sync streak data
+chrome.runtime.onStartup.addListener(async () => {
+  console.log('LC Helper: Browser started, reinitializing systems...');
+  
+  // Re-fetch contests on browser startup
+  fetchAndCacheContests();
+  
+  // Re-create the contest refresh alarm
+  chrome.alarms.create('refreshContests', { periodInMinutes: 360 });
+  
+  // Reinitialize the streak system (recreates alarms and syncs data)
+  await initializeStreakSystem();
+  
+  console.log('LC Helper: Browser startup initialization complete');
+});
+
 // Also initialize on service worker startup (in case it was sleeping)
 (async () => {
   console.log('Service worker starting...');
   await ensureStreakDataExists();
+  
+  // Check if streak alarms exist, if not recreate them
+  // This handles cases where alarms were lost (e.g., service worker terminated)
+  await ensureStreakAlarmsExist();
+  
   // Restore contest alarms if contests are already cached
   const { contests } = await chrome.storage.local.get('contests');
   if (contests && contests.length > 0) {
     await updateContestAlarms();
   }
 })();
+
+// Ensure streak-related alarms exist (called on service worker wakeup)
+async function ensureStreakAlarmsExist() {
+  try {
+    const alarms = await chrome.alarms.getAll();
+    const alarmNames = alarms.map(a => a.name);
+    
+    // Check for critical streak alarms
+    const requiredAlarms = ['unifiedStreakSync', 'dailyStreakReminder', 'dailyStatsReset', 'refreshTodayCount'];
+    const missingAlarms = requiredAlarms.filter(name => !alarmNames.includes(name));
+    
+    if (missingAlarms.length > 0) {
+      console.log('LC Helper: Missing alarms detected, reinitializing streak system:', missingAlarms);
+      await initializeStreakSystem();
+    } else {
+      // Alarms exist, but check if we should sync based on last sync time
+      const { lastSyncTime } = await chrome.storage.local.get('lastSyncTime');
+      const sixHoursAgo = Date.now() - (6 * 60 * 60 * 1000);
+      
+      if (!lastSyncTime || lastSyncTime < sixHoursAgo) {
+        console.log('LC Helper: Last sync was over 6 hours ago, syncing now...');
+        syncUnifiedStreak().catch(err => console.log('Auto sync failed:', err));
+      }
+    }
+  } catch (error) {
+    console.error('LC Helper: Error checking alarms:', error);
+  }
+}
 
 // Handle tab close - stop timer when tab is closed
 chrome.tabs.onRemoved.addListener(async (tabId) => {
@@ -284,8 +333,15 @@ async function handleMessage(message, sender, sendResponse) {
         break;
 
       case 'GET_STREAK_DATA':
-        const { streakData } = await chrome.storage.local.get('streakData');
+        const { streakData, lastSyncTime } = await chrome.storage.local.get(['streakData', 'lastSyncTime']);
         sendResponse({ streakData: streakData?.unified || {} });
+        
+        // Trigger background sync if data is stale (more than 1 hour old)
+        const oneHourAgo = Date.now() - (60 * 60 * 1000);
+        if (!lastSyncTime || lastSyncTime < oneHourAgo) {
+          console.log('LC Helper: Streak data is stale, triggering background sync...');
+          syncUnifiedStreak().catch(err => console.log('Background sync failed:', err));
+        }
         break;
 
       case 'REFRESH_UNIFIED_STREAK':
