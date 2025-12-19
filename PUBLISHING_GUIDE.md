@@ -25,7 +25,7 @@
 
 2. **Enable GitHub Pages:**
 
-   - Go to your GitHub repo: `https://github.com/BitMastermind/LC-Helper`
+   - Go to your GitHub repo: `https://github.com/BitMastermind/CodeMentor`
    - Click **Settings** → **Pages**
    - If you see "Upgrade or make this repository public":
      - Either make repo public (Settings → General → Danger Zone → Make public)
@@ -38,7 +38,7 @@
 3. **Wait 1-2 minutes**, then your privacy policy will be available at:
 
    ```
-   https://bitmastermind.github.io/LC-Helper/
+   https://bitmastermind.github.io/CodeMentor/
    ```
 
 4. ✅ **manifest.json already updated** with privacy policy URL (already done!)
@@ -58,12 +58,12 @@
 1. Use this URL directly:
 
    ```
-   https://raw.githubusercontent.com/BitMastermind/LC-Helper/main/PRIVACY_POLICY.md
+   https://raw.githubusercontent.com/BitMastermind/CodeMentor/main/PRIVACY_POLICY.md
    ```
 
 2. Update manifest.json:
    ```json
-   "privacy_policy": "https://raw.githubusercontent.com/BitMastermind/LC-Helper/main/PRIVACY_POLICY.md",
+   "privacy_policy": "https://raw.githubusercontent.com/BitMastermind/CodeMentor/main/PRIVACY_POLICY.md",
    ```
 
 **Note:** Chrome prefers HTML, but Markdown may work. Option A (GitHub Pages) is best long-term.
@@ -332,8 +332,8 @@ CodeMentor provides AI-powered coding hints, contest tracking, and streak manage
 
    **Additional Information:**
 
-   - **Website:** `https://github.com/BitMastermind/LC-Helper` (Your GitHub repo URL)
-   - **Support URL:** `https://github.com/BitMastermind/LC-Helper/issues` (GitHub issues URL - users can report bugs and request features here)
+   - **Website:** `https://github.com/BitMastermind/CodeMentor` (Your GitHub repo URL)
+   - **Support URL:** `https://github.com/BitMastermind/CodeMentor/issues` (GitHub issues URL - users can report bugs and request features here)
 
 6. **Review and Submit:**
    - Review all information
@@ -449,7 +449,7 @@ Before submitting, verify:
 
 - **Chrome Web Store Developer Dashboard:** https://chrome.google.com/webstore/devconsole
 - **Chrome Web Store Policies:** https://developer.chrome.com/docs/webstore/program-policies/
-- **GitHub Repository:** https://github.com/BitMastermind/LC-Helper
+- **GitHub Repository:** https://github.com/BitMastermind/CodeMentor
 - **Privacy Policy:** (Add your URL after Step 1)
 
 ---

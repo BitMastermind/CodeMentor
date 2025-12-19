@@ -2,7 +2,7 @@
 
 > Your AI-powered coding companion for LeetCode, Codeforces & CodeChef
 
-[![Version](https://img.shields.io/badge/version-1.0.0-blue.svg)](https://github.com/BitMastermind/LC-Helper)
+[![Version](https://img.shields.io/badge/version-1.0.0-blue.svg)](https://github.com/BitMastermind/CodeMentor)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Chrome Web Store](https://img.shields.io/badge/chrome-web%20store-brightgreen.svg)](https://chrome.google.com/webstore)
 

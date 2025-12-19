@@ -6258,7 +6258,7 @@ async function submitFeedback(feedback) {
     }
 
     // Generate GitHub Issues URL with pre-filled feedback
-    const githubRepo = 'BitMastermind/LC-Helper';
+    const githubRepo = 'BitMastermind/CodeMentor';
     const issueTitle = encodeURIComponent(
       `[${feedback.type === 'bug' ? 'Bug' : feedback.type === 'feature' ? 'Feature Request' : feedback.type === 'improvement' ? 'Improvement' : 'Feedback'}] ${feedback.message.substring(0, 50)}${feedback.message.length > 50 ? '...' : ''}`
     );
