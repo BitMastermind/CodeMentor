@@ -22,6 +22,8 @@ zip -r "$ZIP_NAME" . \
     -x "*.git*" \
     -x "*.DS_Store" \
     -x "node_modules/*" \
+    -x "venv/*" \
+    -x ".cursorrules" \
     -x "CHROME_STORE_READINESS_REPORT.md" \
     -x "STORE_READINESS.md" \
     -x "VALUE_PROPOSITION_ANALYSIS.md" \
@@ -29,7 +31,7 @@ zip -r "$ZIP_NAME" . \
     -x "CODEFORCES_BLOG_POST.md" \
     -x "SCREENSHOT_GUIDE.md" \
     -x "package-extension.sh" \
-    -x "*.md" \
+    -x "README.md" \
     -x ".cursor/*" \
     -x "prompt-examples/*" \
     -x "test-reminders.*" \

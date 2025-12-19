@@ -59,7 +59,6 @@
     "48": "assets/icon48.png",
     "128": "assets/icon128.png"
   },
-  "privacy_policy": "https://bitmastermind.github.io/CodeMentor/",
   "browser_specific_settings": {
     "safari": {
       "strict_min_version": "15.4"

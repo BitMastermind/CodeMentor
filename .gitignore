@@ -1,1 +1,8 @@
 .cursorrules
+
+# Ignore all .md files except README.md
+*.md
+!README.md
+
+# Ignore .zip files
+*.zip
