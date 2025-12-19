@@ -15,26 +15,32 @@ Tired of getting stuck on problems? CodeMentor gives you **progressive hints** t
 ## Features
 
 ### 🤖 Smart AI Hints
+
 Get three levels of hints that progressively guide you:
+
 - **Gentle Push** → **Stronger Nudge** → **Almost There**
 - Works with OpenAI, Gemini, Claude, and more
 - Automatically analyzes problem topics and complexity
 
 ### 📊 Contest Tracking
+
 - Track contests from LeetCode, Codeforces, and CodeChef
 - Get notified before contests start
 - Filter by platform and see countdown timers
 
 ### 🔥 Streak Management
+
 - Unified streak across all platforms
 - Auto-syncs with your activity
 - Motivational messages and progress tracking
 
 ### ⏱️ Problem Timer
+
 - Automatic timer when you open a problem
 - Get reminders if you're stuck for 30+ minutes
 
 ### ❤️ Favorites
+
 Save problems for later practice and access them quickly from the extension popup.
 
 ## Quick Start
@@ -46,7 +52,7 @@ Save problems for later practice and access them quickly from the extension popu
 ## Supported Platforms
 
 - ✅ LeetCode
-- ✅ Codeforces  
+- ✅ Codeforces
 - ✅ CodeChef
 
 ## Privacy First
@@ -56,7 +62,7 @@ Save problems for later practice and access them quickly from the extension popu
 - No data sent to our servers (we don't have any!)
 - Full GDPR and CCPA compliant
 
-[Read our Privacy Policy](https://bitmastermind.github.io/LC-Helper/)
+[Read our Privacy Policy](https://bitmastermind.github.io/CodeMentor/)
 
 ## Installation from Source
 
