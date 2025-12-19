@@ -1,4 +1,4 @@
-// LC Helper - Analytics with Google Analytics 4
+// CodeMentor - Analytics with Google Analytics 4
 // Privacy-friendly analytics implementation
 
 (function() {
@@ -91,11 +91,11 @@
           'Content-Type': 'application/json'
         }
       }).catch(err => {
-        console.log('LC Helper: Analytics request failed (non-blocking):', err);
+        console.log('CodeMentor: Analytics request failed (non-blocking):', err);
       });
     } catch (error) {
       // Silently fail - analytics should never break the extension
-      console.log('LC Helper: Analytics error (non-blocking):', error);
+      console.log('CodeMentor: Analytics error (non-blocking):', error);
     }
   }
 
@@ -209,7 +209,7 @@
   async function setEnabled(enabled) {
     await chrome.storage.sync.set({ analyticsEnabled: enabled });
     if (enabled && !GA4_ENABLED) {
-      console.log('LC Helper: Analytics is disabled in code. Set GA4_MEASUREMENT_ID to enable.');
+      console.log('CodeMentor: Analytics is disabled in code. Set GA4_MEASUREMENT_ID to enable.');
     }
   }
 

@@ -1,4 +1,4 @@
-// LC Helper - LeetCode Content Script
+// CodeMentor - LeetCode Content Script
 
 (function () {
   'use strict';
@@ -342,14 +342,14 @@
         <path d="M13 2L3 14h8l-1 8 10-12h-8l1-8z"/>
       </svg>
     `;
-    fab.title = 'LC Helper - Get Hints';
-    fab.setAttribute('aria-label', 'LC Helper - Get Hints');
+    fab.title = 'CodeMentor - Get Hints';
+    fab.setAttribute('aria-label', 'CodeMentor - Get Hints');
     fab.addEventListener('click', togglePanel);
 
     try {
       document.body.appendChild(fab);
     } catch (e) {
-      console.log('LC Helper: Failed to append FAB:', e);
+      console.log('CodeMentor: Failed to append FAB:', e);
       // Retry after a delay
       setTimeout(createFAB, 200);
     }
@@ -364,7 +364,7 @@
       <div class="lch-panel-header">
         <div class="lch-panel-header-top">
           <div>
-            <h3 class="lch-panel-title">LC Helper</h3>
+            <h3 class="lch-panel-title">CodeMentor</h3>
             <p class="lch-panel-subtitle">Smart hints & topic analysis</p>
           </div>
           <div class="lch-timer-badge">
@@ -520,17 +520,17 @@
 
   async function loadHints(forceRefresh = false) {
     if (!isExtensionContextValid()) {
-      console.log('[LC Helper] loadHints: Extension context invalidated');
+      console.log('[CodeMentor] loadHints: Extension context invalidated');
       showError('Extension was reloaded. Please refresh the page.');
       return;
     }
 
     try {
-      console.log('[LC Helper] loadHints: Starting hint generation');
+      console.log('[CodeMentor] loadHints: Starting hint generation');
       const { apiKey } = await chrome.storage.sync.get('apiKey');
 
       if (!apiKey) {
-        console.log('[LC Helper] loadHints: No API key configured');
+        console.log('[CodeMentor] loadHints: No API key configured');
         showSettingsPrompt();
         return;
       }
@@ -538,11 +538,11 @@
       isLoading = true;
       showLoading();
 
-      console.log('[LC Helper] loadHints: Extracting problem data...');
+      console.log('[CodeMentor] loadHints: Extracting problem data...');
       const problem = await extractProblemData();
 
       if (!problem.title || !problem.description) {
-        console.log('LC Helper: Failed to extract problem data (GET_HINTS)');
+        console.log('CodeMentor: Failed to extract problem data (GET_HINTS)');
         console.log('Problem object:', problem);
         showError('Could not extract problem data. Please refresh the page and try again.');
         isLoading = false;
@@ -566,17 +566,17 @@
       });
 
       if (!response) {
-        console.log('[LC Helper] loadHints: No response from background script');
+        console.log('[CodeMentor] loadHints: No response from background script');
         showError('Extension was reloaded. Please refresh the page.');
       } else if (response.error) {
-        console.log('[LC Helper] loadHints: Error from background script:', response.error);
+        console.log('[CodeMentor] loadHints: Error from background script:', response.error);
         showError(response.error);
       } else {
-        console.log('[LC Helper] loadHints: Successfully received hints');
+        console.log('[CodeMentor] loadHints: Successfully received hints');
         await showHints(response);
       }
     } catch (error) {
-      console.log('[LC Helper] loadHints: Exception occurred:', error);
+      console.log('[CodeMentor] loadHints: Exception occurred:', error);
       if (typeof LCHErrorTracking !== 'undefined') {
         LCHErrorTracking.trackError(error, {
           tags: { type: 'hint_loading', platform: 'leetcode' }
@@ -593,17 +593,17 @@
 
   async function explainProblem(forceRefresh = false) {
     if (!isExtensionContextValid()) {
-      console.log('[LC Helper] explainProblem: Extension context invalidated');
+      console.log('[CodeMentor] explainProblem: Extension context invalidated');
       showError('Extension was reloaded. Please refresh the page.');
       return;
     }
 
     try {
-      console.log('[LC Helper] explainProblem: Starting problem explanation');
+      console.log('[CodeMentor] explainProblem: Starting problem explanation');
       const { apiKey } = await chrome.storage.sync.get('apiKey');
 
       if (!apiKey) {
-        console.log('[LC Helper] explainProblem: No API key configured');
+        console.log('[CodeMentor] explainProblem: No API key configured');
         showSettingsPrompt();
         return;
       }
@@ -611,11 +611,11 @@
       isLoading = true;
       showLoading();
 
-      console.log('[LC Helper] explainProblem: Extracting problem data...');
+      console.log('[CodeMentor] explainProblem: Extracting problem data...');
       const problem = await extractProblemData();
 
       if (!problem.title || !problem.description) {
-        console.log('LC Helper: Failed to extract problem data (EXPLAIN_PROBLEM)');
+        console.log('CodeMentor: Failed to extract problem data (EXPLAIN_PROBLEM)');
         console.log('Problem object:', problem);
         showError('Could not extract problem data. Please refresh the page and try again.');
         isLoading = false;
@@ -641,17 +641,17 @@
       });
 
       if (!response) {
-        console.log('[LC Helper] explainProblem: No response from background script');
+        console.log('[CodeMentor] explainProblem: No response from background script');
         showError('Extension was reloaded. Please refresh the page.');
       } else if (response.error) {
-        console.log('[LC Helper] explainProblem: Error from background script:', response.error);
+        console.log('[CodeMentor] explainProblem: Error from background script:', response.error);
         showError(response.error);
       } else {
-        console.log('[LC Helper] explainProblem: Successfully received explanation');
+        console.log('[CodeMentor] explainProblem: Successfully received explanation');
         showExplanation(response);
       }
     } catch (error) {
-      console.log('[LC Helper] explainProblem: Exception occurred:', error);
+      console.log('[CodeMentor] explainProblem: Exception occurred:', error);
       showError(error.message || 'An error occurred. Please refresh the page.');
     }
 
@@ -815,7 +815,7 @@
         };
       }).filter(img => img.url && img.url.length > 0); // Filter out empty URLs
     } catch (e) {
-      console.log('[LC Helper] extractImagesFromHTML: Error parsing HTML:', e);
+      console.log('[CodeMentor] extractImagesFromHTML: Error parsing HTML:', e);
       return [];
     }
   }
@@ -865,14 +865,14 @@
       });
 
       if (!response.ok) {
-        console.log('[LC Helper] fetchProblemFromGraphQL: API request failed with status:', response.status);
+        console.log('[CodeMentor] fetchProblemFromGraphQL: API request failed with status:', response.status);
         return null;
       }
 
       const data = await response.json();
 
       if (data.errors || !data.data || !data.data.question) {
-        console.log('[LC Helper] fetchProblemFromGraphQL: API returned error or no question data:', data.errors || 'No question data');
+        console.log('[CodeMentor] fetchProblemFromGraphQL: API returned error or no question data:', data.errors || 'No question data');
         return null;
       }
 
@@ -984,7 +984,7 @@
         hasImages: imageUrls.length > 0 // Boolean flag for easy checking
       };
     } catch (error) {
-      console.log('[LC Helper] fetchProblemFromGraphQL: Exception occurred:', error);
+      console.log('[CodeMentor] fetchProblemFromGraphQL: Exception occurred:', error);
       return null;
     }
   }
@@ -1123,7 +1123,7 @@
         minContentLength: 100 // Ensure it has actual content, not just empty element
       });
     } catch (error) {
-      console.log('[LC Helper] waitForLeetCodeContent: Content not fully loaded, proceeding anyway:', error.message);
+      console.log('[CodeMentor] waitForLeetCodeContent: Content not fully loaded, proceeding anyway:', error.message);
       // Don't throw - allow extraction to proceed with whatever is available
     }
   }
@@ -1137,14 +1137,14 @@
         if (apiData && apiData.title && apiData.description) {
           return apiData;
         } else {
-          console.log('[LC Helper] extractProblemData: GraphQL API returned incomplete data');
+          console.log('[CodeMentor] extractProblemData: GraphQL API returned incomplete data');
         }
       } else {
-        console.log('[LC Helper] extractProblemData: Could not parse title slug from URL:', window.location.href);
+        console.log('[CodeMentor] extractProblemData: Could not parse title slug from URL:', window.location.href);
       }
 
       // Method 2: Fallback to DOM scraping with enhanced waiting
-      console.log('[LC Helper] extractProblemData: Falling back to DOM scraping...');
+      console.log('[CodeMentor] extractProblemData: Falling back to DOM scraping...');
       await waitForLeetCodeContent();
 
       // Additional wait for slow networks (with exponential backoff)
@@ -1170,27 +1170,27 @@
 
       // Debug: Log what we found
       if (!domData.title || !domData.description) {
-        console.log('[LC Helper] extractProblemData: DOM scraping failed - Title found:', !!domData.title, 'Description found:', !!domData.description);
-        console.log('[LC Helper] extractProblemData: Title value:', domData.title?.substring(0, 50) || 'empty');
-        console.log('[LC Helper] extractProblemData: Description length:', domData.description?.length || 0);
-        console.log('[LC Helper] extractProblemData: Current URL:', window.location.href);
-        console.log('[LC Helper] extractProblemData: Page ready state:', document.readyState);
+        console.log('[CodeMentor] extractProblemData: DOM scraping failed - Title found:', !!domData.title, 'Description found:', !!domData.description);
+        console.log('[CodeMentor] extractProblemData: Title value:', domData.title?.substring(0, 50) || 'empty');
+        console.log('[CodeMentor] extractProblemData: Description length:', domData.description?.length || 0);
+        console.log('[CodeMentor] extractProblemData: Current URL:', window.location.href);
+        console.log('[CodeMentor] extractProblemData: Page ready state:', document.readyState);
 
         // Try one more time with additional wait
-        console.log('[LC Helper] extractProblemData: Retrying DOM scraping after 1 second...');
+        console.log('[CodeMentor] extractProblemData: Retrying DOM scraping after 1 second...');
         await new Promise(resolve => setTimeout(resolve, 1000));
         const retryData = await scrapeLeetCodeDOM();
         if (retryData.title && retryData.description) {
           return retryData;
         } else {
-          console.log('[LC Helper] extractProblemData: Retry also failed');
+          console.log('[CodeMentor] extractProblemData: Retry also failed');
         }
       }
 
       return domData;
     } catch (error) {
-      console.log('[LC Helper] extractProblemData: Exception occurred:', error);
-      console.log('[LC Helper] extractProblemData: Stack trace:', error.stack);
+      console.log('[CodeMentor] extractProblemData: Exception occurred:', error);
+      console.log('[CodeMentor] extractProblemData: Stack trace:', error.stack);
       // Return empty object structure so calling code can handle it
       return {
         title: '',
@@ -1279,7 +1279,7 @@
     }
 
     if (!descriptionEl) {
-      console.log('[LC Helper] scrapeLeetCodeDOM: Description element not found');
+      console.log('[CodeMentor] scrapeLeetCodeDOM: Description element not found');
       return {
         title: title,
         description: '',
@@ -1432,7 +1432,7 @@
       // Apply final compression
       const cleanHtml = getCleanTextContent(clone);
 
-      console.log(`[LC Helper] HTML Reduction: ${originalLength} chars -> ${cleanHtml.length} chars (-${Math.round((1 - cleanHtml.length / originalLength) * 100)}%)`);
+      console.log(`[CodeMentor] HTML Reduction: ${originalLength} chars -> ${cleanHtml.length} chars (-${Math.round((1 - cleanHtml.length / originalLength) * 100)}%)`);
 
       return cleanHtml;
     }
@@ -1480,7 +1480,7 @@
     };
 
     // Log extracted data
-    console.log('[LC Helper] scrapeLeetCodeDOM: HTML-based extraction');
+    console.log('[CodeMentor] scrapeLeetCodeDOM: HTML-based extraction');
     console.log('📌 Title:', baseData.title);
     console.log('📊 Difficulty:', baseData.difficulty);
     console.log('🏷️ Tags:', baseData.tags || 'None found');
@@ -1508,7 +1508,7 @@
           imageData: optimizedImage // Base64 encoded image
         };
       } catch (error) {
-        console.error('LC Helper: Failed to capture image from LeetCode:', error);
+        console.error('CodeMentor: Failed to capture image from LeetCode:', error);
       }
     }
 
@@ -1613,24 +1613,29 @@
     body.innerHTML = `
       <div class="lch-settings-prompt">
         <div class="lch-settings-icon">🔑</div>
+        <h3 class="lch-settings-title">API Key Required</h3>
         <p class="lch-settings-message">
-          Smart hints require an API key. You can configure it by clicking the extension icon in your browser toolbar and navigating to the Settings tab.
+          To use CodeMentor, please configure your API key in the extension settings.
         </p>
+        <p class="lch-settings-suggestion">
+          💡 Open settings on extension icon → Settings tab
+        </p>
+        <div class="lch-settings-actions">
+          <button class="lch-settings-back-btn" id="backBtn">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+              <path d="M19 12H5M12 19l-7-7 7-7" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+            Back to Hints
+          </button>
+        </div>
       </div>
-      ${currentProblemData ? `
-      <div class="lch-actions-section">
-        <button class="lch-favorite-btn ${isFavorite ? 'active' : ''}" id="favoriteBtn">
-          ❤️
-        </button>
-      </div>
-      ` : ''}
     `;
 
-    // Add favorite button handler if button exists
-    const favoriteBtn = body.querySelector('#favoriteBtn');
-    if (favoriteBtn) {
-      favoriteBtn.addEventListener('click', async () => {
-        await toggleFavorite(favoriteBtn);
+    // Add event listeners
+    const backBtn = body.querySelector('#backBtn');
+    if (backBtn) {
+      backBtn.addEventListener('click', async () => {
+        await showQuickActions();
       });
     }
   }
@@ -1731,7 +1736,7 @@
             }
           } catch (e) {
             // If all parsing fails, use as is
-            console.log('[LC Helper] Explanation is not JSON, using as markdown:', e.message);
+            console.log('[CodeMentor] Explanation is not JSON, using as markdown:', e.message);
           }
         }
       }
@@ -1941,30 +1946,65 @@
 
   // Toggle favorite status
   async function toggleFavorite(btn) {
-    if (!isExtensionContextValid() || !currentProblemData) return;
+    if (!isExtensionContextValid()) return;
+
+    // Ensure currentProblemData is set
+    if (!currentProblemData) {
+      try {
+        const problemData = await extractProblemData();
+        if (problemData.title) {
+          currentProblemData = {
+            url: window.location.href,
+            title: problemData.title,
+            platform: 'leetcode',
+            difficulty: problemData.difficulty
+          };
+        }
+      } catch (e) {
+        console.error('CodeMentor: Could not extract problem data for favorite:', e.message);
+        return;
+      }
+    }
+
+    if (!currentProblemData) {
+      console.error('CodeMentor: No problem data available for favorite');
+      return;
+    }
 
     const isCurrentlyFavorite = btn.classList.contains('active');
 
     try {
       if (isCurrentlyFavorite) {
         // Remove from favorites
-        const id = `leetcode_${generateCacheKey(currentProblemData.url)}`;
+        const id = `${currentProblemData.platform}_${generateCacheKey(currentProblemData.url)}`;
         const response = await safeSendMessage({ type: 'REMOVE_FAVORITE', id });
         if (response && response.success) {
           btn.classList.remove('active');
+          btn.innerHTML = '🤍';
+        } else if (response && response.error) {
+          // Try URL-based removal as fallback (ID might not match due to URL variations)
+          const urlResponse = await safeSendMessage({ type: 'REMOVE_FAVORITE_BY_URL', url: currentProblemData.url });
+          if (urlResponse && urlResponse.success) {
+            btn.classList.remove('active');
+            btn.innerHTML = '🤍';
+          } else {
+            // Only log error if both methods failed
+            console.error('CodeMentor: Failed to remove favorite:', response.error);
+          }
         }
       } else {
         // Add to favorites
         const response = await safeSendMessage({ type: 'ADD_FAVORITE', problem: currentProblemData });
         if (response && response.success) {
           btn.classList.add('active');
+          btn.innerHTML = '❤️';
         } else if (response && response.error) {
           // Show error message for limit exceeded or other errors
           alert(response.error);
         }
       }
     } catch (e) {
-      console.error('LC Helper: Error toggling favorite:', e);
+      console.error('CodeMentor: Error toggling favorite:', e);
     }
   }
 
@@ -2086,6 +2126,320 @@
     return div.innerHTML;
   }
 
+  // Convert LaTeX math notation to readable HTML
+  // This handles both formal LaTeX (\leq) and shorthand (\le) variants
+  function convertMathToHtml(content) {
+    if (!content) return '';
+    
+    let result = content
+      // Handle subscripts: x_i, x_{abc}
+      .replace(/([a-zA-Z])_\{([^}]+)\}/g, '$1<sub>$2</sub>')
+      .replace(/([a-zA-Z])_([a-zA-Z0-9])/g, '$1<sub>$2</sub>')
+      // Handle superscripts: 10^5, x^{abc}, n^2 - BEFORE other replacements
+      .replace(/(\d+)\^\{([^}]+)\}/g, '$1<sup>$2</sup>')
+      .replace(/([a-zA-Z0-9])\^\{([^}]+)\}/g, '$1<sup>$2</sup>')
+      .replace(/(\d+)\^(\d+)/g, '$1<sup>$2</sup>')
+      .replace(/([a-zA-Z])\^([a-zA-Z0-9])/g, '$1<sup>$2</sup>')
+      // Handle common LaTeX comparison commands (BOTH full and shorthand forms)
+      .replace(/\\leq/g, '≤')
+      .replace(/\\le(?![a-z])/g, '≤')  // \le but not \left, \leftarrow, etc.
+      .replace(/\\geq/g, '≥')
+      .replace(/\\ge(?![a-z])/g, '≥')  // \ge but not \get, etc.
+      .replace(/\\neq/g, '≠')
+      .replace(/\\ne(?![a-z])/g, '≠')  // \ne shorthand
+      .replace(/\\approx/g, '≈')
+      .replace(/\\sim/g, '~')
+      .replace(/\\equiv/g, '≡')
+      // Handle arithmetic
+      .replace(/\\times/g, '×')
+      .replace(/\\cdot/g, '·')
+      .replace(/\\div/g, '÷')
+      .replace(/\\pm/g, '±')
+      .replace(/\\mp/g, '∓')
+      .replace(/\\infty/g, '∞')
+      .replace(/\\sum/g, 'Σ')
+      .replace(/\\prod/g, '∏')
+      .replace(/\\sqrt\{([^}]+)\}/g, '√($1)')
+      .replace(/\\sqrt/g, '√')
+      .replace(/\\frac\{([^}]+)\}\{([^}]+)\}/g, '($1/$2)')
+      .replace(/\\left/g, '')
+      .replace(/\\right/g, '')
+      .replace(/\\text\{([^}]+)\}/g, '$1')
+      .replace(/\\texttt\{([^}]+)\}/g, '$1')
+      .replace(/\\mathrm\{([^}]+)\}/g, '$1')
+      .replace(/\\mathbf\{([^}]+)\}/g, '<strong>$1</strong>')
+      .replace(/\\mathit\{([^}]+)\}/g, '<em>$1</em>')
+      // Handle common functions
+      .replace(/\\log/g, 'log')
+      .replace(/\\ln/g, 'ln')
+      .replace(/\\sin/g, 'sin')
+      .replace(/\\cos/g, 'cos')
+      .replace(/\\tan/g, 'tan')
+      .replace(/\\min/g, 'min')
+      .replace(/\\max/g, 'max')
+      .replace(/\\mod/g, 'mod')
+      .replace(/\\bmod/g, 'mod')
+      .replace(/\\gcd/g, 'gcd')
+      .replace(/\\lcm/g, 'lcm')
+      .replace(/\\floor/g, 'floor')
+      .replace(/\\ceil/g, 'ceil')
+      // Handle arrows
+      .replace(/\\rightarrow/g, '→')
+      .replace(/\\leftarrow/g, '←')
+      .replace(/\\Rightarrow/g, '⇒')
+      .replace(/\\Leftarrow/g, '⇐')
+      .replace(/\\to/g, '→')
+      .replace(/\\gets/g, '←')
+      .replace(/\\iff/g, '⟺')
+      // Handle comparison
+      .replace(/\\lt/g, '<')
+      .replace(/\\gt/g, '>')
+      // Handle sets
+      .replace(/\\in/g, '∈')
+      .replace(/\\notin/g, '∉')
+      .replace(/\\subset/g, '⊂')
+      .replace(/\\subseteq/g, '⊆')
+      .replace(/\\supset/g, '⊃')
+      .replace(/\\supseteq/g, '⊇')
+      .replace(/\\cup/g, '∪')
+      .replace(/\\cap/g, '∩')
+      .replace(/\\emptyset/g, '∅')
+      .replace(/\\forall/g, '∀')
+      .replace(/\\exists/g, '∃')
+      .replace(/\\nexists/g, '∄')
+      // Handle Greek letters (lowercase)
+      .replace(/\\alpha/g, 'α')
+      .replace(/\\beta/g, 'β')
+      .replace(/\\gamma/g, 'γ')
+      .replace(/\\delta/g, 'δ')
+      .replace(/\\epsilon/g, 'ε')
+      .replace(/\\varepsilon/g, 'ε')
+      .replace(/\\zeta/g, 'ζ')
+      .replace(/\\eta/g, 'η')
+      .replace(/\\theta/g, 'θ')
+      .replace(/\\iota/g, 'ι')
+      .replace(/\\kappa/g, 'κ')
+      .replace(/\\lambda/g, 'λ')
+      .replace(/\\mu/g, 'μ')
+      .replace(/\\nu/g, 'ν')
+      .replace(/\\xi/g, 'ξ')
+      .replace(/\\pi/g, 'π')
+      .replace(/\\rho/g, 'ρ')
+      .replace(/\\sigma/g, 'σ')
+      .replace(/\\tau/g, 'τ')
+      .replace(/\\upsilon/g, 'υ')
+      .replace(/\\phi/g, 'φ')
+      .replace(/\\varphi/g, 'φ')
+      .replace(/\\chi/g, 'χ')
+      .replace(/\\psi/g, 'ψ')
+      .replace(/\\omega/g, 'ω')
+      // Handle Greek letters (uppercase)
+      .replace(/\\Gamma/g, 'Γ')
+      .replace(/\\Delta/g, 'Δ')
+      .replace(/\\Theta/g, 'Θ')
+      .replace(/\\Lambda/g, 'Λ')
+      .replace(/\\Xi/g, 'Ξ')
+      .replace(/\\Pi/g, 'Π')
+      .replace(/\\Sigma/g, 'Σ')
+      .replace(/\\Phi/g, 'Φ')
+      .replace(/\\Psi/g, 'Ψ')
+      .replace(/\\Omega/g, 'Ω')
+      // Handle O notation and mathcal
+      .replace(/\\mathcal\{O\}/g, 'O')
+      .replace(/\\mathcal\{([^}]+)\}/g, '$1')
+      .replace(/\\mathbb\{([^}]+)\}/g, '$1')
+      // Handle dots
+      .replace(/\\ldots/g, '...')
+      .replace(/\\cdots/g, '···')
+      .replace(/\\vdots/g, '⋮')
+      .replace(/\\ddots/g, '⋱')
+      // Clean up remaining backslashes that might be LaTeX artifacts
+      .replace(/\\,/g, ' ')
+      .replace(/\\ /g, ' ')
+      .replace(/\\;/g, ' ')
+      .replace(/\\!/g, '')
+      .replace(/\\:/g, ' ')
+      .replace(/\\quad/g, '  ')
+      .replace(/\\qquad/g, '    ')
+      // Clean up curly braces used for grouping (after all other replacements)
+      .replace(/\{([^{}]+)\}/g, '$1');
+    
+    return result;
+  }
+  
+  // Convert LaTeX commands to Unicode symbols (no HTML tags)
+  // This is for text not wrapped in math delimiters
+  function convertLatexToUnicode(text) {
+    if (!text) return '';
+    
+    return text
+      // Handle comparison operators (BOTH full and shorthand forms)
+      .replace(/\\leq/g, '≤')
+      .replace(/\\le(?![a-z])/g, '≤')
+      .replace(/\\geq/g, '≥')
+      .replace(/\\ge(?![a-z])/g, '≥')
+      .replace(/\\neq/g, '≠')
+      .replace(/\\ne(?![a-z])/g, '≠')
+      .replace(/\\approx/g, '≈')
+      .replace(/\\sim/g, '~')
+      .replace(/\\equiv/g, '≡')
+      // Handle arithmetic
+      .replace(/\\times/g, '×')
+      .replace(/\\cdot/g, '·')
+      .replace(/\\div/g, '÷')
+      .replace(/\\pm/g, '±')
+      .replace(/\\mp/g, '∓')
+      .replace(/\\infty/g, '∞')
+      .replace(/\\sum/g, 'Σ')
+      .replace(/\\prod/g, '∏')
+      .replace(/\\sqrt\{([^}]+)\}/g, '√($1)')
+      .replace(/\\sqrt/g, '√')
+      .replace(/\\frac\{([^}]+)\}\{([^}]+)\}/g, '($1/$2)')
+      // Handle text formatting (remove LaTeX wrappers)
+      .replace(/\\left/g, '')
+      .replace(/\\right/g, '')
+      .replace(/\\text\{([^}]+)\}/g, '$1')
+      .replace(/\\texttt\{([^}]+)\}/g, '$1')
+      .replace(/\\mathrm\{([^}]+)\}/g, '$1')
+      .replace(/\\mathbf\{([^}]+)\}/g, '$1')
+      .replace(/\\mathit\{([^}]+)\}/g, '$1')
+      // Handle common functions
+      .replace(/\\log/g, 'log')
+      .replace(/\\ln/g, 'ln')
+      .replace(/\\sin/g, 'sin')
+      .replace(/\\cos/g, 'cos')
+      .replace(/\\tan/g, 'tan')
+      .replace(/\\min/g, 'min')
+      .replace(/\\max/g, 'max')
+      .replace(/\\mod/g, 'mod')
+      .replace(/\\bmod/g, 'mod')
+      .replace(/\\gcd/g, 'gcd')
+      .replace(/\\lcm/g, 'lcm')
+      // Handle arrows
+      .replace(/\\rightarrow/g, '→')
+      .replace(/\\leftarrow/g, '←')
+      .replace(/\\Rightarrow/g, '⇒')
+      .replace(/\\Leftarrow/g, '⇐')
+      .replace(/\\to/g, '→')
+      .replace(/\\gets/g, '←')
+      .replace(/\\iff/g, '⟺')
+      // Handle comparison
+      .replace(/\\lt/g, '<')
+      .replace(/\\gt/g, '>')
+      // Handle sets
+      .replace(/\\in/g, '∈')
+      .replace(/\\notin/g, '∉')
+      .replace(/\\subset/g, '⊂')
+      .replace(/\\subseteq/g, '⊆')
+      .replace(/\\supset/g, '⊃')
+      .replace(/\\supseteq/g, '⊇')
+      .replace(/\\cup/g, '∪')
+      .replace(/\\cap/g, '∩')
+      .replace(/\\emptyset/g, '∅')
+      .replace(/\\forall/g, '∀')
+      .replace(/\\exists/g, '∃')
+      .replace(/\\nexists/g, '∄')
+      // Handle Greek letters (lowercase)
+      .replace(/\\alpha/g, 'α')
+      .replace(/\\beta/g, 'β')
+      .replace(/\\gamma/g, 'γ')
+      .replace(/\\delta/g, 'δ')
+      .replace(/\\epsilon/g, 'ε')
+      .replace(/\\varepsilon/g, 'ε')
+      .replace(/\\zeta/g, 'ζ')
+      .replace(/\\eta/g, 'η')
+      .replace(/\\theta/g, 'θ')
+      .replace(/\\iota/g, 'ι')
+      .replace(/\\kappa/g, 'κ')
+      .replace(/\\lambda/g, 'λ')
+      .replace(/\\mu/g, 'μ')
+      .replace(/\\nu/g, 'ν')
+      .replace(/\\xi/g, 'ξ')
+      .replace(/\\pi/g, 'π')
+      .replace(/\\rho/g, 'ρ')
+      .replace(/\\sigma/g, 'σ')
+      .replace(/\\tau/g, 'τ')
+      .replace(/\\upsilon/g, 'υ')
+      .replace(/\\phi/g, 'φ')
+      .replace(/\\varphi/g, 'φ')
+      .replace(/\\chi/g, 'χ')
+      .replace(/\\psi/g, 'ψ')
+      .replace(/\\omega/g, 'ω')
+      // Handle Greek letters (uppercase)
+      .replace(/\\Gamma/g, 'Γ')
+      .replace(/\\Delta/g, 'Δ')
+      .replace(/\\Theta/g, 'Θ')
+      .replace(/\\Lambda/g, 'Λ')
+      .replace(/\\Xi/g, 'Ξ')
+      .replace(/\\Pi/g, 'Π')
+      .replace(/\\Sigma/g, 'Σ')
+      .replace(/\\Phi/g, 'Φ')
+      .replace(/\\Psi/g, 'Ψ')
+      .replace(/\\Omega/g, 'Ω')
+      // Handle O notation and mathcal
+      .replace(/\\mathcal\{O\}/g, 'O')
+      .replace(/\\mathcal\{([^}]+)\}/g, '$1')
+      .replace(/\\mathbb\{([^}]+)\}/g, '$1')
+      // Handle dots
+      .replace(/\\ldots/g, '...')
+      .replace(/\\cdots/g, '···')
+      .replace(/\\vdots/g, '⋮')
+      .replace(/\\ddots/g, '⋱')
+      // Clean up spacing commands
+      .replace(/\\,/g, ' ')
+      .replace(/\\ /g, ' ')
+      .replace(/\\;/g, ' ')
+      .replace(/\\!/g, '')
+      .replace(/\\:/g, ' ')
+      .replace(/\\quad/g, '  ')
+      .replace(/\\qquad/g, '    ')
+      // Convert superscript notation to Unicode superscripts where possible
+      // 10^5 -> 10⁵, n^2 -> n², etc.
+      .replace(/\^0/g, '⁰')
+      .replace(/\^1/g, '¹')
+      .replace(/\^2/g, '²')
+      .replace(/\^3/g, '³')
+      .replace(/\^4/g, '⁴')
+      .replace(/\^5/g, '⁵')
+      .replace(/\^6/g, '⁶')
+      .replace(/\^7/g, '⁷')
+      .replace(/\^8/g, '⁸')
+      .replace(/\^9/g, '⁹')
+      .replace(/\^\{0\}/g, '⁰')
+      .replace(/\^\{1\}/g, '¹')
+      .replace(/\^\{2\}/g, '²')
+      .replace(/\^\{3\}/g, '³')
+      .replace(/\^\{4\}/g, '⁴')
+      .replace(/\^\{5\}/g, '⁵')
+      .replace(/\^\{6\}/g, '⁶')
+      .replace(/\^\{7\}/g, '⁷')
+      .replace(/\^\{8\}/g, '⁸')
+      .replace(/\^\{9\}/g, '⁹')
+      // Handle multi-digit superscripts: ^{10} -> ¹⁰
+      .replace(/\^\{(\d+)\}/g, (match, digits) => {
+        const superscriptMap = {'0': '⁰', '1': '¹', '2': '²', '3': '³', '4': '⁴', '5': '⁵', '6': '⁶', '7': '⁷', '8': '⁸', '9': '⁹'};
+        return digits.split('').map(d => superscriptMap[d] || d).join('');
+      })
+      // Handle subscript notation to Unicode subscripts
+      .replace(/_0/g, '₀')
+      .replace(/_1/g, '₁')
+      .replace(/_2/g, '₂')
+      .replace(/_3/g, '₃')
+      .replace(/_4/g, '₄')
+      .replace(/_5/g, '₅')
+      .replace(/_6/g, '₆')
+      .replace(/_7/g, '₇')
+      .replace(/_8/g, '₈')
+      .replace(/_9/g, '₉')
+      .replace(/_i/g, 'ᵢ')
+      .replace(/_j/g, 'ⱼ')
+      .replace(/_n/g, 'ₙ')
+      .replace(/\{i\}/g, 'ᵢ')
+      .replace(/\{j\}/g, 'ⱼ')
+      // Clean up remaining curly braces (after all other replacements)
+      .replace(/\{([^{}]+)\}/g, '$1');
+  }
+
   // Parse markdown to HTML for professional formatting
   function parseMarkdown(text) {
     if (!text) return '';
@@ -2099,8 +2453,8 @@
     // Handle both single and double-escaped backslashes from JSON
     processedText = processedText.replace(/\\{1,2}\[([\s\S]*?)\\{1,2}\]/g, function (match, content) {
       const placeholder = `__MATH_DISPLAY_${mathPlaceholders.length}__`;
-      // Use KaTeX-style span for LeetCode (no MathJax)
-      mathPlaceholders.push(`<span class="lch-math-display">${escapeHtml(content.trim())}</span>`);
+      const htmlContent = convertMathToHtml(content.trim());
+      mathPlaceholders.push(`<span class="lch-math-display">${htmlContent}</span>`);
       return placeholder;
     });
 
@@ -2108,7 +2462,8 @@
     // Handle both single and double-escaped backslashes from JSON
     processedText = processedText.replace(/\\{1,2}\(([\s\S]*?)\\{1,2}\)/g, function (match, content) {
       const placeholder = `__MATH_INLINE_${mathPlaceholders.length}__`;
-      mathPlaceholders.push(`<span class="lch-math-inline">${escapeHtml(content)}</span>`);
+      const htmlContent = convertMathToHtml(content);
+      mathPlaceholders.push(`<span class="lch-math-inline">${htmlContent}</span>`);
       return placeholder;
     });
 
@@ -2116,14 +2471,16 @@
     // Display math: $$...$$
     processedText = processedText.replace(/\$\$([\s\S]*?)\$\$/g, function (match, content) {
       const placeholder = `__MATH_DISPLAY_${mathPlaceholders.length}__`;
-      mathPlaceholders.push(`<span class="lch-math-display">${escapeHtml(content.trim())}</span>`);
+      const htmlContent = convertMathToHtml(content.trim());
+      mathPlaceholders.push(`<span class="lch-math-display">${htmlContent}</span>`);
       return placeholder;
     });
 
     // Inline math: $...$ (but not $$)
     processedText = processedText.replace(/(?<!\$)\$(?!\$)([^\$\n]+?)(?<!\$)\$(?!\$)/g, function (match, content) {
       const placeholder = `__MATH_INLINE_${mathPlaceholders.length}__`;
-      mathPlaceholders.push(`<span class="lch-math-inline">${escapeHtml(content)}</span>`);
+      const htmlContent = convertMathToHtml(content);
+      mathPlaceholders.push(`<span class="lch-math-inline">${htmlContent}</span>`);
       return placeholder;
     });
 
@@ -2133,6 +2490,11 @@
       .replace(/\\n/g, '\n')  // Convert literal \n to actual newline
       .replace(/\\"/g, '"');   // Convert escaped quotes
     // Note: We don't replace \\\\ -> \\ anymore as it can corrupt math notation
+
+    // STEP 3: Apply LaTeX-to-Unicode conversion to remaining text (for LaTeX not wrapped in math delimiters)
+    // This handles cases like "1 \le t \le 10^5" that aren't inside $...$ or \(...\)
+    // We use Unicode conversion here (not HTML) so it survives the escapeHtml step
+    processedText = convertLatexToUnicode(processedText);
 
     // First escape HTML to prevent XSS (but preserve structure)
     let html = escapeHtml(processedText);
@@ -2240,6 +2602,21 @@
     // Convert `code` to <code>
     html = html.replace(/`([^`]+)`/g, '<code class="lch-markdown-code">$1</code>');
 
+    // Convert subscript notation: x_i, x_{ij}, s_1, etc. to proper subscripts
+    // Handle braced subscripts first: x_{abc} -> x<sub>abc</sub>
+    html = html.replace(/([a-zA-Z])_\{([^}]+)\}/g, '$1<sub>$2</sub>');
+    // Handle single character subscripts: x_i, x_1, etc. -> x<sub>i</sub>
+    html = html.replace(/([a-zA-Z])_([a-zA-Z0-9])/g, '$1<sub>$2</sub>');
+    
+    // Convert superscript notation: x^2, x^{n}, etc. to proper superscripts
+    // Handle braced superscripts first: x^{abc} -> x<sup>abc</sup>
+    html = html.replace(/([a-zA-Z0-9])?\^?\{([^}]+)\}/g, (match, base, exp) => {
+      if (base) return `${base}<sup>${exp}</sup>`;
+      return match;
+    });
+    // Handle single character superscripts: x^2, n^k -> x<sup>2</sup>
+    html = html.replace(/([a-zA-Z0-9])\^([a-zA-Z0-9])/g, '$1<sup>$2</sup>');
+
     // Wrap consecutive list items in ul tags
     // Replace patterns like: <li>...</li><li>...</li> with <ul><li>...</li><li>...</li></ul>
     html = html.replace(/(<li class="lch-explanation-list-item">[\s\S]*?<\/li>(?:\s*<li class="lch-explanation-list-item">[\s\S]*?<\/li>)*)/g,
@@ -2255,9 +2632,13 @@
   }
 
   function generateCacheKey(url) {
+    if (!url) return '';
+    // Match service worker implementation exactly
     return url
       .replace(/^https?:\/\//, '')
+      .replace(/\?.*$/, '')  // Remove query params
       .replace(/[^a-zA-Z0-9]/g, '_')
+      .toLowerCase()  // Convert to lowercase
       .slice(0, 100);
   }
 

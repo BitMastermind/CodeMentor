@@ -14,7 +14,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // Initialize analytics and error tracking
   if (typeof LCAnalytics !== 'undefined') {
     LCAnalytics.init();
-    LCAnalytics.trackPageView('popup', 'LC Helper Popup');
+    LCAnalytics.trackPageView('popup', 'CodeMentor Popup');
   }
   
   // Track popup open
@@ -464,7 +464,7 @@ function initSettings() {
     const sanitized = apiKey && apiKey.length > 8 
       ? `${apiKey.substring(0, 4)}...${apiKey.substring(apiKey.length - 4)}` 
       : '***';
-    console.log('LC Helper: Settings saved (API key format: ' + sanitized + ')');
+    console.log('CodeMentor: Settings saved (API key format: ' + sanitized + ')');
     
     // Check if usernames are being saved (will need to fetch data)
     const hasUsernames = settings.leetcodeUsername || settings.codeforcesUsername || settings.codechefUsername;
@@ -503,7 +503,7 @@ function initSettings() {
             refreshTodayCount(null, true);
           })
           .catch((error) => {
-            console.error('LC Helper: Failed to refresh streak after saving usernames:', error);
+            console.error('CodeMentor: Failed to refresh streak after saving usernames:', error);
             showUsernameErrors([{ platform: 'System', message: 'Failed to fetch streak data. Please try again.' }]);
             // Still try to reload streak data even if refresh failed
             loadStreakData();
@@ -524,7 +524,7 @@ function initSettings() {
       }, 2000);
     } catch (error) {
       // Ensure button is re-enabled even on error
-      console.error('LC Helper: Error saving settings:', error);
+      console.error('CodeMentor: Error saving settings:', error);
       saveBtn.innerHTML = `
         <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <polyline points="20 6 9 17 4 12"></polyline>
@@ -746,7 +746,7 @@ function formatDate(dateStr) {
     
     // Validate the date
     if (isNaN(date.getTime())) {
-      console.warn('LC Helper: Invalid date string:', dateStr);
+      console.warn('CodeMentor: Invalid date string:', dateStr);
       return 'Invalid Date';
     }
     
@@ -769,7 +769,7 @@ function formatDate(dateStr) {
     // Format the date - this automatically converts from UTC to user's local timezone
     return formatter.format(date);
   } catch (error) {
-    console.error('LC Helper: Error formatting date:', dateStr, error);
+    console.error('CodeMentor: Error formatting date:', dateStr, error);
     return 'Invalid Date';
   }
 }
@@ -918,14 +918,31 @@ function initFeedbackModal() {
           });
         }
         
+        // Update success message with GitHub link
+        if (response.githubIssueUrl) {
+          successEl.innerHTML = `
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none"
+              stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
+              style="margin-right: 8px;">
+              <polyline points="20 6 9 17 4 12"></polyline>
+            </svg>
+            <div>
+              <div style="margin-bottom: 8px;">Thank you for your feedback!</div>
+              <a href="${response.githubIssueUrl}" target="_blank" style="color: var(--accent); text-decoration: underline; font-size: 13px;">
+                Open GitHub Issue →
+              </a>
+            </div>
+          `;
+        }
+        
         successEl.style.display = 'flex';
         resetFeedbackForm();
         
-        // Close modal after 2 seconds
+        // Close modal after 5 seconds (longer to allow clicking GitHub link)
         setTimeout(() => {
           feedbackModal.style.display = 'none';
           resetFeedbackForm();
-        }, 2000);
+        }, 5000);
       } else {
         throw new Error(response?.error || 'Failed to submit feedback');
       }

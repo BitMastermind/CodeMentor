@@ -1,4 +1,4 @@
-/* LC Helper - Hints Panel Styles */
+/* CodeMentor - Hints Panel Styles */
 
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap');
 
@@ -699,12 +699,30 @@
   }
 }
 
+.lch-settings-title {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--lch-text-primary);
+  margin: 0 0 12px 0;
+  line-height: 1.3;
+}
+
 .lch-settings-message {
   font-size: 14px;
   color: var(--lch-text-secondary);
-  margin-bottom: 0;
+  margin-bottom: 16px;
   line-height: 1.7;
   font-weight: 500;
+}
+
+.lch-settings-suggestion {
+  font-size: 13px;
+  color: var(--lch-text-muted);
+  margin-bottom: 24px;
+  line-height: 1.6;
+  font-weight: 400;
+  font-style: italic;
+  opacity: 0.9;
 }
 
 .lch-settings-btn {
@@ -738,6 +756,70 @@
 .lch-settings-btn:active {
   transform: translateY(-1px);
   transition: all 0.1s ease;
+}
+
+.lch-settings-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  align-items: center;
+  margin-top: 24px;
+}
+
+.lch-settings-back-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 20px;
+  background: rgba(124, 58, 237, 0.1);
+  border: 1px solid rgba(124, 58, 237, 0.3);
+  border-radius: var(--lch-radius-md);
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--lch-text-secondary);
+  cursor: pointer;
+  transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+  font-family: var(--lch-font-main);
+  position: relative;
+  overflow: hidden;
+}
+
+.lch-settings-back-btn::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(135deg, rgba(124, 58, 237, 0.15) 0%, rgba(139, 92, 246, 0.15) 100%);
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+
+.lch-settings-back-btn:hover {
+  background: rgba(124, 58, 237, 0.15);
+  border-color: rgba(124, 58, 237, 0.5);
+  color: #a78bfa;
+  transform: translateY(-2px);
+}
+
+.lch-settings-back-btn:hover::before {
+  opacity: 1;
+}
+
+.lch-settings-back-btn:active {
+  transform: translateY(0);
+  transition: all 0.1s ease;
+}
+
+.lch-settings-back-btn svg {
+  width: 16px;
+  height: 16px;
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 2.5;
+  transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.lch-settings-back-btn:hover svg {
+  transform: translateX(-3px);
 }
 
 /* Feedback Section */
@@ -1436,6 +1518,25 @@
   color: #c4b5fd;
 }
 
+/* Math subscripts and superscripts */
+.lch-explanation-text sub,
+.lch-explanation-paragraph sub,
+.lch-explanation-list-item sub {
+  font-size: 0.75em;
+  vertical-align: sub;
+  color: #a78bfa;
+  font-family: var(--lch-font-mono);
+}
+
+.lch-explanation-text sup,
+.lch-explanation-paragraph sup,
+.lch-explanation-list-item sup {
+  font-size: 0.75em;
+  vertical-align: super;
+  color: #a78bfa;
+  font-family: var(--lch-font-mono);
+}
+
 .lch-key-points {
   background: var(--lch-bg-secondary);
   border: 1px solid var(--lch-border);
@@ -1712,10 +1813,17 @@
   overflow-x: auto;
 }
 
-/* MathJax script tags should be invisible - MathJax will render them */
-.lch-math-inline script,
-.lch-math-display script {
-  display: none;
+/* Math content styling - render directly without MathJax */
+.lch-math-inline sub,
+.lch-math-display sub {
+  font-size: 0.8em;
+  vertical-align: sub;
+}
+
+.lch-math-inline sup,
+.lch-math-display sup {
+  font-size: 0.8em;
+  vertical-align: super;
 }
 
 /* When MathJax renders, the script is replaced with rendered content */

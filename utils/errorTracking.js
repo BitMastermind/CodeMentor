@@ -1,4 +1,4 @@
-// LC Helper - Error Tracking with Sentry
+// CodeMentor - Error Tracking with Sentry
 // Lightweight error tracking that works in Chrome extensions
 
 (function () {
@@ -79,7 +79,7 @@
     }
 
     // Log to console (always)
-    console.error('LC Helper Error:', errorData);
+    console.error('CodeMentor Error:', errorData);
 
     // Send to Sentry if enabled
     if (SENTRY_ENABLED && Sentry) {

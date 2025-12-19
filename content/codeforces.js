@@ -1,4 +1,4 @@
-// LC Helper - Codeforces Content Script
+// CodeMentor - Codeforces Content Script
 
 (function () {
   'use strict';
@@ -23,13 +23,13 @@
   // Safe wrapper for chrome.storage.sync operations
   async function safeStorageGet(key) {
     if (!isExtensionContextValid()) {
-      console.log('LC Helper: Extension context invalidated, using fallback');
+      console.log('CodeMentor: Extension context invalidated, using fallback');
       return {};
     }
     try {
       return await chrome.storage.sync.get(key);
     } catch (e) {
-      console.log('LC Helper: Storage access failed:', e.message);
+      console.log('CodeMentor: Storage access failed:', e.message);
       return {};
     }
   }
@@ -37,13 +37,13 @@
   // Safe wrapper for chrome.runtime.sendMessage
   async function safeSendMessage(message) {
     if (!isExtensionContextValid()) {
-      console.log('LC Helper: Extension context invalidated, cannot send message');
+      console.log('CodeMentor: Extension context invalidated, cannot send message');
       return null;
     }
     try {
       return await chrome.runtime.sendMessage(message);
     } catch (e) {
-      console.log('LC Helper: Message send failed:', e.message);
+      console.log('CodeMentor: Message send failed:', e.message);
       return null;
     }
   }
@@ -473,7 +473,7 @@
         }
       }
     } catch (e) {
-      console.log('LC Helper: Timer init failed:', e.message);
+      console.log('CodeMentor: Timer init failed:', e.message);
     }
   }
 
@@ -607,15 +607,15 @@
         <path d="M13 2L3 14h8l-1 8 10-12h-8l1-8z"/>
       </svg>
     `;
-    fab.title = 'LC Helper - Get Hints';
-    fab.setAttribute('aria-label', 'LC Helper - Get Hints');
+    fab.title = 'CodeMentor - Get Hints';
+    fab.setAttribute('aria-label', 'CodeMentor - Get Hints');
     fab.addEventListener('click', togglePanel);
 
     try {
       document.body.appendChild(fab);
-      console.log('LC Helper: FAB created and appended to body');
+      console.log('CodeMentor: FAB created and appended to body');
     } catch (e) {
-      console.error('LC Helper: Failed to append FAB:', e);
+      console.error('CodeMentor: Failed to append FAB:', e);
       // Retry after a delay
       setTimeout(createFAB, 200);
     }
@@ -630,7 +630,7 @@
       <div class="lch-panel-header">
         <div class="lch-panel-header-top">
           <div>
-            <h3 class="lch-panel-title">LC Helper</h3>
+            <h3 class="lch-panel-title">CodeMentor</h3>
             <p class="lch-panel-subtitle">Smart hints & topic analysis</p>
           </div>
           <div class="lch-timer-badge">
@@ -705,7 +705,7 @@
           };
         }
       } catch (e) {
-        console.log('LC Helper: Could not extract problem data:', e.message);
+        console.log('CodeMentor: Could not extract problem data:', e.message);
       }
     }
 
@@ -929,7 +929,7 @@
         };
       }
     } catch (e) {
-      console.log('LC Helper: Failed to parse Codeforces URL:', e.message);
+      console.log('CodeMentor: Failed to parse Codeforces URL:', e.message);
     }
     return null;
   }
@@ -942,14 +942,14 @@
       const response = await fetch('https://codeforces.com/api/problemset.problems');
 
       if (!response.ok) {
-        console.log('LC Helper: Codeforces API request failed:', response.status);
+        console.log('CodeMentor: Codeforces API request failed:', response.status);
         return null;
       }
 
       const data = await response.json();
 
       if (data.status !== 'OK' || !data.result || !data.result.problems) {
-        console.log('LC Helper: Codeforces API returned error:', data.comment);
+        console.log('CodeMentor: Codeforces API returned error:', data.comment);
         return null;
       }
 
@@ -959,7 +959,7 @@
       );
 
       if (!problem) {
-        console.log('LC Helper: Problem not found in API response');
+        console.log('CodeMentor: Problem not found in API response');
         return null;
       }
 
@@ -975,7 +975,7 @@
         name: problem.name || null
       };
     } catch (error) {
-      console.log('LC Helper: Error fetching from Codeforces API:', error.message);
+      console.log('CodeMentor: Error fetching from Codeforces API:', error.message);
       return null;
     }
   }
@@ -1049,7 +1049,7 @@
         };
       }).filter(img => img.url && img.url.length > 0); // Filter out empty URLs
     } catch (e) {
-      console.log('[LC Helper] extractImagesFromHTML: Error parsing HTML:', e);
+      console.log('[CodeMentor] extractImagesFromHTML: Error parsing HTML:', e);
       return [];
     }
   }
@@ -1146,7 +1146,7 @@
         minContentLength: 100 // Ensure it has actual content, not just empty element
       });
     } catch (error) {
-      console.error('LC Helper: Failed to find problem statement:', error);
+      console.error('CodeMentor: Failed to find problem statement:', error);
       throw new Error('Problem statement not found. The page may still be loading. Please wait a moment and try again.');
     }
 
@@ -1342,11 +1342,11 @@
       
       if (originalSampleTests) {
         // Debug: log what we find
-        console.log('[LC Helper] Found .sample-tests container');
+        console.log('[CodeMentor] Found .sample-tests container');
         
         // Method 1: Look for .sample-test divs (standard Codeforces structure)
         const sampleTestDivs = originalSampleTests.querySelectorAll('.sample-test');
-        console.log('[LC Helper] Found .sample-test divs:', sampleTestDivs.length);
+        console.log('[CodeMentor] Found .sample-test divs:', sampleTestDivs.length);
         
         if (sampleTestDivs.length > 0) {
           sampleTestDivs.forEach((sample, idx) => {
@@ -1354,21 +1354,21 @@
             const outputPre = sample.querySelector('.output pre');
             const input = inputPre?.textContent.trim() || '';
             const output = outputPre?.textContent.trim() || '';
-            console.log(`[LC Helper] Example ${idx + 1}: Input=${input.substring(0, 30)}..., Output=${output.substring(0, 30)}...`);
+            console.log(`[CodeMentor] Example ${idx + 1}: Input=${input.substring(0, 30)}..., Output=${output.substring(0, 30)}...`);
             examples.push({ input, output });
           });
         } else {
           // Method 2: Fallback - pair up .input and .output divs
           const inputDivs = originalSampleTests.querySelectorAll('.input');
           const outputDivs = originalSampleTests.querySelectorAll('.output');
-          console.log('[LC Helper] Fallback: Found .input divs:', inputDivs.length, '.output divs:', outputDivs.length);
+          console.log('[CodeMentor] Fallback: Found .input divs:', inputDivs.length, '.output divs:', outputDivs.length);
           
           for (let i = 0; i < inputDivs.length; i++) {
             const inputPre = inputDivs[i].querySelector('pre');
             const outputPre = outputDivs[i]?.querySelector('pre');
             const input = inputPre?.textContent.trim() || '';
             const output = outputPre?.textContent.trim() || '';
-            console.log(`[LC Helper] Example ${i + 1}: Input=${input.substring(0, 30)}..., Output=${output.substring(0, 30)}...`);
+            console.log(`[CodeMentor] Example ${i + 1}: Input=${input.substring(0, 30)}..., Output=${output.substring(0, 30)}...`);
             examples.push({ input, output });
           }
         }
@@ -1376,7 +1376,7 @@
         // Method 3: If still no examples, try getting all pre tags
         if (examples.length === 0) {
           const allPres = originalSampleTests.querySelectorAll('pre');
-          console.log('[LC Helper] Method 3: Found pre tags:', allPres.length);
+          console.log('[CodeMentor] Method 3: Found pre tags:', allPres.length);
           // Assume alternating input/output
           for (let i = 0; i < allPres.length; i += 2) {
             const input = allPres[i]?.textContent.trim() || '';
@@ -1387,15 +1387,15 @@
           }
         }
       } else {
-        console.log('[LC Helper] WARNING: No .sample-tests container found!');
+        console.log('[CodeMentor] WARNING: No .sample-tests container found!');
         
         // Try alternative selector - some problems might have different structure
         const altExamples = problemStatementEl.querySelectorAll('.input pre, .output pre');
-        console.log('[LC Helper] Alternative: Found input/output pre tags:', altExamples.length);
+        console.log('[CodeMentor] Alternative: Found input/output pre tags:', altExamples.length);
       }
       
       sections.examples = examples;
-      console.log('[LC Helper] Total examples extracted:', examples.length);
+      console.log('[CodeMentor] Total examples extracted:', examples.length);
       
       // Build compact text representation (markdown-like, no HTML tags)
       let compactText = '';
@@ -1438,7 +1438,7 @@
       
       // Detailed logging for verification
       console.log('\n' + '='.repeat(80));
-      console.log('[LC Helper] STRUCTURED TEXT EXTRACTION RESULTS');
+      console.log('[CodeMentor] STRUCTURED TEXT EXTRACTION RESULTS');
       console.log('='.repeat(80));
       console.log(`📊 REDUCTION: ${originalLength} chars -> ${compactText.length} chars (-${reduction}%)`);
       console.log('-'.repeat(80));
@@ -1516,7 +1516,7 @@
       const reduction = Math.round((1 - text.length / originalLength) * 100);
       
       console.log('\n' + '='.repeat(80));
-      console.log('[LC Helper] FALLBACK HTML EXTRACTION');
+      console.log('[CodeMentor] FALLBACK HTML EXTRACTION');
       console.log('='.repeat(80));
       console.log(`📊 REDUCTION: ${originalLength} chars -> ${text.length} chars (-${reduction}%)`);
       console.log('-'.repeat(80));
@@ -1533,7 +1533,7 @@
     
     // If structured extraction yields too little content, use fallback
     if (problemHTML.length < 100) {
-      console.log('[LC Helper] ⚠️ Structured extraction too short (' + problemHTML.length + ' chars), using HTML fallback');
+      console.log('[CodeMentor] ⚠️ Structured extraction too short (' + problemHTML.length + ' chars), using HTML fallback');
       problemHTML = cleanHTMLFallback(problemStatement);
     }
 
@@ -1567,7 +1567,7 @@
 
     // Log extracted data summary
     console.log('\n' + '='.repeat(80));
-    console.log('LC Helper - FINAL PROBLEM DATA SUMMARY');
+    console.log('CodeMentor - FINAL PROBLEM DATA SUMMARY');
     console.log('='.repeat(80));
     console.log('📡 Extraction Method: Structured Text (optimized for tokens)');
     console.log('📌 Title:', baseData.title);
@@ -1603,7 +1603,7 @@
           imageData: optimizedImage
         };
       } catch (error) {
-        console.error('LC Helper: Failed to capture image from Codeforces:', error);
+        console.error('CodeMentor: Failed to capture image from Codeforces:', error);
       }
     }
 
@@ -1694,7 +1694,7 @@
           };
         }
       } catch (e) {
-        console.log('LC Helper: Could not extract problem data for favorites:', e.message);
+        console.log('CodeMentor: Could not extract problem data for favorites:', e.message);
       }
     }
 
@@ -1710,32 +1710,27 @@
         <div class="lch-settings-icon">🔑</div>
         <h3 class="lch-settings-title">API Key Required</h3>
         <p class="lch-settings-message">
-          To use LC Helper, please configure your API key in the extension settings.
+          To use CodeMentor, please configure your API key in the extension settings.
         </p>
-        <button class="lch-settings-btn" id="openSettingsBtn">Open Settings</button>
-        ${currentProblemData ? `
-        <div class="lch-favorite-section">
-          <button class="lch-favorite-btn ${isFavorite ? 'active' : ''}" id="favoriteBtn">
-            ${isFavorite ? '❤️' : '🤍'} ${isFavorite ? 'Remove from' : 'Add to'} Favorites
+        <p class="lch-settings-suggestion">
+          💡 Open settings on extension icon → Settings tab
+        </p>
+        <div class="lch-settings-actions">
+          <button class="lch-settings-back-btn" id="backBtn">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+              <path d="M19 12H5M12 19l-7-7 7-7" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+            Back to Hints
           </button>
         </div>
       </div>
-      ` : ''}
     `;
 
     // Add event listeners
-    const settingsBtn = body.querySelector('#openSettingsBtn');
-    if (settingsBtn) {
-      settingsBtn.addEventListener('click', () => {
-        chrome.runtime.sendMessage({ type: 'OPEN_SETTINGS' });
-      });
-    }
-
-    // Add favorite button handler if button exists
-    const favoriteBtn = body.querySelector('#favoriteBtn');
-    if (favoriteBtn) {
-      favoriteBtn.addEventListener('click', async () => {
-        await toggleFavorite(favoriteBtn);
+    const backBtn = body.querySelector('#backBtn');
+    if (backBtn) {
+      backBtn.addEventListener('click', async () => {
+        await showQuickActions();
       });
     }
   }
@@ -1834,7 +1829,7 @@
             }
           } catch (e) {
             // If all parsing fails, use as is
-            console.log('[LC Helper] Explanation is not JSON, using as markdown:', e.message);
+            console.log('[CodeMentor] Explanation is not JSON, using as markdown:', e.message);
           }
         }
       }
@@ -1889,17 +1884,17 @@
     if (explanationContent && window.MathJax && window.MathJax.typesetPromise) {
       try {
         window.MathJax.typesetPromise([explanationContent]).catch((err) => {
-          console.log('LC Helper: MathJax rendering error:', err);
+          console.log('CodeMentor: MathJax rendering error:', err);
         });
       } catch (e) {
-        console.log('LC Helper: MathJax not available or error:', e);
+        console.log('CodeMentor: MathJax not available or error:', e);
       }
     } else if (explanationContent && window.MathJax && window.MathJax.Hub) {
       // Fallback for older MathJax versions
       try {
         window.MathJax.Hub.Queue(['Typeset', window.MathJax.Hub, explanationContent]);
       } catch (e) {
-        console.log('LC Helper: MathJax Hub error:', e);
+        console.log('CodeMentor: MathJax Hub error:', e);
       }
     }
 
@@ -2061,28 +2056,63 @@
 
   // Toggle favorite status
   async function toggleFavorite(btn) {
-    if (!isExtensionContextValid() || !currentProblemData) return;
+    if (!isExtensionContextValid()) return;
+
+    // Ensure currentProblemData is set
+    if (!currentProblemData) {
+      try {
+        const problemData = await extractProblemData();
+        if (problemData.title) {
+          currentProblemData = {
+            url: window.location.href,
+            title: problemData.title,
+            platform: 'codeforces',
+            difficulty: problemData.difficulty
+          };
+        }
+      } catch (e) {
+        console.error('CodeMentor: Could not extract problem data for favorite:', e.message);
+        return;
+      }
+    }
+
+    if (!currentProblemData) {
+      console.error('CodeMentor: No problem data available for favorite');
+      return;
+    }
 
     const isCurrentlyFavorite = btn.classList.contains('active');
 
     try {
       if (isCurrentlyFavorite) {
-        const id = `codeforces_${generateCacheKey(currentProblemData.url)}`;
+        const id = `${currentProblemData.platform}_${generateCacheKey(currentProblemData.url)}`;
         const response = await safeSendMessage({ type: 'REMOVE_FAVORITE', id });
         if (response && response.success) {
           btn.classList.remove('active');
+          btn.innerHTML = '🤍';
+        } else if (response && response.error) {
+          // Try URL-based removal as fallback (ID might not match due to URL variations)
+          const urlResponse = await safeSendMessage({ type: 'REMOVE_FAVORITE_BY_URL', url: currentProblemData.url });
+          if (urlResponse && urlResponse.success) {
+            btn.classList.remove('active');
+            btn.innerHTML = '🤍';
+          } else {
+            // Only log error if both methods failed
+            console.error('CodeMentor: Failed to remove favorite:', response.error);
+          }
         }
       } else {
         const response = await safeSendMessage({ type: 'ADD_FAVORITE', problem: currentProblemData });
         if (response && response.success) {
           btn.classList.add('active');
+          btn.innerHTML = '❤️';
         } else if (response && response.error) {
           // Show error message for limit exceeded or other errors
           alert(response.error);
         }
       }
     } catch (e) {
-      console.error('LC Helper: Error toggling favorite:', e);
+      console.error('CodeMentor: Error toggling favorite:', e);
     }
   }
 
@@ -2197,6 +2227,320 @@
     return div.innerHTML;
   }
 
+  // Convert LaTeX math notation to readable HTML
+  // This handles both formal LaTeX (\leq) and shorthand (\le) variants
+  function convertMathToHtml(content) {
+    if (!content) return '';
+    
+    let result = content
+      // Handle subscripts: x_i, x_{abc}
+      .replace(/([a-zA-Z])_\{([^}]+)\}/g, '$1<sub>$2</sub>')
+      .replace(/([a-zA-Z])_([a-zA-Z0-9])/g, '$1<sub>$2</sub>')
+      // Handle superscripts: 10^5, x^{abc}, n^2 - BEFORE other replacements
+      .replace(/(\d+)\^\{([^}]+)\}/g, '$1<sup>$2</sup>')
+      .replace(/([a-zA-Z0-9])\^\{([^}]+)\}/g, '$1<sup>$2</sup>')
+      .replace(/(\d+)\^(\d+)/g, '$1<sup>$2</sup>')
+      .replace(/([a-zA-Z])\^([a-zA-Z0-9])/g, '$1<sup>$2</sup>')
+      // Handle common LaTeX comparison commands (BOTH full and shorthand forms)
+      .replace(/\\leq/g, '≤')
+      .replace(/\\le(?![a-z])/g, '≤')  // \le but not \left, \leftarrow, etc.
+      .replace(/\\geq/g, '≥')
+      .replace(/\\ge(?![a-z])/g, '≥')  // \ge but not \get, etc.
+      .replace(/\\neq/g, '≠')
+      .replace(/\\ne(?![a-z])/g, '≠')  // \ne shorthand
+      .replace(/\\approx/g, '≈')
+      .replace(/\\sim/g, '~')
+      .replace(/\\equiv/g, '≡')
+      // Handle arithmetic
+      .replace(/\\times/g, '×')
+      .replace(/\\cdot/g, '·')
+      .replace(/\\div/g, '÷')
+      .replace(/\\pm/g, '±')
+      .replace(/\\mp/g, '∓')
+      .replace(/\\infty/g, '∞')
+      .replace(/\\sum/g, 'Σ')
+      .replace(/\\prod/g, '∏')
+      .replace(/\\sqrt\{([^}]+)\}/g, '√($1)')
+      .replace(/\\sqrt/g, '√')
+      .replace(/\\frac\{([^}]+)\}\{([^}]+)\}/g, '($1/$2)')
+      .replace(/\\left/g, '')
+      .replace(/\\right/g, '')
+      .replace(/\\text\{([^}]+)\}/g, '$1')
+      .replace(/\\texttt\{([^}]+)\}/g, '$1')
+      .replace(/\\mathrm\{([^}]+)\}/g, '$1')
+      .replace(/\\mathbf\{([^}]+)\}/g, '<strong>$1</strong>')
+      .replace(/\\mathit\{([^}]+)\}/g, '<em>$1</em>')
+      // Handle common functions
+      .replace(/\\log/g, 'log')
+      .replace(/\\ln/g, 'ln')
+      .replace(/\\sin/g, 'sin')
+      .replace(/\\cos/g, 'cos')
+      .replace(/\\tan/g, 'tan')
+      .replace(/\\min/g, 'min')
+      .replace(/\\max/g, 'max')
+      .replace(/\\mod/g, 'mod')
+      .replace(/\\bmod/g, 'mod')
+      .replace(/\\gcd/g, 'gcd')
+      .replace(/\\lcm/g, 'lcm')
+      .replace(/\\floor/g, 'floor')
+      .replace(/\\ceil/g, 'ceil')
+      // Handle arrows
+      .replace(/\\rightarrow/g, '→')
+      .replace(/\\leftarrow/g, '←')
+      .replace(/\\Rightarrow/g, '⇒')
+      .replace(/\\Leftarrow/g, '⇐')
+      .replace(/\\to/g, '→')
+      .replace(/\\gets/g, '←')
+      .replace(/\\iff/g, '⟺')
+      // Handle comparison
+      .replace(/\\lt/g, '<')
+      .replace(/\\gt/g, '>')
+      // Handle sets
+      .replace(/\\in/g, '∈')
+      .replace(/\\notin/g, '∉')
+      .replace(/\\subset/g, '⊂')
+      .replace(/\\subseteq/g, '⊆')
+      .replace(/\\supset/g, '⊃')
+      .replace(/\\supseteq/g, '⊇')
+      .replace(/\\cup/g, '∪')
+      .replace(/\\cap/g, '∩')
+      .replace(/\\emptyset/g, '∅')
+      .replace(/\\forall/g, '∀')
+      .replace(/\\exists/g, '∃')
+      .replace(/\\nexists/g, '∄')
+      // Handle Greek letters (lowercase)
+      .replace(/\\alpha/g, 'α')
+      .replace(/\\beta/g, 'β')
+      .replace(/\\gamma/g, 'γ')
+      .replace(/\\delta/g, 'δ')
+      .replace(/\\epsilon/g, 'ε')
+      .replace(/\\varepsilon/g, 'ε')
+      .replace(/\\zeta/g, 'ζ')
+      .replace(/\\eta/g, 'η')
+      .replace(/\\theta/g, 'θ')
+      .replace(/\\iota/g, 'ι')
+      .replace(/\\kappa/g, 'κ')
+      .replace(/\\lambda/g, 'λ')
+      .replace(/\\mu/g, 'μ')
+      .replace(/\\nu/g, 'ν')
+      .replace(/\\xi/g, 'ξ')
+      .replace(/\\pi/g, 'π')
+      .replace(/\\rho/g, 'ρ')
+      .replace(/\\sigma/g, 'σ')
+      .replace(/\\tau/g, 'τ')
+      .replace(/\\upsilon/g, 'υ')
+      .replace(/\\phi/g, 'φ')
+      .replace(/\\varphi/g, 'φ')
+      .replace(/\\chi/g, 'χ')
+      .replace(/\\psi/g, 'ψ')
+      .replace(/\\omega/g, 'ω')
+      // Handle Greek letters (uppercase)
+      .replace(/\\Gamma/g, 'Γ')
+      .replace(/\\Delta/g, 'Δ')
+      .replace(/\\Theta/g, 'Θ')
+      .replace(/\\Lambda/g, 'Λ')
+      .replace(/\\Xi/g, 'Ξ')
+      .replace(/\\Pi/g, 'Π')
+      .replace(/\\Sigma/g, 'Σ')
+      .replace(/\\Phi/g, 'Φ')
+      .replace(/\\Psi/g, 'Ψ')
+      .replace(/\\Omega/g, 'Ω')
+      // Handle O notation and mathcal
+      .replace(/\\mathcal\{O\}/g, 'O')
+      .replace(/\\mathcal\{([^}]+)\}/g, '$1')
+      .replace(/\\mathbb\{([^}]+)\}/g, '$1')
+      // Handle dots
+      .replace(/\\ldots/g, '...')
+      .replace(/\\cdots/g, '···')
+      .replace(/\\vdots/g, '⋮')
+      .replace(/\\ddots/g, '⋱')
+      // Clean up remaining backslashes that might be LaTeX artifacts
+      .replace(/\\,/g, ' ')
+      .replace(/\\ /g, ' ')
+      .replace(/\\;/g, ' ')
+      .replace(/\\!/g, '')
+      .replace(/\\:/g, ' ')
+      .replace(/\\quad/g, '  ')
+      .replace(/\\qquad/g, '    ')
+      // Clean up curly braces used for grouping (after all other replacements)
+      .replace(/\{([^{}]+)\}/g, '$1');
+    
+    return result;
+  }
+  
+  // Convert LaTeX commands to Unicode symbols (no HTML tags)
+  // This is for text not wrapped in math delimiters
+  function convertLatexToUnicode(text) {
+    if (!text) return '';
+    
+    return text
+      // Handle comparison operators (BOTH full and shorthand forms)
+      .replace(/\\leq/g, '≤')
+      .replace(/\\le(?![a-z])/g, '≤')
+      .replace(/\\geq/g, '≥')
+      .replace(/\\ge(?![a-z])/g, '≥')
+      .replace(/\\neq/g, '≠')
+      .replace(/\\ne(?![a-z])/g, '≠')
+      .replace(/\\approx/g, '≈')
+      .replace(/\\sim/g, '~')
+      .replace(/\\equiv/g, '≡')
+      // Handle arithmetic
+      .replace(/\\times/g, '×')
+      .replace(/\\cdot/g, '·')
+      .replace(/\\div/g, '÷')
+      .replace(/\\pm/g, '±')
+      .replace(/\\mp/g, '∓')
+      .replace(/\\infty/g, '∞')
+      .replace(/\\sum/g, 'Σ')
+      .replace(/\\prod/g, '∏')
+      .replace(/\\sqrt\{([^}]+)\}/g, '√($1)')
+      .replace(/\\sqrt/g, '√')
+      .replace(/\\frac\{([^}]+)\}\{([^}]+)\}/g, '($1/$2)')
+      // Handle text formatting (remove LaTeX wrappers)
+      .replace(/\\left/g, '')
+      .replace(/\\right/g, '')
+      .replace(/\\text\{([^}]+)\}/g, '$1')
+      .replace(/\\texttt\{([^}]+)\}/g, '$1')
+      .replace(/\\mathrm\{([^}]+)\}/g, '$1')
+      .replace(/\\mathbf\{([^}]+)\}/g, '$1')
+      .replace(/\\mathit\{([^}]+)\}/g, '$1')
+      // Handle common functions
+      .replace(/\\log/g, 'log')
+      .replace(/\\ln/g, 'ln')
+      .replace(/\\sin/g, 'sin')
+      .replace(/\\cos/g, 'cos')
+      .replace(/\\tan/g, 'tan')
+      .replace(/\\min/g, 'min')
+      .replace(/\\max/g, 'max')
+      .replace(/\\mod/g, 'mod')
+      .replace(/\\bmod/g, 'mod')
+      .replace(/\\gcd/g, 'gcd')
+      .replace(/\\lcm/g, 'lcm')
+      // Handle arrows
+      .replace(/\\rightarrow/g, '→')
+      .replace(/\\leftarrow/g, '←')
+      .replace(/\\Rightarrow/g, '⇒')
+      .replace(/\\Leftarrow/g, '⇐')
+      .replace(/\\to/g, '→')
+      .replace(/\\gets/g, '←')
+      .replace(/\\iff/g, '⟺')
+      // Handle comparison
+      .replace(/\\lt/g, '<')
+      .replace(/\\gt/g, '>')
+      // Handle sets
+      .replace(/\\in/g, '∈')
+      .replace(/\\notin/g, '∉')
+      .replace(/\\subset/g, '⊂')
+      .replace(/\\subseteq/g, '⊆')
+      .replace(/\\supset/g, '⊃')
+      .replace(/\\supseteq/g, '⊇')
+      .replace(/\\cup/g, '∪')
+      .replace(/\\cap/g, '∩')
+      .replace(/\\emptyset/g, '∅')
+      .replace(/\\forall/g, '∀')
+      .replace(/\\exists/g, '∃')
+      .replace(/\\nexists/g, '∄')
+      // Handle Greek letters (lowercase)
+      .replace(/\\alpha/g, 'α')
+      .replace(/\\beta/g, 'β')
+      .replace(/\\gamma/g, 'γ')
+      .replace(/\\delta/g, 'δ')
+      .replace(/\\epsilon/g, 'ε')
+      .replace(/\\varepsilon/g, 'ε')
+      .replace(/\\zeta/g, 'ζ')
+      .replace(/\\eta/g, 'η')
+      .replace(/\\theta/g, 'θ')
+      .replace(/\\iota/g, 'ι')
+      .replace(/\\kappa/g, 'κ')
+      .replace(/\\lambda/g, 'λ')
+      .replace(/\\mu/g, 'μ')
+      .replace(/\\nu/g, 'ν')
+      .replace(/\\xi/g, 'ξ')
+      .replace(/\\pi/g, 'π')
+      .replace(/\\rho/g, 'ρ')
+      .replace(/\\sigma/g, 'σ')
+      .replace(/\\tau/g, 'τ')
+      .replace(/\\upsilon/g, 'υ')
+      .replace(/\\phi/g, 'φ')
+      .replace(/\\varphi/g, 'φ')
+      .replace(/\\chi/g, 'χ')
+      .replace(/\\psi/g, 'ψ')
+      .replace(/\\omega/g, 'ω')
+      // Handle Greek letters (uppercase)
+      .replace(/\\Gamma/g, 'Γ')
+      .replace(/\\Delta/g, 'Δ')
+      .replace(/\\Theta/g, 'Θ')
+      .replace(/\\Lambda/g, 'Λ')
+      .replace(/\\Xi/g, 'Ξ')
+      .replace(/\\Pi/g, 'Π')
+      .replace(/\\Sigma/g, 'Σ')
+      .replace(/\\Phi/g, 'Φ')
+      .replace(/\\Psi/g, 'Ψ')
+      .replace(/\\Omega/g, 'Ω')
+      // Handle O notation and mathcal
+      .replace(/\\mathcal\{O\}/g, 'O')
+      .replace(/\\mathcal\{([^}]+)\}/g, '$1')
+      .replace(/\\mathbb\{([^}]+)\}/g, '$1')
+      // Handle dots
+      .replace(/\\ldots/g, '...')
+      .replace(/\\cdots/g, '···')
+      .replace(/\\vdots/g, '⋮')
+      .replace(/\\ddots/g, '⋱')
+      // Clean up spacing commands
+      .replace(/\\,/g, ' ')
+      .replace(/\\ /g, ' ')
+      .replace(/\\;/g, ' ')
+      .replace(/\\!/g, '')
+      .replace(/\\:/g, ' ')
+      .replace(/\\quad/g, '  ')
+      .replace(/\\qquad/g, '    ')
+      // Convert superscript notation to Unicode superscripts where possible
+      // 10^5 -> 10⁵, n^2 -> n², etc.
+      .replace(/\^0/g, '⁰')
+      .replace(/\^1/g, '¹')
+      .replace(/\^2/g, '²')
+      .replace(/\^3/g, '³')
+      .replace(/\^4/g, '⁴')
+      .replace(/\^5/g, '⁵')
+      .replace(/\^6/g, '⁶')
+      .replace(/\^7/g, '⁷')
+      .replace(/\^8/g, '⁸')
+      .replace(/\^9/g, '⁹')
+      .replace(/\^\{0\}/g, '⁰')
+      .replace(/\^\{1\}/g, '¹')
+      .replace(/\^\{2\}/g, '²')
+      .replace(/\^\{3\}/g, '³')
+      .replace(/\^\{4\}/g, '⁴')
+      .replace(/\^\{5\}/g, '⁵')
+      .replace(/\^\{6\}/g, '⁶')
+      .replace(/\^\{7\}/g, '⁷')
+      .replace(/\^\{8\}/g, '⁸')
+      .replace(/\^\{9\}/g, '⁹')
+      // Handle multi-digit superscripts: ^{10} -> ¹⁰
+      .replace(/\^\{(\d+)\}/g, (match, digits) => {
+        const superscriptMap = {'0': '⁰', '1': '¹', '2': '²', '3': '³', '4': '⁴', '5': '⁵', '6': '⁶', '7': '⁷', '8': '⁸', '9': '⁹'};
+        return digits.split('').map(d => superscriptMap[d] || d).join('');
+      })
+      // Handle subscript notation to Unicode subscripts
+      .replace(/_0/g, '₀')
+      .replace(/_1/g, '₁')
+      .replace(/_2/g, '₂')
+      .replace(/_3/g, '₃')
+      .replace(/_4/g, '₄')
+      .replace(/_5/g, '₅')
+      .replace(/_6/g, '₆')
+      .replace(/_7/g, '₇')
+      .replace(/_8/g, '₈')
+      .replace(/_9/g, '₉')
+      .replace(/_i/g, 'ᵢ')
+      .replace(/_j/g, 'ⱼ')
+      .replace(/_n/g, 'ₙ')
+      .replace(/\{i\}/g, 'ᵢ')
+      .replace(/\{j\}/g, 'ⱼ')
+      // Clean up remaining curly braces (after all other replacements)
+      .replace(/\{([^{}]+)\}/g, '$1');
+  }
+
   function parseMarkdown(text) {
     if (!text) return '';
 
@@ -2204,16 +2548,15 @@
 
     // STEP 1: Extract LaTeX math FIRST (before any string replacements that might corrupt it)
     // Process LaTeX notation - extract and replace with placeholders BEFORE escaping HTML
-    // Convert \(...\) to inline math and \[...\] to display math
-    // Use MathJax format that Codeforces already has loaded
     const mathPlaceholders = [];
 
     // Process display math blocks \[...\] (non-greedy match)
     // Handle both single and double-escaped backslashes from JSON
     processedText = processedText.replace(/\\{1,2}\[([\s\S]*?)\\{1,2}\]/g, function (match, content) {
       const placeholder = `__MATH_DISPLAY_${mathPlaceholders.length}__`;
-      // Don't escape the LaTeX content - MathJax needs raw LaTeX
-      mathPlaceholders.push(`<span class="lch-math-display"><script type="math/tex; mode=display">${content.trim()}</script></span>`);
+      // Convert LaTeX to readable HTML directly
+      const htmlContent = convertMathToHtml(content.trim());
+      mathPlaceholders.push(`<span class="lch-math-display">${htmlContent}</span>`);
       return placeholder;
     });
 
@@ -2221,8 +2564,9 @@
     // Handle both single and double-escaped backslashes from JSON
     processedText = processedText.replace(/\\{1,2}\(([\s\S]*?)\\{1,2}\)/g, function (match, content) {
       const placeholder = `__MATH_INLINE_${mathPlaceholders.length}__`;
-      // Don't escape the LaTeX content - MathJax needs raw LaTeX
-      mathPlaceholders.push(`<span class="lch-math-inline"><script type="math/tex">${content}</script></span>`);
+      // Convert LaTeX to readable HTML directly
+      const htmlContent = convertMathToHtml(content);
+      mathPlaceholders.push(`<span class="lch-math-inline">${htmlContent}</span>`);
       return placeholder;
     });
 
@@ -2230,14 +2574,16 @@
     // Display math: $$...$$
     processedText = processedText.replace(/\$\$([\s\S]*?)\$\$/g, function (match, content) {
       const placeholder = `__MATH_DISPLAY_${mathPlaceholders.length}__`;
-      mathPlaceholders.push(`<span class="lch-math-display"><script type="math/tex; mode=display">${content.trim()}</script></span>`);
+      const htmlContent = convertMathToHtml(content.trim());
+      mathPlaceholders.push(`<span class="lch-math-display">${htmlContent}</span>`);
       return placeholder;
     });
 
     // Inline math: $...$ (but not $$)
     processedText = processedText.replace(/(?<!\$)\$(?!\$)([^\$\n]+?)(?<!\$)\$(?!\$)/g, function (match, content) {
       const placeholder = `__MATH_INLINE_${mathPlaceholders.length}__`;
-      mathPlaceholders.push(`<span class="lch-math-inline"><script type="math/tex">${content}</script></span>`);
+      const htmlContent = convertMathToHtml(content);
+      mathPlaceholders.push(`<span class="lch-math-inline">${htmlContent}</span>`);
       return placeholder;
     });
 
@@ -2246,12 +2592,16 @@
     processedText = processedText
       .replace(/\\n/g, '\n')  // Convert literal \n to actual newline
       .replace(/\\"/g, '"');   // Convert escaped quotes
-    // Note: We don't replace \\\\ -> \\ anymore as it can corrupt LaTeX
+
+    // STEP 3: Apply LaTeX-to-Unicode conversion to remaining text (for LaTeX not wrapped in math delimiters)
+    // This handles cases like "1 \le t \le 10^5" that aren't inside $...$ or \(...\)
+    // We use Unicode conversion here (not HTML) so it survives the escapeHtml step
+    processedText = convertLatexToUnicode(processedText);
 
     // First escape HTML to prevent XSS (but preserve structure)
     let html = escapeHtml(processedText);
 
-    // Restore MathJax script tags (unescaped, as they're proper HTML)
+    // Restore math HTML (unescaped, as it's proper HTML we generated)
     mathPlaceholders.forEach((mathTag, index) => {
       // Replace the placeholder (which was escaped as regular text)
       // Try both display and inline placeholder patterns
@@ -2356,6 +2706,21 @@
     // Convert `code` to <code>
     html = html.replace(/`([^`]+)`/g, '<code class="lch-markdown-code">$1</code>');
 
+    // Convert subscript notation: x_i, x_{ij}, s_1, etc. to proper subscripts
+    // Handle braced subscripts first: x_{abc} -> x<sub>abc</sub>
+    html = html.replace(/([a-zA-Z])_\{([^}]+)\}/g, '$1<sub>$2</sub>');
+    // Handle single character subscripts: x_i, x_1, etc. -> x<sub>i</sub>
+    html = html.replace(/([a-zA-Z])_([a-zA-Z0-9])/g, '$1<sub>$2</sub>');
+    
+    // Convert superscript notation: x^2, x^{n}, etc. to proper superscripts
+    // Handle braced superscripts first: x^{abc} -> x<sup>abc</sup>
+    html = html.replace(/([a-zA-Z0-9])?\^?\{([^}]+)\}/g, (match, base, exp) => {
+      if (base) return `${base}<sup>${exp}</sup>`;
+      return match;
+    });
+    // Handle single character superscripts: x^2, n^k -> x<sup>2</sup>
+    html = html.replace(/([a-zA-Z0-9])\^([a-zA-Z0-9])/g, '$1<sup>$2</sup>');
+
     // Wrap consecutive list items in ul tags
     // Replace patterns like: <li>...</li><li>...</li> with <ul><li>...</li><li>...</li></ul>
     html = html.replace(/(<li class="lch-explanation-list-item">[\s\S]*?<\/li>(?:\s*<li class="lch-explanation-list-item">[\s\S]*?<\/li>)*)/g,
@@ -2372,9 +2737,12 @@
 
   function generateCacheKey(url) {
     if (!url) return '';
+    // Match service worker implementation exactly
     return url
       .replace(/^https?:\/\//, '')
+      .replace(/\?.*$/, '')  // Remove query params
       .replace(/[^a-zA-Z0-9]/g, '_')
+      .toLowerCase()  // Convert to lowercase
       .slice(0, 100);
   }
 

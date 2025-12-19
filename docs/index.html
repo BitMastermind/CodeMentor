@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Privacy Policy - CodeMentor</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            line-height: 1.6;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            color: #333;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 40px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #2c3e50;
+            border-bottom: 3px solid #3498db;
+            padding-bottom: 10px;
+        }
+        h2 {
+            color: #34495e;
+            margin-top: 30px;
+        }
+        h3 {
+            color: #555;
+            margin-top: 20px;
+        }
+        ul {
+            margin: 10px 0;
+            padding-left: 30px;
+        }
+        li {
+            margin: 5px 0;
+        }
+        a {
+            color: #3498db;
+            text-decoration: none;
+        }
+        a:hover {
+            text-decoration: underline;
+        }
+        .highlight {
+            background-color: #e8f5e9;
+            padding: 15px;
+            border-left: 4px solid #4caf50;
+            margin: 20px 0;
+        }
+        .highlight ul {
+            margin: 10px 0;
+            padding-left: 20px;
+        }
+        code {
+            background-color: #f4f4f4;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-family: 'Courier New', monospace;
+        }
+        .last-updated {
+            color: #666;
+            font-style: italic;
+            margin-bottom: 20px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Privacy Policy for CodeMentor</h1>
+        <p class="last-updated"><strong>Last Updated:</strong> December 2024</p>
+
+        <h2>Introduction</h2>
+        <p>CodeMentor ("we", "our", or "the extension") is a Chrome extension that provides AI-powered hints, contest tracking, and streak management for coding platforms. This Privacy Policy explains how we handle your data.</p>
+
+        <h2>Data Collection and Storage</h2>
+
+        <h3>Data Stored Locally</h3>
+        <p>All data is stored <strong>locally in your browser</strong> using Chrome's storage APIs:</p>
+        <ul>
+            <li><strong>API Keys</strong>: Your AI provider API keys are stored encrypted in <code>chrome.storage.sync</code> (encrypted by Chrome)</li>
+            <li><strong>Usernames</strong>: Platform usernames (LeetCode, Codeforces, CodeChef) are stored locally</li>
+            <li><strong>Favorites</strong>: Problems you mark as favorites are stored locally</li>
+            <li><strong>Hints Cache</strong>: Generated hints are cached locally to reduce API calls</li>
+            <li><strong>Streak Data</strong>: Your problem-solving streak statistics are stored locally</li>
+            <li><strong>Contest Data</strong>: Upcoming contest information is cached locally</li>
+            <li><strong>Settings</strong>: Your preferences (notifications, reminders, etc.) are stored locally</li>
+        </ul>
+        <p><strong>We do not have access to any of this data.</strong> It remains on your device.</p>
+
+        <h3>Data Transmitted</h3>
+        <p>The extension only transmits data in the following scenarios:</p>
+
+        <h4>1. AI Provider APIs (when you request hints):</h4>
+        <ul>
+            <li>Problem descriptions and your API key are sent directly to your chosen AI provider (OpenAI, Google Gemini, Claude, etc.)</li>
+            <li><strong>Your API key is transmitted securely via HTTPS headers</strong> (never in URLs)</li>
+            <li>We do not intercept, store, or have access to your API key or the responses</li>
+            <li>This communication is direct between your browser and the AI provider</li>
+        </ul>
+
+        <h4>2. Contest APIs (for contest tracking):</h4>
+        <ul>
+            <li>Public contest data is fetched from:
+                <ul>
+                    <li>Codeforces API (<code>api.codeforces.com</code>)</li>
+                    <li>Kontests.net API (<code>kontests.net</code>)</li>
+                    <li>CodeChef API (<code>codechef.com/api</code>)</li>
+                </ul>
+            </li>
+            <li>Only public contest information is requested</li>
+            <li>No personal data is transmitted</li>
+        </ul>
+
+        <h4>3. Platform APIs (for streak tracking, if usernames are configured):</h4>
+        <ul>
+            <li>If you provide your usernames, the extension fetches your public activity data from:
+                <ul>
+                    <li>LeetCode GraphQL API</li>
+                    <li>Codeforces REST API</li>
+                    <li>CodeChef Community API</li>
+                </ul>
+            </li>
+            <li>Only publicly available data is accessed</li>
+            <li>This data is used locally for streak calculation</li>
+        </ul>
+
+        <h4>4. Analytics (optional, currently disabled):</h4>
+        <ul>
+            <li>If enabled, anonymous usage analytics may be sent to Google Analytics</li>
+            <li>Analytics can be disabled in Settings</li>
+            <li>No personal information is collected</li>
+        </ul>
+
+        <h4>5. Error Tracking (optional, currently disabled):</h4>
+        <ul>
+            <li>If enabled, error reports may be sent to Sentry</li>
+            <li>Error reports are sanitized to remove sensitive information (API keys, etc.)</li>
+            <li>Error tracking can be disabled</li>
+        </ul>
+
+        <h2>Third-Party Services</h2>
+
+        <h3>AI Providers</h3>
+        <p>When you use AI-powered hints, your data is sent directly to your chosen AI provider:</p>
+        <ul>
+            <li><strong>OpenAI</strong>: <a href="https://openai.com/policies/privacy-policy" target="_blank">Privacy Policy</a></li>
+            <li><strong>Google Gemini</strong>: <a href="https://policies.google.com/privacy" target="_blank">Privacy Policy</a></li>
+            <li><strong>Anthropic Claude</strong>: <a href="https://www.anthropic.com/privacy" target="_blank">Privacy Policy</a></li>
+            <li><strong>Groq</strong>: <a href="https://groq.com/privacy" target="_blank">Privacy Policy</a></li>
+            <li><strong>Together AI</strong>: <a href="https://together.ai/privacy" target="_blank">Privacy Policy</a></li>
+            <li><strong>Hugging Face</strong>: <a href="https://huggingface.co/privacy" target="_blank">Privacy Policy</a></li>
+            <li><strong>OpenRouter</strong>: <a href="https://openrouter.ai/privacy" target="_blank">Privacy Policy</a></li>
+        </ul>
+        <p>We are not responsible for how these providers handle your data. Please review their privacy policies.</p>
+
+        <h3>Contest Data Providers</h3>
+        <ul>
+            <li><strong>Kontests.net</strong>: Public contest data aggregator</li>
+            <li><strong>Codeforces</strong>: Public contest API</li>
+            <li><strong>CodeChef</strong>: Public contest API</li>
+        </ul>
+
+        <h2>Data Security</h2>
+        <ul>
+            <li>API keys are stored encrypted using Chrome's built-in encryption (<code>chrome.storage.sync</code>)</li>
+            <li>All API communications use HTTPS</li>
+            <li>API keys are never logged or exposed in URLs</li>
+            <li>No data is sent to our servers (we don't operate any servers)</li>
+        </ul>
+
+        <h2>User Rights</h2>
+        <p>You have full control over your data:</p>
+        <ul>
+            <li><strong>Delete Data</strong>: Uninstall the extension to remove all stored data</li>
+            <li><strong>Export Data</strong>: Use Chrome's storage inspection tools to export your data</li>
+            <li><strong>Disable Features</strong>: Turn off analytics, error tracking, or any feature you don't want to use</li>
+            <li><strong>Clear Cache</strong>: Hints cache can be cleared by refreshing hints</li>
+        </ul>
+
+        <h2>Children's Privacy</h2>
+        <p>This extension is not intended for users under 13 years of age. We do not knowingly collect personal information from children.</p>
+
+        <h2>Changes to This Policy</h2>
+        <p>We may update this Privacy Policy from time to time. The "Last Updated" date at the top indicates when changes were made. Continued use of the extension after changes constitutes acceptance.</p>
+
+        <h2>Contact</h2>
+        <p>For privacy-related questions or concerns:</p>
+        <ul>
+            <li>Open an issue on <a href="https://github.com/BitMastermind/LC-Helper" target="_blank">GitHub</a></li>
+            <li>Review our Security Documentation</li>
+        </ul>
+
+        <h2>Compliance</h2>
+        <p>This extension complies with:</p>
+        <ul>
+            <li>Chrome Web Store Privacy Requirements</li>
+            <li>General Data Protection Regulation (GDPR) principles</li>
+            <li>California Consumer Privacy Act (CCPA) principles</li>
+        </ul>
+
+        <div class="highlight">
+            <h3>Key Points:</h3>
+            <ul>
+                <li>✅ All data stored locally on your device</li>
+                <li>✅ No data sent to our servers (we don't have servers)</li>
+                <li>✅ API keys encrypted and transmitted securely</li>
+                <li>✅ Optional analytics can be disabled</li>
+                <li>✅ You control all your data</li>
+            </ul>
+        </div>
+    </div>
+</body>
+</html>

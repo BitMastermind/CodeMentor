@@ -1,4 +1,4 @@
-// LC Helper - Background Service Worker
+// CodeMentor - Background Service Worker
 
 // Import error tracking and analytics utilities
 // Note: importScripts paths are relative to extension root, not this file
@@ -8,7 +8,7 @@ importScripts('/utils/apiKeySecurity.js');
 
 // Initialize on install or update
 chrome.runtime.onInstalled.addListener(async (details) => {
-  console.log('LC Helper installed/updated:', details.reason);
+  console.log('CodeMentor installed/updated:', details.reason);
 
   // Track installation/update
   if (typeof LCAnalytics !== 'undefined') {
@@ -29,7 +29,7 @@ chrome.runtime.onInstalled.addListener(async (details) => {
 
 // Handle browser startup - reinitialize alarms and sync streak data
 chrome.runtime.onStartup.addListener(async () => {
-  console.log('LC Helper: Browser started, reinitializing systems...');
+  console.log('CodeMentor: Browser started, reinitializing systems...');
   
   // Re-fetch contests on browser startup
   fetchAndCacheContests();
@@ -42,13 +42,13 @@ chrome.runtime.onStartup.addListener(async () => {
   const dayChanged = hasCrossedDayBoundary(lastSyncTime);
   
   if (dayChanged) {
-    console.log('LC Helper: New day detected on browser startup, forcing streak sync...');
+    console.log('CodeMentor: New day detected on browser startup, forcing streak sync...');
   }
   
   // Reinitialize the streak system (recreates alarms and syncs data)
   await initializeStreakSystem();
   
-  console.log('LC Helper: Browser startup initialization complete');
+  console.log('CodeMentor: Browser startup initialization complete');
 });
 
 // Also initialize on service worker startup (in case it was sleeping)
@@ -61,7 +61,7 @@ chrome.runtime.onStartup.addListener(async () => {
   const dayChanged = hasCrossedDayBoundary(lastSyncTime);
   
   if (dayChanged) {
-    console.log('LC Helper: Day boundary detected on service worker wake-up, will sync streak...');
+    console.log('CodeMentor: Day boundary detected on service worker wake-up, will sync streak...');
   }
   
   // Check if streak alarms exist, if not recreate them
@@ -86,27 +86,27 @@ async function ensureStreakAlarmsExist() {
     const missingAlarms = requiredAlarms.filter(name => !alarmNames.includes(name));
     
     if (missingAlarms.length > 0) {
-      console.log('LC Helper: Missing alarms detected, reinitializing streak system:', missingAlarms);
+      console.log('CodeMentor: Missing alarms detected, reinitializing streak system:', missingAlarms);
       await initializeStreakSystem();
     } else {
       // Check if we've crossed a day boundary
       const { lastSyncTime } = await chrome.storage.local.get('lastSyncTime');
       
       if (hasCrossedDayBoundary(lastSyncTime)) {
-        console.log('LC Helper: Day boundary detected, syncing streak to update for new day...');
+        console.log('CodeMentor: Day boundary detected, syncing streak to update for new day...');
         syncUnifiedStreak().catch(err => console.log('Day boundary sync failed:', err));
       } else {
         // Alarms exist, but check if we should sync based on last sync time
         const sixHoursAgo = Date.now() - (6 * 60 * 60 * 1000);
         
         if (!lastSyncTime || lastSyncTime < sixHoursAgo) {
-          console.log('LC Helper: Last sync was over 6 hours ago, syncing now...');
+          console.log('CodeMentor: Last sync was over 6 hours ago, syncing now...');
           syncUnifiedStreak().catch(err => console.log('Auto sync failed:', err));
         }
       }
     }
   } catch (error) {
-    console.error('LC Helper: Error checking alarms:', error);
+    console.error('CodeMentor: Error checking alarms:', error);
   }
 }
 
@@ -139,7 +139,7 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
     // Check if notifications are enabled
     const { notifyContests } = await chrome.storage.sync.get('notifyContests');
     if (notifyContests === false) {
-      console.log('LC Helper: Contest notifications are disabled');
+      console.log('CodeMentor: Contest notifications are disabled');
       return;
     }
 
@@ -156,16 +156,16 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
         buttons: [{ title: 'Open Contest' }],
         priority: 2
       }).catch((error) => {
-        console.error('LC Helper: Failed to create contest notification:', error);
+        console.error('CodeMentor: Failed to create contest notification:', error);
         if (typeof LCHErrorTracking !== 'undefined') {
           LCHErrorTracking.trackError(error, {
             tags: { type: 'notification_creation' }
           });
         }
       });
-      console.log('LC Helper: Contest reminder sent for:', contest.name);
+      console.log('CodeMentor: Contest reminder sent for:', contest.name);
     } else {
-      console.log('LC Helper: Contest not found for reminder:', contestId);
+      console.log('CodeMentor: Contest not found for reminder:', contestId);
     }
   }
   // Streak sync alarm (every 6 hours)
@@ -275,7 +275,7 @@ chrome.notifications.onButtonClicked.addListener(async (notificationId, buttonIn
               type: 'SHOW_HINTS_PANEL'
             }).catch(() => {
               // If message fails, tab might not have content script loaded
-              console.log('LC Helper: Could not send message to tab');
+              console.log('CodeMentor: Could not send message to tab');
             });
           }, 500);
         } else {
@@ -394,7 +394,7 @@ async function handleMessage(message, sender, sendResponse) {
         // Trigger background sync if data is stale (more than 1 hour old)
         const oneHourAgo = Date.now() - (60 * 60 * 1000);
         if (!lastSyncTime || lastSyncTime < oneHourAgo) {
-          console.log('LC Helper: Streak data is stale, triggering background sync...');
+          console.log('CodeMentor: Streak data is stale, triggering background sync...');
           syncUnifiedStreak().catch(err => console.log('Background sync failed:', err));
         }
         break;
@@ -431,9 +431,19 @@ async function handleMessage(message, sender, sendResponse) {
         sendResponse(removeResult);
         break;
 
+      case 'REMOVE_FAVORITE_BY_URL':
+        const removeByUrlResult = await removeFavoriteByUrl(message.url);
+        sendResponse(removeByUrlResult);
+        break;
+
       case 'IS_FAVORITE':
         const isFav = await isFavorite(message.url);
         sendResponse({ isFavorite: isFav });
+        break;
+
+      case 'OPEN_SETTINGS':
+        chrome.runtime.openOptionsPage();
+        sendResponse({ success: true });
         break;
 
       // Timer
@@ -481,7 +491,7 @@ async function handleMessage(message, sender, sendResponse) {
         sendResponse({ error: 'Unknown message type' });
     }
   } catch (error) {
-    console.error('LC Helper Background Error:', error);
+    console.error('CodeMentor Background Error:', error);
     sendResponse({ error: error.message || 'Unknown background error' });
 
     if (typeof LCHErrorTracking !== 'undefined') {
@@ -577,7 +587,7 @@ async function fetchCodeforcesContests() {
     const data = await response.json();
 
     if (data.status !== 'OK') {
-      console.log('LC Helper: Codeforces API returned error');
+      console.log('CodeMentor: Codeforces API returned error');
       return [];
     }
 
@@ -598,7 +608,7 @@ async function fetchCodeforcesContests() {
     return contests;
   } catch (error) {
     if (error.name !== 'AbortError') {
-      console.log('LC Helper: Codeforces API unavailable');
+      console.log('CodeMentor: Codeforces API unavailable');
     }
     return [];
   }
@@ -643,7 +653,7 @@ async function fetchLeetCodeContests() {
     } catch (e) {
       // Silently fall back - network errors are expected
       if (e.name !== 'AbortError') {
-        console.log('LC Helper: LeetCode API unavailable, using fallback');
+        console.log('CodeMentor: LeetCode API unavailable, using fallback');
       }
     }
 
@@ -667,7 +677,7 @@ async function fetchLeetCodeContests() {
       duration: 90
     }].filter(c => c.startTime); // Ensure valid timestamp
   } catch (error) {
-    console.log('LC Helper: Error fetching LeetCode contests');
+    console.log('CodeMentor: Error fetching LeetCode contests');
     return [];
   }
 }
@@ -711,7 +721,7 @@ async function fetchCodeChefContests() {
     } catch (e) {
       // Silently try next fallback
       if (e.name !== 'AbortError') {
-        console.log('LC Helper: Kontests.net unavailable for CodeChef, trying direct API');
+        console.log('CodeMentor: Kontests.net unavailable for CodeChef, trying direct API');
       }
     }
 
@@ -745,13 +755,13 @@ async function fetchCodeChefContests() {
     } catch (e) {
       // Silently return empty - network errors are expected
       if (e.name !== 'AbortError') {
-        console.log('LC Helper: CodeChef API unavailable');
+        console.log('CodeMentor: CodeChef API unavailable');
       }
     }
 
     return [];
   } catch (error) {
-    console.log('LC Helper: Error fetching CodeChef contests');
+    console.log('CodeMentor: Error fetching CodeChef contests');
     return [];
   }
 }
@@ -765,7 +775,7 @@ function normalizeToISO(timestamp) {
     // If it's already a Date object, convert directly
     if (timestamp instanceof Date) {
       if (isNaN(timestamp.getTime())) {
-        console.warn('LC Helper: Invalid Date object');
+        console.warn('CodeMentor: Invalid Date object');
         return null;
       }
       return timestamp.toISOString();
@@ -778,14 +788,14 @@ function normalizeToISO(timestamp) {
     // - Other date string formats
     const date = new Date(timestamp);
     if (isNaN(date.getTime())) {
-      console.warn('LC Helper: Invalid timestamp format:', timestamp);
+      console.warn('CodeMentor: Invalid timestamp format:', timestamp);
       return null;
     }
 
     // Return as ISO 8601 UTC string (always in UTC, ends with 'Z')
     return date.toISOString();
   } catch (error) {
-    console.warn('LC Helper: Error normalizing timestamp:', timestamp, error);
+    console.warn('CodeMentor: Error normalizing timestamp:', timestamp, error);
     return null;
   }
 }
@@ -822,12 +832,12 @@ async function toggleContestNotification(contestId, enabled) {
   let updated;
   if (enabled) {
     updated = [...new Set([...notifiedContests, contestId])];
-    console.log('LC Helper: Enabling reminder for contest:', contest?.name || contestId);
+    console.log('CodeMentor: Enabling reminder for contest:', contest?.name || contestId);
   } else {
     updated = notifiedContests.filter(id => id !== contestId);
     // Remove alarm if disabled
     await chrome.alarms.clear(`contest_${contestId}`);
-    console.log('LC Helper: Disabling reminder for contest:', contest?.name || contestId);
+    console.log('CodeMentor: Disabling reminder for contest:', contest?.name || contestId);
   }
 
   await chrome.storage.local.set({ notifiedContests: updated });
@@ -842,7 +852,7 @@ async function setContestAlarm(contestId) {
   const contest = contests?.find(c => c.id === contestId);
 
   if (!contest) {
-    console.log('LC Helper: Contest not found for alarm:', contestId);
+    console.log('CodeMentor: Contest not found for alarm:', contestId);
     return;
   }
 
@@ -856,12 +866,12 @@ async function setContestAlarm(contestId) {
         when: alarmTime
       });
       const alarmDate = new Date(alarmTime);
-      console.log('LC Helper: Contest alarm set for', contest.name, 'at', alarmDate.toLocaleString());
+      console.log('CodeMentor: Contest alarm set for', contest.name, 'at', alarmDate.toLocaleString());
     } catch (error) {
-      console.error('LC Helper: Failed to create contest alarm:', error);
+      console.error('CodeMentor: Failed to create contest alarm:', error);
     }
   } else {
-    console.log('LC Helper: Cannot set alarm for', contest.name, '- alarm time is in the past');
+    console.log('CodeMentor: Cannot set alarm for', contest.name, '- alarm time is in the past');
   }
 }
 
@@ -983,11 +993,11 @@ async function getApiKeySafely() {
 
     // SECURITY: Never log the actual key - only log sanitized version
     const sanitized = apiKey.length > 8 ? `${apiKey.substring(0, 4)}...${apiKey.substring(apiKey.length - 4)}` : '***';
-    console.log('LC Helper: Using API key (provider: ' + (apiProvider || 'gemini') + ', format: ' + sanitized + ')');
+    console.log('CodeMentor: Using API key (provider: ' + (apiProvider || 'gemini') + ', format: ' + sanitized + ')');
 
     return { key: apiKey, provider: apiProvider || 'gemini' };
   } catch (error) {
-    console.error('LC Helper: Error retrieving API key:', error.message);
+    console.error('CodeMentor: Error retrieving API key:', error.message);
     return { key: null, provider: null, error: 'Failed to retrieve API key' };
   }
 }
@@ -1080,7 +1090,7 @@ async function explainProblemGemini(problem, apiKey, platform = 'codeforces') {
   try {
     // Log the complete problem object received
     console.log('='.repeat(80));
-    console.log('LC Helper - EXPLAIN PROBLEM - Received Problem Object:');
+    console.log('CodeMentor - EXPLAIN PROBLEM - Received Problem Object:');
     console.log('='.repeat(80));
     console.log(JSON.stringify({
       title: problem.title,
@@ -1201,6 +1211,13 @@ JSON RULES:
 4. Escape quotes inside strings as \\"
 5. Use \\\\n\\\\n for paragraph breaks in explanation text
 6. keyPoints must be an array of strings, even if empty: []
+7. MATH NOTATION: Use Unicode symbols directly, NOT LaTeX. Examples:
+   - Use ≤ instead of \\le or \\leq
+   - Use ≥ instead of \\ge or \\geq
+   - Use 10⁵ instead of 10^5 or 10^{5}
+   - Use × instead of \\times
+   - Use → instead of \\rightarrow
+   - Use subscripts: n₁, n₂ instead of n_1, n_2
 
 EXAMPLE OF CORRECT OUTPUT:
 {"explanation":"This problem asks us to find...\\n\\nThe key insight is...","keyPoints":["Point 1","Point 2","Point 3"]}
@@ -1360,6 +1377,13 @@ JSON RULES:
 4. Escape quotes inside strings as \\"
 5. Use \\\\n\\\\n for paragraph breaks in explanation text
 6. keyPoints must be an array of strings, even if empty: []
+7. MATH NOTATION: Use Unicode symbols directly, NOT LaTeX. Examples:
+   - Use ≤ instead of \\le or \\leq
+   - Use ≥ instead of \\ge or \\geq
+   - Use 10⁵ instead of 10^5 or 10^{5}
+   - Use × instead of \\times
+   - Use → instead of \\rightarrow
+   - Use subscripts: n₁, n₂ instead of n_1, n_2
 
 EXAMPLE OF CORRECT OUTPUT:
 {"explanation":"This problem asks us to find...\\n\\nThe key insight is...","keyPoints":["Point 1","Point 2","Point 3"]}
@@ -1418,7 +1442,7 @@ Now return ONLY the JSON object (no other text):`;
 
     // Log the exact prompt being sent to LLM for debugging
     console.log('='.repeat(80));
-    console.log('LC Helper - EXPLAIN PROBLEM - Prompt sent to LLM:');
+    console.log('CodeMentor - EXPLAIN PROBLEM - Prompt sent to LLM:');
     console.log('='.repeat(80));
     console.log('Platform:', platform);
     console.log('Problem Data:', JSON.stringify({
@@ -1470,7 +1494,7 @@ Now return ONLY the JSON object (no other text):`;
       contents: [{ parts }],
       generationConfig: {
         temperature: 0.3,
-        maxOutputTokens: 2500,
+        maxOutputTokens: 16384,  // High limit - users bring own API keys
         response_mime_type: "application/json",
         response_schema: {
           type: "object",
@@ -1522,7 +1546,7 @@ Now return ONLY the JSON object (no other text):`;
         return { explanation: parsed.explanation, keyPoints: parsed.keyPoints || [] };
       }
     } catch (e) {
-      console.warn('LC Helper: First attempt JSON parse failed, trying extraction:', e.message);
+      console.warn('CodeMentor: First attempt JSON parse failed, trying extraction:', e.message);
       // Fallback: try to extract JSON using robust extraction
       parsed = extractJSONFromResponse(content);
       if (parsed && parsed.explanation) {
@@ -1532,7 +1556,7 @@ Now return ONLY the JSON object (no other text):`;
 
     // If we still don't have valid JSON, retry with a stricter prompt
     if (!parsed || !parsed.explanation) {
-      console.warn('LC Helper: JSON extraction failed, retrying with stricter prompt...');
+      console.warn('CodeMentor: JSON extraction failed, retrying with stricter prompt...');
       const strictPrompt = `${prompt}\n\n⚠️ REMINDER: You MUST return ONLY valid JSON. No text before or after. Start with { and end with }. Example: {"explanation":"...","keyPoints":["..."]}`;
       
       try {
@@ -1563,7 +1587,7 @@ Now return ONLY the JSON object (no other text):`;
           try {
             parsed = JSON.parse(content);
             if (parsed.explanation && parsed.keyPoints) {
-              console.log('LC Helper: Retry successful, got valid JSON');
+              console.log('CodeMentor: Retry successful, got valid JSON');
               return parsed;
             }
             if (parsed.explanation) {
@@ -1572,19 +1596,19 @@ Now return ONLY the JSON object (no other text):`;
           } catch (e2) {
             parsed = extractJSONFromResponse(content);
             if (parsed && parsed.explanation) {
-              console.log('LC Helper: Retry successful after extraction');
+              console.log('CodeMentor: Retry successful after extraction');
               return parsed;
             }
           }
         }
       } catch (retryError) {
-        console.error('LC Helper: Retry failed:', retryError);
+        console.error('CodeMentor: Retry failed:', retryError);
       }
     }
 
     // Final fallback: extract meaningful text from response instead of raw JSON/markdown
     const cleanText = extractTextFromResponse(content);
-    console.log('LC Helper: Using extracted text fallback for explanation');
+    console.log('CodeMentor: Using extracted text fallback for explanation');
     return {
       explanation: cleanText || 'Failed to parse explanation. Please try again.',
       keyPoints: []
@@ -1687,6 +1711,13 @@ JSON RULES:
 4. Escape quotes inside strings as \\"
 5. Use \\\\n\\\\n for paragraph breaks in explanation text
 6. keyPoints must be an array of strings, even if empty: []
+7. MATH NOTATION: Use Unicode symbols directly, NOT LaTeX. Examples:
+   - Use ≤ instead of \\le or \\leq
+   - Use ≥ instead of \\ge or \\geq
+   - Use 10⁵ instead of 10^5 or 10^{5}
+   - Use × instead of \\times
+   - Use → instead of \\rightarrow
+   - Use subscripts: n₁, n₂ instead of n_1, n_2
 
 EXAMPLE OF CORRECT OUTPUT:
 {"explanation":"This problem asks us to find...\\n\\nThe key insight is...","keyPoints":["Point 1","Point 2","Point 3"]}
@@ -1793,6 +1824,13 @@ JSON RULES:
 4. Escape quotes inside strings as \\"
 5. Use \\\\n\\\\n for paragraph breaks in explanation text
 6. keyPoints must be an array of strings, even if empty: []
+7. MATH NOTATION: Use Unicode symbols directly, NOT LaTeX. Examples:
+   - Use ≤ instead of \\le or \\leq
+   - Use ≥ instead of \\ge or \\geq
+   - Use 10⁵ instead of 10^5 or 10^{5}
+   - Use × instead of \\times
+   - Use → instead of \\rightarrow
+   - Use subscripts: n₁, n₂ instead of n_1, n_2
 
 EXAMPLE OF CORRECT OUTPUT:
 {"explanation":"This problem asks us to find...\\n\\nThe key insight is...","keyPoints":["Point 1","Point 2","Point 3"]}
@@ -1852,7 +1890,7 @@ Return ONLY the JSON object (no other text):`;
           }
         ],
         temperature: 0.3,
-        max_tokens: 2500,
+        max_tokens: 16384,  // High limit - users bring own API keys
         response_format: { type: "json_object" }
       })
     });
@@ -1861,7 +1899,7 @@ Return ONLY the JSON object (no other text):`;
 
     // If gpt-4o fails (user doesn't have access), fallback to gpt-4o-mini without images
     if (data.error && model === 'gpt-4o' && hasImages) {
-      console.log('LC Helper: gpt-4o not available for explanation, falling back to gpt-4o-mini (images will be skipped)');
+      console.log('CodeMentor: gpt-4o not available for explanation, falling back to gpt-4o-mini (images will be skipped)');
 
       // Remove images from content and retry with gpt-4o-mini
       const textOnlyContent = userContent.filter(item => item.type === 'text');
@@ -1890,7 +1928,7 @@ Return ONLY the JSON object (no other text):`;
             }
           ],
           temperature: 0.3,
-          max_tokens: 2500,
+          max_tokens: 16384,  // High limit - users bring own API keys
           response_format: { type: "json_object" }
         })
       });
@@ -1927,7 +1965,7 @@ Return ONLY the JSON object (no other text):`;
 
     // Fallback: extract meaningful text from response instead of raw JSON/markdown
     const cleanText = extractTextFromResponse(content);
-    console.log('LC Helper: Using extracted text fallback for explanation (OpenAI)');
+    console.log('CodeMentor: Using extracted text fallback for explanation (OpenAI)');
     return {
       explanation: cleanText || 'Failed to parse explanation. Please try again.',
       keyPoints: []
@@ -2051,12 +2089,12 @@ function fixMalformedJSON(jsonStr) {
 // Handles markdown code blocks, nested JSON, and various response formats
 function extractJSONFromResponse(content) {
   if (!content || typeof content !== 'string') {
-    console.error('LC Helper: extractJSONFromResponse - Invalid content:', typeof content);
+    console.error('CodeMentor: extractJSONFromResponse - Invalid content:', typeof content);
     return null;
   }
 
   // Log the raw content for debugging (truncated)
-  console.log('LC Helper: Extracting JSON from response (first 500 chars):', content.substring(0, 500));
+  console.log('CodeMentor: Extracting JSON from response (first 500 chars):', content.substring(0, 500));
 
   // Pre-process: Fix malformed JSON with unescaped newlines
   let normalizedContent = content;
@@ -2066,18 +2104,18 @@ function extractJSONFromResponse(content) {
   if (trimmed.startsWith('{') && trimmed.endsWith('}')) {
     try {
       const parsed = JSON.parse(trimmed);
-      console.log('LC Helper: Successfully parsed direct JSON');
+      console.log('CodeMentor: Successfully parsed direct JSON');
       return parsed;
     } catch (e) {
       // Try fixing malformed JSON (unescaped newlines in strings)
-      console.log('LC Helper: Direct parse failed, trying to fix malformed JSON...');
+      console.log('CodeMentor: Direct parse failed, trying to fix malformed JSON...');
       try {
         const fixed = fixMalformedJSON(trimmed);
         const parsed = JSON.parse(fixed);
-        console.log('LC Helper: Successfully parsed JSON after fixing malformed content');
+        console.log('CodeMentor: Successfully parsed JSON after fixing malformed content');
         return parsed;
       } catch (e2) {
-        console.warn('LC Helper: Fix malformed JSON failed:', e2.message);
+        console.warn('CodeMentor: Fix malformed JSON failed:', e2.message);
         // Continue to other methods
       }
     }
@@ -2117,7 +2155,7 @@ function extractJSONFromResponse(content) {
       for (const strategy of parseStrategies) {
         try {
           const parsed = strategy();
-          console.log('LC Helper: Successfully extracted JSON from code block');
+          console.log('CodeMentor: Successfully extracted JSON from code block');
           return parsed;
         } catch (e) {
           // Try next strategy
@@ -2141,7 +2179,7 @@ function extractJSONFromResponse(content) {
     for (const strategy of parseStrategies) {
       try {
         const parsed = strategy();
-        console.log('LC Helper: Successfully extracted JSON using brace matching');
+        console.log('CodeMentor: Successfully extracted JSON using brace matching');
         return parsed;
       } catch (e) {
         // Try next strategy
@@ -2162,7 +2200,7 @@ function extractJSONFromResponse(content) {
     for (const strategy of parseStrategies) {
       try {
         const parsed = strategy();
-        console.log('LC Helper: Successfully extracted JSON using regex fallback');
+        console.log('CodeMentor: Successfully extracted JSON using regex fallback');
         return parsed;
       } catch (e) {
         // Try next strategy
@@ -2183,7 +2221,7 @@ function extractJSONFromResponse(content) {
         const parsed = strategy();
         // If it's an array, wrap it in an object with hints property
         if (Array.isArray(parsed) && parsed.length === 3) {
-          console.log('LC Helper: Found array, converting to hints object');
+          console.log('CodeMentor: Found array, converting to hints object');
           return { hints: parsed };
         }
         return parsed;
@@ -2206,7 +2244,7 @@ function extractJSONFromResponse(content) {
       if (repaired) {
         try {
           const parsed = JSON.parse(repaired);
-          console.log('LC Helper: Successfully extracted and repaired incomplete JSON');
+          console.log('CodeMentor: Successfully extracted and repaired incomplete JSON');
           return parsed;
         } catch (e) {
           // Try next strategy
@@ -2215,8 +2253,8 @@ function extractJSONFromResponse(content) {
     }
   }
 
-  console.error('LC Helper: Failed to extract JSON from response');
-  console.error('LC Helper: Full response content:', content);
+  console.error('CodeMentor: Failed to extract JSON from response');
+  console.error('CodeMentor: Full response content:', content);
   return null;
 }
 
@@ -2236,9 +2274,9 @@ function normalizeHintsResponse(parsed) {
   
   // Case 2: hints is an array but with less than 3 items - pad it
   if (parsed.hints && Array.isArray(parsed.hints) && parsed.hints.length > 0) {
-    console.log('LC Helper: Padding hints array from', parsed.hints.length, 'to 3 items');
+    console.log('CodeMentor: Padding hints array from', parsed.hints.length, 'to 3 items');
     while (parsed.hints.length < 3) {
-      parsed.hints.push('(Additional hint not available)');
+      parsed.hints.push('Think about how the constraints guide you toward the solution approach. What time/space complexity is needed?');
     }
     return parsed;
   }
@@ -2253,8 +2291,14 @@ function normalizeHintsResponse(parsed) {
     ].filter(h => h && typeof h === 'string' && h.trim());
     
     if (hints.length > 0) {
-      console.log('LC Helper: Converted object hints format to array');
-      while (hints.length < 3) hints.push('(Additional hint not available)');
+      console.log('CodeMentor: Converted object hints format to array');
+      // Add contextual fallback hints if needed
+      const fallbackHints = [
+        'Consider what data structures would efficiently handle the operations needed.',
+        'Think about how the constraints guide you toward the solution approach. What time/space complexity is needed?',
+        'Look for patterns in the examples - they often reveal the key insight for solving the problem.'
+      ];
+      while (hints.length < 3) hints.push(fallbackHints[hints.length] || fallbackHints[2]);
       return { ...parsed, hints };
     }
   }
@@ -2268,22 +2312,32 @@ function normalizeHintsResponse(parsed) {
     ].filter(h => h && typeof h === 'string' && h.trim());
     
     if (hints.length > 0) {
-      console.log('LC Helper: Extracted hints from hint1/hint2/hint3 format');
-      while (hints.length < 3) hints.push('(Additional hint not available)');
+      console.log('CodeMentor: Extracted hints from hint1/hint2/hint3 format');
+      const fallbackHints = [
+        'Consider what data structures would efficiently handle the operations needed.',
+        'Think about how the constraints guide you toward the solution approach. What time/space complexity is needed?',
+        'Look for patterns in the examples - they often reveal the key insight for solving the problem.'
+      ];
+      while (hints.length < 3) hints.push(fallbackHints[hints.length] || fallbackHints[2]);
       return { ...parsed, hints };
     }
   }
   
   // Case 5: Array at root level (some models return just the array)
   if (Array.isArray(parsed) && parsed.length > 0) {
-    console.log('LC Helper: Response is array at root level, wrapping in hints object');
+    console.log('CodeMentor: Response is array at root level, wrapping in hints object');
     const hints = parsed.slice(0, 3);
-    while (hints.length < 3) hints.push('(Additional hint not available)');
+    const fallbackHints = [
+      'Consider what data structures would efficiently handle the operations needed.',
+      'Think about how the constraints guide you toward the solution approach. What time/space complexity is needed?',
+      'Look for patterns in the examples - they often reveal the key insight for solving the problem.'
+    ];
+    while (hints.length < 3) hints.push(fallbackHints[hints.length] || fallbackHints[2]);
     return { hints };
   }
   
   // Could not normalize
-  console.warn('LC Helper: Could not normalize hints response:', JSON.stringify(parsed).substring(0, 300));
+  console.warn('CodeMentor: Could not normalize hints response:', JSON.stringify(parsed).substring(0, 300));
   return null;
 }
 
@@ -2472,11 +2526,11 @@ async function generateHintsGemini(problem, apiKey, platform = 'codeforces') {
     };
 
     // Truncate long fields to prevent hitting token limits
-    // Keep description reasonable but allow enough for complex problems
-    const MAX_DESCRIPTION_LENGTH = 6000;
-    const MAX_EXAMPLES_LENGTH = 2000;
-    const MAX_FORMAT_LENGTH = 1000;
-    const MAX_HTML_LENGTH = 8000;
+    // Reduced limits to ensure we stay well within input token limits
+    const MAX_DESCRIPTION_LENGTH = 4000;
+    const MAX_EXAMPLES_LENGTH = 1500;
+    const MAX_FORMAT_LENGTH = 800;
+    const MAX_HTML_LENGTH = 5000;
 
     const truncatedDescription = truncateText(problem.description, MAX_DESCRIPTION_LENGTH);
     const truncatedExamples = truncateText(problem.examples, MAX_EXAMPLES_LENGTH);
@@ -2486,7 +2540,7 @@ async function generateHintsGemini(problem, apiKey, platform = 'codeforces') {
 
     // Log the complete problem object received (with truncated values for logging)
     console.log('='.repeat(80));
-    console.log('LC Helper - GET HINTS - Received Problem Object:');
+    console.log('CodeMentor - GET HINTS - Received Problem Object:');
     console.log('='.repeat(80));
     console.log(JSON.stringify({
       title: problem.title,
@@ -2605,6 +2659,13 @@ Return ONLY:
   ]
 
 }
+
+MATH NOTATION: Use Unicode symbols directly, NOT LaTeX:
+- Use ≤ instead of \\le or \\leq
+- Use ≥ instead of \\ge or \\geq
+- Use 10⁵ instead of 10^5 or 10^{5}
+- Use × instead of \\times
+- Use → instead of \\rightarrow
 
 ═══════════════════════════════════════════════════════════════
 
@@ -2783,6 +2844,13 @@ Return ONLY:
 
 }
 
+MATH NOTATION: Use Unicode symbols directly, NOT LaTeX:
+- Use ≤ instead of \\le or \\leq
+- Use ≥ instead of \\ge or \\geq
+- Use 10⁵ instead of 10^5 or 10^{5}
+- Use × instead of \\times
+- Use → instead of \\rightarrow
+
 
 
 ═══════════════════════════════════════════════════════════════
@@ -2855,7 +2923,7 @@ Now generate the hints as JSON.`;
 
     // Log the exact prompt being sent to LLM for debugging
     console.log('='.repeat(80));
-    console.log('LC Helper - GET HINTS - Prompt sent to LLM:');
+    console.log('CodeMentor - GET HINTS - Prompt sent to LLM:');
     console.log('='.repeat(80));
     console.log('Platform:', platform);
     console.log('Problem Data:', JSON.stringify({
@@ -2915,7 +2983,7 @@ Now generate the hints as JSON.`;
         }],
         generationConfig: {
           temperature: 0.5,  // Lowered from 0.7 for more consistent hints
-          maxOutputTokens: 4096,  // Increased to handle longer responses
+          maxOutputTokens: 16384,  // High limit - users bring own API keys
           topP: 0.9,
           topK: 40,
           response_mime_type: "application/json"  // Force JSON output - prevents markdown wrapping
@@ -2934,20 +3002,19 @@ Now generate the hints as JSON.`;
     const finishReason = data.candidates?.[0]?.finishReason;
     const content = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
     
-    console.log('LC Helper: Gemini response finishReason:', finishReason);
-    console.log('LC Helper: Gemini response content length:', content.length);
-    console.log('LC Helper: Gemini response content (first 500 chars):', content.substring(0, 500));
+    console.log('CodeMentor: Gemini response finishReason:', finishReason);
+    console.log('CodeMentor: Gemini response content length:', content.length);
+    console.log('CodeMentor: Gemini response content (first 500 chars):', content.substring(0, 500));
 
-    // If the API explicitly says it hit token limit, report that
+    // If truncated, log but still try to use the response
     if (finishReason === 'MAX_TOKENS') {
-      console.error('LC Helper: Gemini response was truncated due to MAX_TOKENS');
-      return { error: 'Response was truncated due to token limit. Please try again with a shorter problem description.' };
+      console.warn('CodeMentor: Gemini response was truncated, attempting to use partial response');
     }
 
     // Parse JSON from response using robust extraction
     const parsed = extractJSONFromResponse(content);
     if (parsed) {
-      console.log('LC Helper: Parsed Gemini hints response:', JSON.stringify(parsed, null, 2).substring(0, 500));
+      console.log('CodeMentor: Parsed Gemini hints response:', JSON.stringify(parsed, null, 2).substring(0, 500));
     }
     
     // Use the helper function to normalize hints from various formats
@@ -2956,9 +3023,21 @@ Now generate the hints as JSON.`;
       return normalized;
     }
 
+    // If truncated and couldn't parse, provide fallback hints
+    if (finishReason === 'MAX_TOKENS' && content.length > 100) {
+      console.log('CodeMentor: Using fallback hints due to truncation');
+      return {
+        hints: [
+          "Start by carefully reading the problem statement and identifying the input/output format. What data structures could represent this problem?",
+          "Consider the constraints - what time complexity is needed? Look for patterns in the examples that might suggest an approach.",
+          "Think about common algorithmic techniques that might apply. Can you break this into smaller subproblems?"
+        ]
+      };
+    }
+
     // If we couldn't parse or normalize, provide a helpful error
-    console.error('LC Helper: Failed to extract/normalize hints from Gemini response');
-    console.error('LC Helper: Full response content:', content);
+    console.error('CodeMentor: Failed to extract/normalize hints from Gemini response');
+    console.error('CodeMentor: Full response content:', content);
     return { error: 'Failed to parse AI response. Please try again.' };
   } catch (error) {
     console.error('Error generating hints with Gemini:', error);
@@ -3115,6 +3194,13 @@ Return JSON with this structure:
   ]
 }
 
+IMPORTANT - MATH NOTATION: Use Unicode symbols directly, NOT LaTeX:
+- Use ≤ instead of \\le or \\leq
+- Use ≥ instead of \\ge or \\geq  
+- Use 10⁵ instead of 10^5 or 10^{5}
+- Use × instead of \\times
+- Use → instead of \\rightarrow
+
 Remember: DO NOT give the solution, code, or exact data structures. Guide the user's thinking progressively.`;
     }
 
@@ -3164,7 +3250,7 @@ Remember: DO NOT give the solution, code, or exact data structures. Guide the us
           }
         ],
         temperature: 0.7,
-        max_tokens: 3072,  // Increased from 2048 to handle longer responses
+        max_tokens: 16384,  // High limit - users bring own API keys
         response_format: { type: "json_object" }  // Force JSON output
       })
     });
@@ -3180,18 +3266,18 @@ Remember: DO NOT give the solution, code, or exact data structures. Guide the us
     const finishReason = data.choices?.[0]?.finish_reason;
     const content = data.choices?.[0]?.message?.content || '';
     
-    console.log('LC Helper: OpenAI response finish_reason:', finishReason);
-    console.log('LC Helper: OpenAI response content length:', content.length);
+    console.log('CodeMentor: OpenAI response finish_reason:', finishReason);
+    console.log('CodeMentor: OpenAI response content length:', content.length);
 
+    // If truncated, log but still try to use the response
     if (finishReason === 'length') {
-      console.error('LC Helper: OpenAI response was truncated due to length limit');
-      return { error: 'Response was truncated due to token limit. Please try again with a shorter problem description.' };
+      console.warn('CodeMentor: OpenAI response was truncated, attempting to use partial response');
     }
 
     // Parse JSON from response using robust extraction
     const parsed = extractJSONFromResponse(content);
     if (parsed) {
-      console.log('LC Helper: Parsed OpenAI hints response:', JSON.stringify(parsed, null, 2).substring(0, 500));
+      console.log('CodeMentor: Parsed OpenAI hints response:', JSON.stringify(parsed, null, 2).substring(0, 500));
     }
     
     // Use the helper function to normalize hints from various formats
@@ -3200,8 +3286,20 @@ Remember: DO NOT give the solution, code, or exact data structures. Guide the us
       return normalized;
     }
 
-    console.error('LC Helper: Failed to extract/normalize hints from OpenAI response');
-    console.error('LC Helper: Full response content:', content);
+    // If truncated and couldn't parse, provide fallback hints
+    if (finishReason === 'length' && content.length > 100) {
+      console.log('CodeMentor: Using fallback hints due to truncation');
+      return {
+        hints: [
+          "Start by carefully reading the problem statement and identifying the input/output format. What data structures could represent this problem?",
+          "Consider the constraints - what time complexity is needed? Look for patterns in the examples that might suggest an approach.",
+          "Think about common algorithmic techniques that might apply. Can you break this into smaller subproblems?"
+        ]
+      };
+    }
+
+    console.error('CodeMentor: Failed to extract/normalize hints from OpenAI response');
+    console.error('CodeMentor: Full response content:', content);
     return { error: 'Failed to parse AI response. Please try again.' };
   } catch (error) {
     console.error('Error generating hints with OpenAI:', error);
@@ -3285,7 +3383,7 @@ Return JSON:
       },
       body: JSON.stringify({
         model: 'claude-3-5-haiku-20241022',
-        max_tokens: 3072,  // Increased from 2048 to handle longer responses
+        max_tokens: 16384,  // High limit - users bring own API keys
         system: systemPrompt,
         messages: [{
           role: 'user',
@@ -3303,20 +3401,20 @@ Return JSON:
     
     // Check if response was truncated
     const stopReason = data.stop_reason;
-    console.log('LC Helper: Claude response stop_reason:', stopReason);
+    console.log('CodeMentor: Claude response stop_reason:', stopReason);
     
+    // If truncated, log but still try to use the response
     if (stopReason === 'max_tokens') {
-      console.error('LC Helper: Claude response was truncated due to max_tokens');
-      return { error: 'Response was truncated due to token limit. Please try again with a shorter problem description.' };
+      console.warn('CodeMentor: Claude response was truncated, attempting to use partial response');
     }
     
     const responseText = data.content?.[0]?.text || '';
-    console.log('LC Helper: Claude response length:', responseText.length);
+    console.log('CodeMentor: Claude response length:', responseText.length);
 
     // Parse JSON from response using robust extraction
     const parsed = extractJSONFromResponse(responseText);
     if (parsed) {
-      console.log('LC Helper: Parsed Claude hints response:', JSON.stringify(parsed, null, 2).substring(0, 500));
+      console.log('CodeMentor: Parsed Claude hints response:', JSON.stringify(parsed, null, 2).substring(0, 500));
     }
     
     // Use the helper function to normalize hints from various formats
@@ -3325,8 +3423,20 @@ Return JSON:
       return normalized;
     }
 
-    console.error('LC Helper: Failed to extract/normalize hints from Claude response');
-    console.error('LC Helper: Full response content:', responseText);
+    // If truncated and couldn't parse, provide fallback hints
+    if (stopReason === 'max_tokens' && responseText.length > 100) {
+      console.log('CodeMentor: Using fallback hints due to truncation');
+      return {
+        hints: [
+          "Start by carefully reading the problem statement and identifying the input/output format. What data structures could represent this problem?",
+          "Consider the constraints - what time complexity is needed? Look for patterns in the examples that might suggest an approach.",
+          "Think about common algorithmic techniques that might apply. Can you break this into smaller subproblems?"
+        ]
+      };
+    }
+
+    console.error('CodeMentor: Failed to extract/normalize hints from Claude response');
+    console.error('CodeMentor: Full response content:', responseText);
     return { error: 'Failed to parse AI response. Please try again.' };
   } catch (error) {
     console.error('Error generating hints with Claude:', error);
@@ -3418,7 +3528,7 @@ Provide a clear explanation with key concepts and approach.${jsonRules}`;
       },
       body: JSON.stringify({
         model: 'claude-3-5-haiku-20241022',
-        max_tokens: 2048,
+        max_tokens: 16384,  // High limit - users bring own API keys
         messages: [{
           role: 'user',
           content: messageContent
@@ -3451,7 +3561,7 @@ Provide a clear explanation with key concepts and approach.${jsonRules}`;
 
     // Retry with stricter prompt if needed
     if (!parsed || !parsed.explanation) {
-      console.warn('LC Helper: Claude JSON extraction failed, retrying with stricter prompt...');
+      console.warn('CodeMentor: Claude JSON extraction failed, retrying with stricter prompt...');
       const strictPrompt = `${prompt}\n\n⚠️ REMINDER: You MUST return ONLY valid JSON. No text before or after. Start with { and end with }. Example: {"explanation":"...","keyPoints":["..."]}`;
 
       const retryContent = [{
@@ -3472,7 +3582,7 @@ Provide a clear explanation with key concepts and approach.${jsonRules}`;
         },
         body: JSON.stringify({
           model: 'claude-3-5-haiku-20241022',
-          max_tokens: 2048,
+          max_tokens: 16384,  // High limit - users bring own API keys
           messages: [{
             role: 'user',
             content: retryContent
@@ -3579,7 +3689,7 @@ Return JSON:
           { role: 'user', content: userContent }
         ],
         temperature: 0.7,
-        max_tokens: 3072,  // Increased from 2048 to handle longer responses
+        max_tokens: 16384,  // High limit - users bring own API keys
         response_format: { type: "json_object" }  // Force JSON output
       })
     });
@@ -3595,12 +3705,12 @@ Return JSON:
     const finishReason = data.choices?.[0]?.finish_reason;
     const content = data.choices?.[0]?.message?.content || '';
     
-    console.log('LC Helper: Groq response finish_reason:', finishReason);
-    console.log('LC Helper: Groq response content length:', content.length);
+    console.log('CodeMentor: Groq response finish_reason:', finishReason);
+    console.log('CodeMentor: Groq response content length:', content.length);
 
+    // If truncated, log but still try to use the response
     if (finishReason === 'length') {
-      console.error('LC Helper: Groq response was truncated due to length limit');
-      return { error: 'Response was truncated due to token limit. Please try again with a shorter problem description.' };
+      console.warn('CodeMentor: Groq response was truncated, attempting to use partial response');
     }
 
     // Parse JSON from response using robust extraction
@@ -3612,8 +3722,20 @@ Return JSON:
       return normalized;
     }
 
-    console.error('LC Helper: Failed to extract/normalize hints from Groq response');
-    console.error('LC Helper: Full response content:', content);
+    // If truncated and couldn't parse, provide fallback hints
+    if (finishReason === 'length' && content.length > 100) {
+      console.log('CodeMentor: Using fallback hints due to truncation');
+      return {
+        hints: [
+          "Start by carefully reading the problem statement and identifying the input/output format. What data structures could represent this problem?",
+          "Consider the constraints - what time complexity is needed? Look for patterns in the examples that might suggest an approach.",
+          "Think about common algorithmic techniques that might apply. Can you break this into smaller subproblems?"
+        ]
+      };
+    }
+
+    console.error('CodeMentor: Failed to extract/normalize hints from Groq response');
+    console.error('CodeMentor: Full response content:', content);
     return { error: 'Failed to parse AI response. Please try again.' };
   } catch (error) {
     console.error('Error generating hints with Groq:', error);
@@ -3699,7 +3821,7 @@ ${problem.examples ? `\nExamples:\n${problem.examples}` : ''}${jsonRules}`;
           { role: 'user', content: userContent }
         ],
         temperature: 0.7,
-        max_tokens: 2048
+        max_tokens: 16384  // High limit - users bring own API keys
       })
     });
 
@@ -3727,7 +3849,7 @@ ${problem.examples ? `\nExamples:\n${problem.examples}` : ''}${jsonRules}`;
     let parsed = tryParse(content);
 
     if (!parsed || !parsed.explanation) {
-      console.warn('LC Helper: Groq JSON extraction failed, retrying with stricter prompt...');
+      console.warn('CodeMentor: Groq JSON extraction failed, retrying with stricter prompt...');
       const strictPrompt = `${prompt}\n\n⚠️ REMINDER: You MUST return ONLY valid JSON. No text before or after. Start with { and end with }. Example: {"explanation":"...","keyPoints":["..."]}`;
 
       const retryContent = [{
@@ -3748,7 +3870,7 @@ ${problem.examples ? `\nExamples:\n${problem.examples}` : ''}${jsonRules}`;
             { role: 'user', content: retryContent }
           ],
           temperature: 0.7,
-          max_tokens: 2048
+          max_tokens: 16384
         })
       });
 
@@ -3850,7 +3972,7 @@ Return JSON:
           { role: 'user', content: userContent }
         ],
         temperature: 0.7,
-        max_tokens: 3072,  // Increased from 2048 to handle longer responses
+        max_tokens: 16384,  // High limit - users bring own API keys
         response_format: { type: "json_object" }  // Force JSON output
       })
     });
@@ -3866,12 +3988,12 @@ Return JSON:
     const finishReason = data.choices?.[0]?.finish_reason;
     const content = data.choices?.[0]?.message?.content || '';
     
-    console.log('LC Helper: Together AI response finish_reason:', finishReason);
-    console.log('LC Helper: Together AI response content length:', content.length);
+    console.log('CodeMentor: Together AI response finish_reason:', finishReason);
+    console.log('CodeMentor: Together AI response content length:', content.length);
 
+    // If truncated, log but still try to use the response
     if (finishReason === 'length') {
-      console.error('LC Helper: Together AI response was truncated due to length limit');
-      return { error: 'Response was truncated due to token limit. Please try again with a shorter problem description.' };
+      console.warn('CodeMentor: Together AI response was truncated, attempting to use partial response');
     }
 
     // Parse JSON from response using robust extraction
@@ -3883,8 +4005,20 @@ Return JSON:
       return normalized;
     }
 
-    console.error('LC Helper: Failed to extract/normalize hints from Together AI response');
-    console.error('LC Helper: Full response content:', content);
+    // If truncated and couldn't parse, provide fallback hints
+    if (finishReason === 'length' && content.length > 100) {
+      console.log('CodeMentor: Using fallback hints due to truncation');
+      return {
+        hints: [
+          "Start by carefully reading the problem statement and identifying the input/output format. What data structures could represent this problem?",
+          "Consider the constraints - what time complexity is needed? Look for patterns in the examples that might suggest an approach.",
+          "Think about common algorithmic techniques that might apply. Can you break this into smaller subproblems?"
+        ]
+      };
+    }
+
+    console.error('CodeMentor: Failed to extract/normalize hints from Together AI response');
+    console.error('CodeMentor: Full response content:', content);
     return { error: 'Failed to parse AI response. Please try again.' };
   } catch (error) {
     console.error('Error generating hints with Together AI:', error);
@@ -3970,7 +4104,7 @@ ${problem.examples ? `\nExamples:\n${problem.examples}` : ''}${jsonRules}`;
           { role: 'user', content: userContent }
         ],
         temperature: 0.7,
-        max_tokens: 2048
+        max_tokens: 16384  // High limit - users bring own API keys
       })
     });
 
@@ -3998,7 +4132,7 @@ ${problem.examples ? `\nExamples:\n${problem.examples}` : ''}${jsonRules}`;
     let parsed = tryParse(content);
 
     if (!parsed || !parsed.explanation) {
-      console.warn('LC Helper: Together JSON extraction failed, retrying with stricter prompt...');
+      console.warn('CodeMentor: Together JSON extraction failed, retrying with stricter prompt...');
       const strictPrompt = `${prompt}\n\n⚠️ REMINDER: You MUST return ONLY valid JSON. No text before or after. Start with { and end with }. Example: {"explanation":"...","keyPoints":["..."]}`;
 
       const retryContent = [{
@@ -4019,7 +4153,7 @@ ${problem.examples ? `\nExamples:\n${problem.examples}` : ''}${jsonRules}`;
             { role: 'user', content: retryContent }
           ],
           temperature: 0.7,
-          max_tokens: 2048
+          max_tokens: 16384
         })
       });
 
@@ -4123,7 +4257,7 @@ Return JSON:
     const data = await response.json();
     const content = Array.isArray(data) ? data[0]?.generated_text : data.generated_text;
     
-    console.log('LC Helper: HuggingFace response content length:', content?.length || 0);
+    console.log('CodeMentor: HuggingFace response content length:', content?.length || 0);
 
     // Parse JSON from response using robust extraction
     const parsed = extractJSONFromResponse(content || '');
@@ -4134,8 +4268,8 @@ Return JSON:
       return normalized;
     }
 
-    console.error('LC Helper: Failed to extract/normalize hints from HuggingFace response');
-    console.error('LC Helper: Full response content:', content);
+    console.error('CodeMentor: Failed to extract/normalize hints from HuggingFace response');
+    console.error('CodeMentor: Full response content:', content);
     return { error: 'Failed to parse AI response. Please try again.' };
   } catch (error) {
     console.error('Error generating hints with Hugging Face:', error);
@@ -4238,7 +4372,7 @@ ${problem.examples ? `\nExamples:\n${problem.examples}` : ''}${jsonRules}`;
     let parsed = tryParse(content);
 
     if (!parsed || !parsed.explanation) {
-      console.warn('LC Helper: HuggingFace JSON extraction failed, retrying with stricter prompt...');
+      console.warn('CodeMentor: HuggingFace JSON extraction failed, retrying with stricter prompt...');
       const strictPrompt = `${prompt}\n\n⚠️ REMINDER: You MUST return ONLY valid JSON. No text before or after. Start with { and end with }. Example: {"explanation":"...","keyPoints":["..."]}`;
 
       let strictInputs;
@@ -4392,13 +4526,13 @@ Return JSON with three hints:
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${apiKey}`,
         'HTTP-Referer': chrome.runtime.getURL(''),
-        'X-Title': 'LC Helper'
+        'X-Title': 'CodeMentor'
       },
       body: JSON.stringify({
         model: model,
         messages: messages,
         temperature: 0.7,
-        max_tokens: 3072,
+        max_tokens: 16384,  // High limit - users bring own API keys
         response_format: { type: "json_object" }
       })
     });
@@ -4418,7 +4552,7 @@ Return JSON with three hints:
       return normalized;
     }
 
-    console.error('LC Helper: Failed to extract/normalize hints from OpenRouter response');
+    console.error('CodeMentor: Failed to extract/normalize hints from OpenRouter response');
     return { error: 'Failed to parse AI response. Please try again.' };
   } catch (error) {
     console.error('Error generating hints with OpenRouter:', error);
@@ -4499,13 +4633,13 @@ Provide a clear explanation with key concepts.${jsonRules}`;
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${apiKey}`,
         'HTTP-Referer': chrome.runtime.getURL(''),
-        'X-Title': 'LC Helper'
+        'X-Title': 'CodeMentor'
       },
       body: JSON.stringify({
         model: model,
         messages: messages,
         temperature: 0.7,
-        max_tokens: 2048
+        max_tokens: 16384  // High limit - users bring own API keys
       })
     });
 
@@ -4533,7 +4667,7 @@ Provide a clear explanation with key concepts.${jsonRules}`;
     let parsed = tryParse(content);
 
     if (!parsed || !parsed.explanation) {
-      console.warn('LC Helper: OpenRouter JSON extraction failed, retrying with stricter prompt...');
+      console.warn('CodeMentor: OpenRouter JSON extraction failed, retrying with stricter prompt...');
       const strictPrompt = `${prompt}\n\n⚠️ REMINDER: You MUST return ONLY valid JSON. No text before or after. Start with { and end with }. Example: {"explanation":"...","keyPoints":["..."]}`;
 
       const strictMessageContent = imagePart
@@ -4546,13 +4680,13 @@ Provide a clear explanation with key concepts.${jsonRules}`;
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${apiKey}`,
           'HTTP-Referer': chrome.runtime.getURL(''),
-          'X-Title': 'LC Helper'
+          'X-Title': 'CodeMentor'
         },
         body: JSON.stringify({
           model: model,
           messages: [{ role: 'user', content: strictMessageContent }],
           temperature: 0.7,
-          max_tokens: 2048
+          max_tokens: 16384
         })
       });
 
@@ -4629,7 +4763,7 @@ Return JSON:
         { role: 'user', content: userPrompt }
       ],
       temperature: 0.7,
-      max_tokens: 3072,
+      max_tokens: 16384,  // High limit - users bring own API keys
       response_format: { type: "json_object" }
     };
 
@@ -4674,7 +4808,7 @@ Return JSON:
       return normalized;
     }
 
-    console.error('LC Helper: Failed to extract/normalize hints from custom endpoint response');
+    console.error('CodeMentor: Failed to extract/normalize hints from custom endpoint response');
     return { error: 'Failed to parse AI response. Please check your endpoint format.' };
   } catch (error) {
     console.error('Error generating hints with custom endpoint:', error);
@@ -4738,7 +4872,7 @@ Provide a clear explanation with key concepts.${jsonRules}`;
         { role: 'user', content: prompt }
       ],
       temperature: 0.7,
-      max_tokens: 2048
+      max_tokens: 16384
     };
 
     // Build headers
@@ -4789,7 +4923,7 @@ Provide a clear explanation with key concepts.${jsonRules}`;
     let parsed = tryParse(content);
 
     if (!parsed || !parsed.explanation) {
-      console.warn('LC Helper: Custom endpoint JSON extraction failed, retrying with stricter prompt...');
+      console.warn('CodeMentor: Custom endpoint JSON extraction failed, retrying with stricter prompt...');
       const strictPrompt = `${prompt}\n\n⚠️ REMINDER: You MUST return ONLY valid JSON. No text before or after. Start with { and end with }. Example: {"explanation":"...","keyPoints":["..."]}`;
 
       const strictRequestBody = {
@@ -4928,7 +5062,7 @@ async function handleTimerAlarm(alarmName) {
       priority: 2,
       requireInteraction: true
     }).catch((error) => {
-      console.error('LC Helper: Failed to create timer notification:', error);
+      console.error('CodeMentor: Failed to create timer notification:', error);
     });
 
     console.log('Timer reminder sent for:', timerData.title);
@@ -4956,11 +5090,11 @@ async function handleTimerStopAlarm(alarmName) {
           reason: '1hour'
         }).catch(() => {
           // Tab might not have content script loaded
-          console.log('LC Helper: Could not send timer stop message to tab');
+          console.log('CodeMentor: Could not send timer stop message to tab');
         });
       } catch (e) {
         // Tab doesn't exist anymore, that's fine
-        console.log('LC Helper: Timer tab already closed');
+        console.log('CodeMentor: Timer tab already closed');
       }
     }
 
@@ -5415,7 +5549,7 @@ async function sendStreakReminder() {
       priority: 2,
       requireInteraction: false
     }).catch((error) => {
-      console.error('LC Helper: Failed to create daily reminder notification:', error);
+      console.error('CodeMentor: Failed to create daily reminder notification:', error);
     });
   }
 }
@@ -5770,7 +5904,30 @@ async function addFavorite(problem) {
 async function removeFavorite(id) {
   // Remove from local storage
   const { favorites = [] } = await chrome.storage.local.get('favorites');
+  const initialLength = favorites.length;
   const updated = favorites.filter(f => f.id !== id);
+  
+  // Check if anything was actually removed
+  if (updated.length === initialLength) {
+    // Nothing was removed - ID might not match
+    return { success: false, error: 'Favorite not found' };
+  }
+  
+  await chrome.storage.local.set({ favorites: updated });
+  return { success: true };
+}
+
+async function removeFavoriteByUrl(url) {
+  // Remove from local storage by URL (fallback when ID doesn't match)
+  const { favorites = [] } = await chrome.storage.local.get('favorites');
+  const initialLength = favorites.length;
+  const updated = favorites.filter(f => f.url !== url);
+  
+  // Check if anything was actually removed
+  if (updated.length === initialLength) {
+    return { success: false, error: 'Favorite not found' };
+  }
+  
   await chrome.storage.local.set({ favorites: updated });
   return { success: true };
 }
@@ -5873,7 +6030,7 @@ async function testTimerNotification(url) {
         type: 'TEST_TIMER_MODAL'
       }).catch(() => {
         // Tab might not have content script loaded yet
-        console.log('LC Helper: Could not send modal message to tab');
+        console.log('CodeMentor: Could not send modal message to tab');
       });
     } else {
       // Try URL pattern matching
@@ -5886,7 +6043,7 @@ async function testTimerNotification(url) {
       }
     }
   } catch (e) {
-    console.log('LC Helper: Could not trigger modal:', e.message);
+    console.log('CodeMentor: Could not trigger modal:', e.message);
   }
 
   return { success: true, message: 'Notification and modal triggered successfully!' };
@@ -6013,7 +6170,7 @@ Return your response as a structured JSON object:
     };
 
   } catch (error) {
-    console.error('LC Helper: Scraping accuracy test failed:', error);
+    console.error('CodeMentor: Scraping accuracy test failed:', error);
     return {
       success: false,
       error: error.message || 'Failed to test scraping accuracy'
@@ -6053,7 +6210,7 @@ async function testScrapingAccuracyGemini(problem, apiKey, testPrompt) {
           temperature: 0.1,
           topK: 1,
           topP: 0.8,
-          maxOutputTokens: 2048
+          maxOutputTokens: 16384
         }
       })
     });
@@ -6082,7 +6239,7 @@ async function testScrapingAccuracyGemini(problem, apiKey, testPrompt) {
 // Submit user feedback
 async function submitFeedback(feedback) {
   try {
-    // Store feedback locally (you can later send to backend or email)
+    // Store feedback locally as backup
     const feedbackKey = `feedback_${Date.now()}_${Math.random().toString(36).substring(7)}`;
     await chrome.storage.local.set({
       [feedbackKey]: {
@@ -6100,16 +6257,30 @@ async function submitFeedback(feedback) {
       });
     }
 
-    // Optionally send to backend API
-    // Backend removed - feedback is stored locally only
-    //     body: JSON.stringify(feedback)
-    //   });
-    // }
+    // Generate GitHub Issues URL with pre-filled feedback
+    const githubRepo = 'BitMastermind/LC-Helper';
+    const issueTitle = encodeURIComponent(
+      `[${feedback.type === 'bug' ? 'Bug' : feedback.type === 'feature' ? 'Feature Request' : feedback.type === 'improvement' ? 'Improvement' : 'Feedback'}] ${feedback.message.substring(0, 50)}${feedback.message.length > 50 ? '...' : ''}`
+    );
+    
+    const issueBody = encodeURIComponent(
+      `## Feedback Type\n${feedback.type === 'bug' ? '🐛 Bug Report' : feedback.type === 'feature' ? '💡 Feature Request' : feedback.type === 'improvement' ? '✨ Improvement' : '💬 Other'}\n\n` +
+      `## Message\n${feedback.message}\n\n` +
+      `## Extension Version\n${feedback.extensionVersion || 'Unknown'}\n\n` +
+      (feedback.email && feedback.email !== 'anonymous' ? `## Contact Email\n${feedback.email}\n\n` : '') +
+      `## User Agent\n\`\`\`\n${feedback.userAgent || 'Unknown'}\n\`\`\`\n\n` +
+      `---\n*Submitted via CodeMentor Extension Feedback Form*`
+    );
+    
+    const githubIssueUrl = `https://github.com/${githubRepo}/issues/new?title=${issueTitle}&body=${issueBody}`;
 
-    console.log('LC Helper: Feedback submitted:', feedback.type);
-    return { success: true };
+    console.log('CodeMentor: Feedback submitted:', feedback.type);
+    return { 
+      success: true, 
+      githubIssueUrl: githubIssueUrl 
+    };
   } catch (error) {
-    console.error('LC Helper: Error submitting feedback:', error);
+    console.error('CodeMentor: Error submitting feedback:', error);
     if (typeof LCHErrorTracking !== 'undefined') {
       LCHErrorTracking.trackError(error, {
         tags: { type: 'feedback_submission' }
@@ -6147,7 +6318,7 @@ async function testScrapingAccuracyOpenAI(problem, apiKey, testPrompt) {
           }
         ],
         temperature: 0.1,
-        max_tokens: 2048
+        max_tokens: 16384
       })
     });
 

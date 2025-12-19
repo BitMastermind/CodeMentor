@@ -9,7 +9,7 @@
   const isBrowserExtension = typeof chrome !== 'undefined' || typeof browser !== 'undefined';
   
   if (!isBrowserExtension) {
-    console.warn('LC Helper: Not running in browser extension context');
+    console.warn('CodeMentor: Not running in browser extension context');
     return;
   }
 
@@ -61,6 +61,6 @@
     return 'Unknown';
   };
 
-  console.log(`LC Helper: Running in ${detectBrowser()}`);
+  console.log(`CodeMentor: Running in ${detectBrowser()}`);
 })();
 

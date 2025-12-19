@@ -1,4 +1,4 @@
-// LC Helper - API Key Security Utilities
+// CodeMentor - API Key Security Utilities
 // Provides secure handling and validation of API keys
 
 /**
@@ -148,11 +148,11 @@ async function getApiKeySecurely() {
 
     // SECURITY: Never log the actual key - only log sanitized version
     const sanitized = sanitizeApiKeyForLogging(apiKey);
-    console.log(`LC Helper: Using API key (provider: ${apiProvider || 'gemini'}, format: ${sanitized})`);
+    console.log(`CodeMentor: Using API key (provider: ${apiProvider || 'gemini'}, format: ${sanitized})`);
 
     return { key: apiKey, provider: apiProvider || 'gemini' };
   } catch (error) {
-    console.error('LC Helper: Error retrieving API key:', error.message);
+    console.error('CodeMentor: Error retrieving API key:', error.message);
     return { key: null, provider: null, error: 'Failed to retrieve API key' };
   }
 }
@@ -179,11 +179,11 @@ async function storeApiKeySecurely(apiKey, provider) {
 
     // SECURITY: Never log the actual key
     const sanitized = sanitizeApiKeyForLogging(apiKey);
-    console.log(`LC Helper: API key stored securely (provider: ${provider}, format: ${sanitized})`);
+    console.log(`CodeMentor: API key stored securely (provider: ${provider}, format: ${sanitized})`);
 
     return { success: true };
   } catch (error) {
-    console.error('LC Helper: Error storing API key:', error.message);
+    console.error('CodeMentor: Error storing API key:', error.message);
     return { success: false, error: 'Failed to store API key' };
   }
 }
