@@ -11,7 +11,7 @@
  * 6. Use HTTPS only for API calls
  */
 
-/**What 
+/**
  * Sanitizes API key for logging (shows only first 4 and last 4 chars)
  * @param {string} apiKey - The API key to sanitize
  * @returns {string} - Sanitized version (e.g., "sk-...abcd")

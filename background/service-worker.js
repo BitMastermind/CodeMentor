@@ -37,6 +37,14 @@ chrome.runtime.onStartup.addListener(async () => {
   // Re-create the contest refresh alarm
   chrome.alarms.create('refreshContests', { periodInMinutes: 360 });
   
+  // Check if we've crossed a day boundary before initializing
+  const { lastSyncTime } = await chrome.storage.local.get('lastSyncTime');
+  const dayChanged = hasCrossedDayBoundary(lastSyncTime);
+  
+  if (dayChanged) {
+    console.log('LC Helper: New day detected on browser startup, forcing streak sync...');
+  }
+  
   // Reinitialize the streak system (recreates alarms and syncs data)
   await initializeStreakSystem();
   
@@ -47,6 +55,14 @@ chrome.runtime.onStartup.addListener(async () => {
 (async () => {
   console.log('Service worker starting...');
   await ensureStreakDataExists();
+  
+  // Check if we've crossed a day boundary
+  const { lastSyncTime } = await chrome.storage.local.get('lastSyncTime');
+  const dayChanged = hasCrossedDayBoundary(lastSyncTime);
+  
+  if (dayChanged) {
+    console.log('LC Helper: Day boundary detected on service worker wake-up, will sync streak...');
+  }
   
   // Check if streak alarms exist, if not recreate them
   // This handles cases where alarms were lost (e.g., service worker terminated)
@@ -73,13 +89,20 @@ async function ensureStreakAlarmsExist() {
       console.log('LC Helper: Missing alarms detected, reinitializing streak system:', missingAlarms);
       await initializeStreakSystem();
     } else {
-      // Alarms exist, but check if we should sync based on last sync time
+      // Check if we've crossed a day boundary
       const { lastSyncTime } = await chrome.storage.local.get('lastSyncTime');
-      const sixHoursAgo = Date.now() - (6 * 60 * 60 * 1000);
       
-      if (!lastSyncTime || lastSyncTime < sixHoursAgo) {
-        console.log('LC Helper: Last sync was over 6 hours ago, syncing now...');
-        syncUnifiedStreak().catch(err => console.log('Auto sync failed:', err));
+      if (hasCrossedDayBoundary(lastSyncTime)) {
+        console.log('LC Helper: Day boundary detected, syncing streak to update for new day...');
+        syncUnifiedStreak().catch(err => console.log('Day boundary sync failed:', err));
+      } else {
+        // Alarms exist, but check if we should sync based on last sync time
+        const sixHoursAgo = Date.now() - (6 * 60 * 60 * 1000);
+        
+        if (!lastSyncTime || lastSyncTime < sixHoursAgo) {
+          console.log('LC Helper: Last sync was over 6 hours ago, syncing now...');
+          syncUnifiedStreak().catch(err => console.log('Auto sync failed:', err));
+        }
       }
     }
   } catch (error) {
@@ -103,12 +126,14 @@ chrome.tabs.onRemoved.addListener(async (tabId) => {
   }
 });
 
-// Handle alarms
+// Unified alarm handler - handles ALL alarm types
 chrome.alarms.onAlarm.addListener(async (alarm) => {
+  // Contest refresh alarm
   if (alarm.name === 'refreshContests') {
     await fetchAndCacheContests();
-  } else if (alarm.name.startsWith('contest_')) {
-    // Contest reminder notification
+  } 
+  // Contest reminder notifications
+  else if (alarm.name.startsWith('contest_')) {
     const contestId = alarm.name.replace('contest_', '');
 
     // Check if notifications are enabled
@@ -142,6 +167,36 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
     } else {
       console.log('LC Helper: Contest not found for reminder:', contestId);
     }
+  }
+  // Streak sync alarm (every 6 hours)
+  else if (alarm.name === 'unifiedStreakSync') {
+    await syncUnifiedStreak();
+  }
+  // Daily streak reminder (8 PM daily)
+  else if (alarm.name === 'dailyStreakReminder') {
+    await sendStreakReminder();
+    // Alarm automatically reschedules via periodInMinutes: 1440 set during initialization
+  }
+  // Daily stats reset (4 AM daily)
+  else if (alarm.name === 'dailyStatsReset') {
+    const today = getTodayDateString();
+    await chrome.storage.local.set({
+      dailyStats: { date: today, count: 0, problems: [] }
+    });
+    console.log('Daily stats reset for:', today);
+    // Alarm automatically reschedules via periodInMinutes: 1440 set during initialization
+  }
+  // 30-minute timer reminder
+  else if (alarm.name.startsWith('timer_') && !alarm.name.startsWith('timerStop_')) {
+    await handleTimerAlarm(alarm.name);
+  }
+  // 1-hour timer stop
+  else if (alarm.name.startsWith('timerStop_')) {
+    await handleTimerStopAlarm(alarm.name);
+  }
+  // Today count auto-refresh (every 15 minutes)
+  else if (alarm.name === 'refreshTodayCount') {
+    await syncTodayCountFromAPIs();
   }
 });
 
@@ -4847,31 +4902,7 @@ async function initializeStreakSystem() {
   console.log('Unified streak system fully initialized with alarms');
 }
 
-// Update alarm listener to handle streak alarms
-const originalAlarmListener = chrome.alarms.onAlarm.hasListener;
-chrome.alarms.onAlarm.addListener(async (alarm) => {
-  if (alarm.name === 'unifiedStreakSync') {
-    await syncUnifiedStreak();
-  } else if (alarm.name === 'dailyStreakReminder') {
-    await sendStreakReminder();
-  } else if (alarm.name === 'dailyStatsReset') {
-    // Reset daily stats at 4 AM
-    const today = getTodayDateString();
-    await chrome.storage.local.set({
-      dailyStats: { date: today, count: 0, problems: [] }
-    });
-    console.log('Daily stats reset for:', today);
-  } else if (alarm.name.startsWith('timer_') && !alarm.name.startsWith('timerStop_')) {
-    // 30-minute timer reminder
-    await handleTimerAlarm(alarm.name);
-  } else if (alarm.name.startsWith('timerStop_')) {
-    // 1-hour timer stop
-    await handleTimerStopAlarm(alarm.name);
-  } else if (alarm.name === 'refreshTodayCount') {
-    // Auto-refresh today's count from APIs
-    await syncTodayCountFromAPIs();
-  }
-});
+// Note: All alarm handling is now in the unified alarm listener above (line 130)
 
 // Handle 30-minute timer alarm
 async function handleTimerAlarm(alarmName) {
@@ -4951,7 +4982,7 @@ async function syncUnifiedStreak() {
 
     if (!leetcodeUsername && !codeforcesUsername && !codechefUsername) {
       console.log('No usernames configured, skipping sync');
-      return;
+      return { success: true, errors: [] };
     }
 
     // Fetch data from all platforms in parallel
@@ -4965,28 +4996,46 @@ async function syncUnifiedStreak() {
     const codeforcesData = results[1].status === 'fulfilled' ? results[1].value : null;
     const codechefData = results[2].status === 'fulfilled' ? results[2].value : null;
 
-    console.log('Fetched platform data:', { leetcodeData, codeforcesData, codechefData });
+    // Collect errors from failed fetches
+    const errors = [];
+    if (leetcodeData?.error) errors.push({ platform: 'LeetCode', message: leetcodeData.error });
+    if (codeforcesData?.error) errors.push({ platform: 'Codeforces', message: codeforcesData.error });
+    if (codechefData?.error) errors.push({ platform: 'CodeChef', message: codechefData.error });
 
-    // Calculate unified streak
-    const unifiedStreakData = calculateUnifiedStreak(leetcodeData, codeforcesData, codechefData);
+    // Filter out error objects, keep only valid data
+    const validLeetcodeData = leetcodeData && !leetcodeData.error ? leetcodeData : null;
+    const validCodeforcesData = codeforcesData && !codeforcesData.error ? codeforcesData : null;
+    const validCodechefData = codechefData && !codechefData.error ? codechefData : null;
+
+    console.log('Fetched platform data:', { leetcodeData: validLeetcodeData, codeforcesData: validCodeforcesData, codechefData: validCodechefData });
+    if (errors.length > 0) {
+      console.log('Errors encountered:', errors);
+    }
+
+    // Calculate unified streak (only from valid data)
+    const unifiedStreakData = calculateUnifiedStreak(validLeetcodeData, validCodeforcesData, validCodechefData);
 
     // Store data
     await chrome.storage.local.set({
       streakData: {
         unified: unifiedStreakData,
         platforms: {
-          leetcode: leetcodeData,
-          codeforces: codeforcesData,
-          codechef: codechefData
-        }
+          leetcode: validLeetcodeData,
+          codeforces: validCodeforcesData,
+          codechef: validCodechefData
+        },
+        errors: errors // Store errors for UI display
       },
       lastSyncTime: Date.now()
     });
 
     console.log('Unified streak calculated:', unifiedStreakData);
 
+    return { success: true, errors: errors };
+
   } catch (error) {
     console.error('Error syncing unified streak:', error);
+    return { success: false, errors: [{ platform: 'System', message: error.message || 'Unknown error occurred' }] };
   }
 }
 
@@ -5024,7 +5073,16 @@ async function fetchLeetCodeActivity(username) {
     }
 
     const data = await response.json();
-    const calendar = data.data?.matchedUser?.userCalendar;
+    
+    // Check if user exists
+    if (!data.data || !data.data.matchedUser) {
+      return { 
+        error: `User "${username}" not found on LeetCode. Please check the username.`,
+        platform: 'leetcode'
+      };
+    }
+    
+    const calendar = data.data.matchedUser.userCalendar;
 
     if (!calendar) {
       throw new Error('Invalid LeetCode response');
@@ -5045,7 +5103,10 @@ async function fetchLeetCodeActivity(username) {
 
   } catch (error) {
     console.error('Error fetching LeetCode activity:', error);
-    return null;
+    return { 
+      error: error.message || `Failed to fetch LeetCode data for "${username}"`,
+      platform: 'leetcode'
+    };
   }
 }
 
@@ -5059,14 +5120,34 @@ async function fetchCodeforcesActivity(username) {
       }
     );
 
-    if (!response.ok) {
-      throw new Error(`Codeforces API error: ${response.status}`);
-    }
-
+    // Codeforces API returns JSON even on errors, so always parse it
     const data = await response.json();
 
+    // Codeforces API returns errors in the response body with status !== 'OK'
     if (data.status !== 'OK') {
-      throw new Error('Invalid Codeforces response');
+      // Codeforces API returns error messages in the comment field
+      let errorMessage;
+      if (data.comment) {
+        // Check for common error patterns that indicate invalid username
+        const commentLower = data.comment.toLowerCase();
+        if (commentLower.includes('not found') || 
+            commentLower.includes('handle') || 
+            commentLower.includes('invalid') ||
+            commentLower.includes('no such handle')) {
+          errorMessage = `User "${username}" not found on Codeforces. Please check the handle.`;
+        } else {
+          // Use the API's error message but make it more user-friendly
+          errorMessage = data.comment;
+        }
+      } else {
+        // Default message if no comment provided
+        errorMessage = `User "${username}" not found on Codeforces. Please check the handle.`;
+      }
+      
+      return { 
+        error: errorMessage,
+        platform: 'codeforces'
+      };
     }
 
     // Filter accepted submissions and extract unique dates
@@ -5086,7 +5167,17 @@ async function fetchCodeforcesActivity(username) {
 
   } catch (error) {
     console.error('Error fetching Codeforces activity:', error);
-    return null;
+    // Check if it's a network error or API error
+    if (error.message && (error.message.includes('400') || error.message.includes('Bad Request'))) {
+      return { 
+        error: `User "${username}" not found on Codeforces. Please check the handle.`,
+        platform: 'codeforces'
+      };
+    }
+    return { 
+      error: `Failed to fetch Codeforces data for "${username}". Please check your internet connection.`,
+      platform: 'codeforces'
+    };
   }
 }
 
@@ -5100,14 +5191,54 @@ async function fetchCodeChefActivity(username) {
       }
     );
 
-    if (!response.ok) {
+    // CodeChef API (via vercel.app) returns JSON even on errors, so always parse it
+    let data;
+    try {
+      data = await response.json();
+    } catch (parseError) {
+      // If JSON parsing fails, check HTTP status
+      if (response.status === 404) {
+        return { 
+          error: `User "${username}" not found on CodeChef. Please check the username.`,
+          platform: 'codechef'
+        };
+      }
       throw new Error(`CodeChef API error: ${response.status}`);
     }
 
-    const data = await response.json();
+    // Check for error in response body
+    if (data.error || data.message) {
+      const errorMsg = data.error || data.message;
+      // Check if it's a user-not-found error
+      const errorLower = errorMsg.toLowerCase();
+      if (errorLower.includes('not found') || 
+          errorLower.includes('invalid') || 
+          errorLower.includes('does not exist') ||
+          response.status === 404) {
+        return { 
+          error: `User "${username}" not found on CodeChef. Please check the username.`,
+          platform: 'codechef'
+        };
+      }
+      // Return the API's error message
+      return { 
+        error: errorMsg,
+        platform: 'codechef'
+      };
+    }
 
+    // Check if heatmap is missing (indicates invalid user)
     if (!data.heatmap) {
-      throw new Error('Invalid CodeChef response');
+      if (response.status === 404) {
+        return { 
+          error: `User "${username}" not found on CodeChef. Please check the username.`,
+          platform: 'codechef'
+        };
+      }
+      return { 
+        error: `User "${username}" not found on CodeChef. Please check the username.`,
+        platform: 'codechef'
+      };
     }
 
     // Heatmap already has dates in YYYY-MM-DD format
@@ -5122,7 +5253,17 @@ async function fetchCodeChefActivity(username) {
 
   } catch (error) {
     console.error('Error fetching CodeChef activity:', error);
-    return null;
+    // Check if it's a network error or API error
+    if (error.message && (error.message.includes('404') || error.message.includes('Not Found'))) {
+      return { 
+        error: `User "${username}" not found on CodeChef. Please check the username.`,
+        platform: 'codechef'
+      };
+    }
+    return { 
+      error: `Failed to fetch CodeChef data for "${username}". Please check your internet connection.`,
+      platform: 'codechef'
+    };
   }
 }
 
@@ -5282,9 +5423,13 @@ async function sendStreakReminder() {
 // Manual refresh trigger
 async function refreshUnifiedStreak() {
   console.log('Manual refresh triggered');
-  await syncUnifiedStreak();
+  const result = await syncUnifiedStreak();
   const { streakData } = await chrome.storage.local.get('streakData');
-  return { success: true, streakData: streakData?.unified };
+  return { 
+    success: result.success, 
+    streakData: streakData?.unified,
+    errors: result.errors || []
+  };
 }
 
 
@@ -5311,6 +5456,20 @@ function formatDateToYYYYMMDD(date) {
   const month = String(date.getMonth() + 1).padStart(2, '0');
   const day = String(date.getDate()).padStart(2, '0');
   return `${year}-${month}-${day}`;
+}
+
+// Check if we've crossed a day boundary since last sync
+function hasCrossedDayBoundary(lastSyncTime) {
+  if (!lastSyncTime) return true;
+  
+  const lastSyncDate = new Date(lastSyncTime);
+  const today = new Date();
+  
+  // Compare dates (ignoring time)
+  const lastSyncDateStr = formatDateToYYYYMMDD(lastSyncDate);
+  const todayStr = formatDateToYYYYMMDD(today);
+  
+  return lastSyncDateStr !== todayStr;
 }
 
 function getNextResetTime() {

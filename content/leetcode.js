@@ -470,7 +470,7 @@
         <div class="lch-quick-divider"></div>
         <div class="lch-quick-section">
           <button class="lch-favorite-btn ${isFavorite ? 'active' : ''}" id="favoriteBtn">
-            ${isFavorite ? '❤️ Favorited' : '🤍 Add to Favorites'}
+            ❤️
           </button>
         </div>
       </div>
@@ -1620,7 +1620,7 @@
       ${currentProblemData ? `
       <div class="lch-actions-section">
         <button class="lch-favorite-btn ${isFavorite ? 'active' : ''}" id="favoriteBtn">
-          ${isFavorite ? '❤️ Favorited' : '🤍 Add to Favorites'}
+          ❤️
         </button>
       </div>
       ` : ''}
@@ -1952,14 +1952,12 @@
         const response = await safeSendMessage({ type: 'REMOVE_FAVORITE', id });
         if (response && response.success) {
           btn.classList.remove('active');
-          btn.innerHTML = '🤍 Add to Favorites';
         }
       } else {
         // Add to favorites
         const response = await safeSendMessage({ type: 'ADD_FAVORITE', problem: currentProblemData });
         if (response && response.success) {
           btn.classList.add('active');
-          btn.innerHTML = '❤️ Favorited';
         } else if (response && response.error) {
           // Show error message for limit exceeded or other errors
           alert(response.error);

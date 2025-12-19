@@ -260,6 +260,83 @@ function clearApiKeyError() {
   }
 }
 
+// Show username errors
+function showUsernameErrors(errors) {
+  // Clear previous errors first
+  clearUsernameErrors();
+  
+  errors.forEach(error => {
+    let inputId;
+    if (error.platform === 'LeetCode') {
+      inputId = 'leetcodeUsername';
+    } else if (error.platform === 'Codeforces') {
+      inputId = 'codeforcesUsername';
+    } else if (error.platform === 'CodeChef') {
+      inputId = 'codechefUsername';
+    } else {
+      // System error - show in a general location
+      const settingsGroup = document.querySelector('#settings-tab .settings-group');
+      if (settingsGroup) {
+        let errorEl = settingsGroup.querySelector('.username-error-message');
+        if (!errorEl) {
+          errorEl = document.createElement('div');
+          errorEl.className = 'error-message username-error-message';
+          errorEl.style.marginTop = '8px';
+          settingsGroup.insertBefore(errorEl, settingsGroup.firstChild);
+        }
+        errorEl.textContent = `⚠️ ${error.message}`;
+        errorEl.style.display = 'block';
+      }
+      return;
+    }
+    
+    const input = document.getElementById(inputId);
+    if (input) {
+      const inputGroup = input.closest('.input-group');
+      let errorEl = inputGroup.querySelector('.error-message');
+      
+      if (!errorEl) {
+        errorEl = document.createElement('div');
+        errorEl.className = 'error-message';
+        inputGroup.appendChild(errorEl);
+      }
+      
+      errorEl.textContent = `⚠️ ${error.message}`;
+      errorEl.style.display = 'block';
+      
+      // Highlight the input field
+      input.style.borderColor = 'var(--danger)';
+      
+      // Remove highlight after 5 seconds
+      setTimeout(() => {
+        input.style.borderColor = '';
+      }, 5000);
+    }
+  });
+}
+
+// Clear username errors
+function clearUsernameErrors() {
+  // Clear errors from all username fields
+  ['leetcodeUsername', 'codeforcesUsername', 'codechefUsername'].forEach(inputId => {
+    const input = document.getElementById(inputId);
+    if (input) {
+      const inputGroup = input.closest('.input-group');
+      const errorEl = inputGroup.querySelector('.error-message');
+      if (errorEl) {
+        errorEl.style.display = 'none';
+      }
+      input.style.borderColor = '';
+    }
+  });
+  
+  // Clear general error message
+  const generalError = document.querySelector('.username-error-message');
+  if (generalError) {
+    generalError.style.display = 'none';
+  }
+}
+
 // Backend removed - Extension is now fully client-side (BYOK only)
 
 // Settings Management
@@ -303,15 +380,6 @@ function initSettings() {
     document.getElementById('reminderTime').value = result.reminderTime || '30';
     document.getElementById('autoShowPanel').checked = result.autoShowPanel || false;
     
-    // Analytics setting
-    const analyticsEnabled = result.analyticsEnabled !== false; // Default to true
-    const analyticsCheckbox = document.getElementById('analyticsEnabled');
-    if (analyticsCheckbox) {
-      analyticsCheckbox.checked = analyticsEnabled;
-      if (typeof LCAnalytics !== 'undefined') {
-        LCAnalytics.setEnabled(analyticsEnabled);
-      }
-    }
   });
   
   // Update link when provider changes
@@ -337,19 +405,6 @@ function initSettings() {
     }
   }
   
-  // Analytics toggle
-  const analyticsCheckbox = document.getElementById('analyticsEnabled');
-  if (analyticsCheckbox) {
-    analyticsCheckbox.addEventListener('change', async (e) => {
-      const enabled = e.target.checked;
-      await chrome.storage.sync.set({ analyticsEnabled: enabled });
-      if (typeof LCAnalytics !== 'undefined') {
-        LCAnalytics.setEnabled(enabled);
-        LCAnalytics.trackEvent('analytics_toggled', { enabled });
-      }
-    });
-  }
-
   // Toggle API key visibility
   const toggleBtn = document.getElementById('toggleApiKey');
   const apiKeyInput = document.getElementById('apiKey');
@@ -364,6 +419,11 @@ function initSettings() {
     const saveBtn = document.getElementById('saveSettings');
     const apiKey = document.getElementById('apiKey').value.trim();
     const apiProvider = document.getElementById('apiProvider').value;
+    
+    // Prevent multiple clicks
+    if (saveBtn.disabled || saveBtn.classList.contains('loading')) {
+      return;
+    }
     
     // Validate API key
     if (apiKey || apiProvider === 'custom') {
@@ -380,6 +440,7 @@ function initSettings() {
     
     // Clear any previous errors
     clearApiKeyError();
+    clearUsernameErrors();
     
     const settings = {
       leetcodeUsername: document.getElementById('leetcodeUsername').value.trim(),
@@ -389,8 +450,7 @@ function initSettings() {
       apiProvider: apiProvider,
       notifyContests: document.getElementById('notifyContests').checked,
       reminderTime: document.getElementById('reminderTime').value,
-      autoShowPanel: document.getElementById('autoShowPanel').checked,
-      analyticsEnabled: document.getElementById('analyticsEnabled')?.checked !== false
+      autoShowPanel: document.getElementById('autoShowPanel').checked
     };
     
     // Add custom endpoint settings if using custom provider
@@ -406,36 +466,72 @@ function initSettings() {
       : '***';
     console.log('LC Helper: Settings saved (API key format: ' + sanitized + ')');
     
-    await chrome.storage.sync.set(settings);
-
-    // Update alarms if notifications are enabled
-    if (settings.notifyContests) {
-      chrome.runtime.sendMessage({ type: 'UPDATE_ALARMS' });
-    }
+    // Check if usernames are being saved (will need to fetch data)
+    const hasUsernames = settings.leetcodeUsername || settings.codeforcesUsername || settings.codechefUsername;
     
-    // Trigger immediate streak sync if usernames were changed
-    if (settings.leetcodeUsername || settings.codeforcesUsername || settings.codechefUsername) {
-      chrome.runtime.sendMessage({ type: 'REFRESH_UNIFIED_STREAK' });
-    }
+    try {
+      // Save settings immediately
+      await chrome.storage.sync.set(settings);
 
-    // Show success state
-    saveBtn.innerHTML = `
-      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-        <polyline points="20 6 9 17 4 12"></polyline>
-      </svg>
-      Saved!
-    `;
-    saveBtn.classList.add('success');
+      // Update alarms if notifications are enabled
+      if (settings.notifyContests) {
+        chrome.runtime.sendMessage({ type: 'UPDATE_ALARMS' });
+      }
 
-    setTimeout(() => {
+      // Show success state immediately
+      saveBtn.innerHTML = `
+        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <polyline points="20 6 9 17 4 12"></polyline>
+        </svg>
+        Saved!
+      `;
+      saveBtn.classList.add('success');
+
+      // Fetch streak data in the background if usernames were changed
+      if (hasUsernames) {
+        // Don't await - let it happen in the background
+        chrome.runtime.sendMessage({ type: 'REFRESH_UNIFIED_STREAK' })
+          .then((response) => {
+            // Check for errors and display them
+            if (response && response.errors && response.errors.length > 0) {
+              showUsernameErrors(response.errors);
+            } else {
+              clearUsernameErrors();
+            }
+            // Reload streak data when fetch completes
+            loadStreakData();
+            refreshTodayCount(null, true);
+          })
+          .catch((error) => {
+            console.error('LC Helper: Failed to refresh streak after saving usernames:', error);
+            showUsernameErrors([{ platform: 'System', message: 'Failed to fetch streak data. Please try again.' }]);
+            // Still try to reload streak data even if refresh failed
+            loadStreakData();
+          });
+      } else {
+        // Clear any existing errors if no usernames
+        clearUsernameErrors();
+      }
+
+      setTimeout(() => {
+        saveBtn.innerHTML = `
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="20 6 9 17 4 12"></polyline>
+          </svg>
+          Save Settings
+        `;
+        saveBtn.classList.remove('success');
+      }, 2000);
+    } catch (error) {
+      // Ensure button is re-enabled even on error
+      console.error('LC Helper: Error saving settings:', error);
       saveBtn.innerHTML = `
         <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <polyline points="20 6 9 17 4 12"></polyline>
         </svg>
         Save Settings
       `;
-      saveBtn.classList.remove('success');
-    }, 2000);
+    }
   });
 }
 

@@ -616,6 +616,30 @@ select:focus {
   background: var(--success);
 }
 
+.save-btn.loading {
+  opacity: 0.8;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+.save-btn.loading .spinner {
+  animation: spin 1s linear infinite;
+}
+
+.save-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 /* Scrollbar */
 ::-webkit-scrollbar {
   width: 6px;
