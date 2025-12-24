@@ -4,7 +4,7 @@
 
 [![Version](https://img.shields.io/badge/version-1.0.0-blue.svg)](https://github.com/BitMastermind/CodeMentor)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
-[![Chrome Web Store](https://img.shields.io/badge/chrome-web%20store-brightgreen.svg)](https://chrome.google.com/webstore)
+[![Chrome Web Store](https://img.shields.io/badge/chrome-web%20store-brightgreen.svg)](https://chromewebstore.google.com/detail/hadaieimhplonhkkecdidoagkacljbgi?utm_source=item-share-cb)
 
 CodeMentor helps you level up your competitive programming skills with smart AI hints, contest tracking, and streak management—all in one place.
 
@@ -45,7 +45,7 @@ Save problems for later practice and access them quickly from the extension popu
 
 ## Quick Start
 
-1. **Install** the extension from Chrome Web Store (coming soon)
+1. **Install** the extension from [Chrome Web Store](https://chromewebstore.google.com/detail/hadaieimhplonhkkecdidoagkacljbgi?utm_source=item-share-cb)
 2. **Add your API key** in Settings (OpenAI, Gemini, or others)
 3. **Start solving** problems and click the ⚡ button for hints!
 
