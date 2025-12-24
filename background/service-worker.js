@@ -6252,8 +6252,7 @@ async function submitFeedback(feedback) {
     // Track feedback submission
     if (typeof LCAnalytics !== 'undefined') {
       LCAnalytics.trackEvent('feedback_received', {
-        feedback_type: feedback.type,
-        has_email: !!feedback.email
+        feedback_type: feedback.type
       });
     }
 
@@ -6267,7 +6266,6 @@ async function submitFeedback(feedback) {
       `## Feedback Type\n${feedback.type === 'bug' ? '🐛 Bug Report' : feedback.type === 'feature' ? '💡 Feature Request' : feedback.type === 'improvement' ? '✨ Improvement' : '💬 Other'}\n\n` +
       `## Message\n${feedback.message}\n\n` +
       `## Extension Version\n${feedback.extensionVersion || 'Unknown'}\n\n` +
-      (feedback.email && feedback.email !== 'anonymous' ? `## Contact Email\n${feedback.email}\n\n` : '') +
       `## User Agent\n\`\`\`\n${feedback.userAgent || 'Unknown'}\n\`\`\`\n\n` +
       `---\n*Submitted via CodeMentor Extension Feedback Form*`
     );
@@ -6275,6 +6273,7 @@ async function submitFeedback(feedback) {
     const githubIssueUrl = `https://github.com/${githubRepo}/issues/new?title=${issueTitle}&body=${issueBody}`;
 
     console.log('CodeMentor: Feedback submitted:', feedback.type);
+    console.log('CodeMentor: GitHub Issue URL:', githubIssueUrl);
     return { 
       success: true, 
       githubIssueUrl: githubIssueUrl 

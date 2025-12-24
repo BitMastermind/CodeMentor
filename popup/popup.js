@@ -857,7 +857,6 @@ function initFeedbackModal() {
   
   submitFeedback.addEventListener('click', async () => {
     const type = document.getElementById('feedbackType').value;
-    const email = document.getElementById('feedbackEmail').value.trim();
     const message = document.getElementById('feedbackMessage').value.trim();
     const errorEl = document.getElementById('feedbackError');
     const successEl = document.getElementById('feedbackSuccess');
@@ -901,7 +900,6 @@ function initFeedbackModal() {
         type: 'SUBMIT_FEEDBACK',
         feedback: {
           type,
-          email: email || 'anonymous',
           message,
           extensionVersion,
           timestamp: new Date().toISOString(),
@@ -909,40 +907,60 @@ function initFeedbackModal() {
         }
       });
       
+      console.log('CodeMentor: Feedback response received:', response);
+      
       if (response && response.success) {
         // Track successful feedback submission
         if (typeof LCAnalytics !== 'undefined') {
           LCAnalytics.trackEvent('feedback_submitted', {
-            feedback_type: type,
-            has_email: !!email
+            feedback_type: type
           });
         }
         
-        // Update success message with GitHub link
-        if (response.githubIssueUrl) {
-          successEl.innerHTML = `
-            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none"
-              stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
-              style="margin-right: 8px;">
-              <polyline points="20 6 9 17 4 12"></polyline>
-            </svg>
-            <div>
-              <div style="margin-bottom: 8px;">Thank you for your feedback!</div>
-              <a href="${response.githubIssueUrl}" target="_blank" style="color: var(--accent); text-decoration: underline; font-size: 13px;">
-                Open GitHub Issue →
-              </a>
-            </div>
-          `;
-        }
+        // Update success message
+        successEl.innerHTML = `
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none"
+            stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
+            style="margin-right: 8px;">
+            <polyline points="20 6 9 17 4 12"></polyline>
+          </svg>
+          <div>
+            <div style="margin-bottom: 8px;">Thank you for your feedback! Opening GitHub...</div>
+            <div style="font-size: 12px; color: var(--text-muted);">If the page doesn't open, <a href="${response.githubIssueUrl}" target="_blank" style="color: var(--accent); text-decoration: underline;">click here</a></div>
+          </div>
+        `;
         
         successEl.style.display = 'flex';
         resetFeedbackForm();
         
-        // Close modal after 5 seconds (longer to allow clicking GitHub link)
+        // Automatically open GitHub issue URL
+        if (response.githubIssueUrl) {
+          try {
+            chrome.tabs.create({ url: response.githubIssueUrl });
+          } catch (error) {
+            console.error('CodeMentor: Failed to open GitHub issue URL:', error);
+            // Fallback: Update message to show link
+            successEl.innerHTML = `
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none"
+                stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
+                style="margin-right: 8px;">
+                <polyline points="20 6 9 17 4 12"></polyline>
+              </svg>
+              <div>
+                <div style="margin-bottom: 8px;">Thank you for your feedback!</div>
+                <a href="${response.githubIssueUrl}" target="_blank" style="color: var(--accent); text-decoration: underline; font-size: 13px;">
+                  Open GitHub Issue →
+                </a>
+              </div>
+            `;
+          }
+        }
+        
+        // Close modal after 3 seconds
         setTimeout(() => {
           feedbackModal.style.display = 'none';
           resetFeedbackForm();
-        }, 5000);
+        }, 3000);
       } else {
         throw new Error(response?.error || 'Failed to submit feedback');
       }
@@ -977,7 +995,6 @@ function initFeedbackModal() {
   
   function resetFeedbackForm() {
     document.getElementById('feedbackType').value = 'bug';
-    document.getElementById('feedbackEmail').value = '';
     document.getElementById('feedbackMessage').value = '';
     document.getElementById('feedbackError').style.display = 'none';
     document.getElementById('feedbackSuccess').style.display = 'none';
