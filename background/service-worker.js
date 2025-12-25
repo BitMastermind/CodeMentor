@@ -4229,7 +4229,6 @@ Return JSON:
         inputs: inputs,
         parameters: {
           temperature: 0.7,
-          max_new_tokens: 2048,
           return_full_text: false
         }
       })
@@ -4329,7 +4328,6 @@ ${problem.examples ? `\nExamples:\n${problem.examples}` : ''}${jsonRules}`;
         inputs: inputs,
         parameters: {
           temperature: 0.7,
-          max_new_tokens: 2048,
           return_full_text: false
         }
       })
@@ -4381,7 +4379,6 @@ ${problem.examples ? `\nExamples:\n${problem.examples}` : ''}${jsonRules}`;
           inputs: strictInputs,
           parameters: {
             temperature: 0.7,
-            max_new_tokens: 2048,
             return_full_text: false
           }
         })
