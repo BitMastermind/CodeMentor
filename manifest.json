@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "CodeMentor - AI Coding Assistant",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "AI-powered coding hints, contest tracking, and streak management to improve your coding skills on LeetCode, Codeforces & CodeChef",
   "permissions": [
     "storage",

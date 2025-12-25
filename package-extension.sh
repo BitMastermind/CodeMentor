@@ -7,7 +7,7 @@ echo "📦 Packaging CodeMentor Extension for Chrome Web Store..."
 
 # Extension name and version
 EXT_NAME="codementor-extension"
-VERSION="1.0.0"
+VERSION="1.0.1"
 ZIP_NAME="${EXT_NAME}-v${VERSION}.zip"
 
 # Remove old package if exists
