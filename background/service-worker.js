@@ -1890,7 +1890,6 @@ Return ONLY the JSON object (no other text):`;
           }
         ],
         temperature: 0.3,
-        max_tokens: 16384,  // High limit - users bring own API keys
         response_format: { type: "json_object" }
       })
     });
@@ -1928,7 +1927,6 @@ Return ONLY the JSON object (no other text):`;
             }
           ],
           temperature: 0.3,
-          max_tokens: 16384,  // High limit - users bring own API keys
           response_format: { type: "json_object" }
         })
       });
@@ -3250,7 +3248,6 @@ Remember: DO NOT give the solution, code, or exact data structures. Guide the us
           }
         ],
         temperature: 0.7,
-        max_tokens: 16384,  // High limit - users bring own API keys
         response_format: { type: "json_object" }  // Force JSON output
       })
     });
@@ -3383,7 +3380,6 @@ Return JSON:
       },
       body: JSON.stringify({
         model: 'claude-3-5-haiku-20241022',
-        max_tokens: 16384,  // High limit - users bring own API keys
         system: systemPrompt,
         messages: [{
           role: 'user',
@@ -3528,7 +3524,6 @@ Provide a clear explanation with key concepts and approach.${jsonRules}`;
       },
       body: JSON.stringify({
         model: 'claude-3-5-haiku-20241022',
-        max_tokens: 16384,  // High limit - users bring own API keys
         messages: [{
           role: 'user',
           content: messageContent
@@ -3582,7 +3577,6 @@ Provide a clear explanation with key concepts and approach.${jsonRules}`;
         },
         body: JSON.stringify({
           model: 'claude-3-5-haiku-20241022',
-          max_tokens: 16384,  // High limit - users bring own API keys
           messages: [{
             role: 'user',
             content: retryContent
@@ -3689,7 +3683,6 @@ Return JSON:
           { role: 'user', content: userContent }
         ],
         temperature: 0.7,
-        max_tokens: 16384,  // High limit - users bring own API keys
         response_format: { type: "json_object" }  // Force JSON output
       })
     });
@@ -3820,8 +3813,7 @@ ${problem.examples ? `\nExamples:\n${problem.examples}` : ''}${jsonRules}`;
         messages: [
           { role: 'user', content: userContent }
         ],
-        temperature: 0.7,
-        max_tokens: 16384  // High limit - users bring own API keys
+        temperature: 0.7
       })
     });
 
@@ -3869,8 +3861,7 @@ ${problem.examples ? `\nExamples:\n${problem.examples}` : ''}${jsonRules}`;
           messages: [
             { role: 'user', content: retryContent }
           ],
-          temperature: 0.7,
-          max_tokens: 16384
+          temperature: 0.7
         })
       });
 
@@ -3972,7 +3963,6 @@ Return JSON:
           { role: 'user', content: userContent }
         ],
         temperature: 0.7,
-        max_tokens: 16384,  // High limit - users bring own API keys
         response_format: { type: "json_object" }  // Force JSON output
       })
     });
@@ -4103,8 +4093,7 @@ ${problem.examples ? `\nExamples:\n${problem.examples}` : ''}${jsonRules}`;
         messages: [
           { role: 'user', content: userContent }
         ],
-        temperature: 0.7,
-        max_tokens: 16384  // High limit - users bring own API keys
+        temperature: 0.7
       })
     });
 
@@ -4152,8 +4141,7 @@ ${problem.examples ? `\nExamples:\n${problem.examples}` : ''}${jsonRules}`;
           messages: [
             { role: 'user', content: retryContent }
           ],
-          temperature: 0.7,
-          max_tokens: 16384
+          temperature: 0.7
         })
       });
 
@@ -4532,7 +4520,6 @@ Return JSON with three hints:
         model: model,
         messages: messages,
         temperature: 0.7,
-        max_tokens: 16384,  // High limit - users bring own API keys
         response_format: { type: "json_object" }
       })
     });
@@ -4638,8 +4625,7 @@ Provide a clear explanation with key concepts.${jsonRules}`;
       body: JSON.stringify({
         model: model,
         messages: messages,
-        temperature: 0.7,
-        max_tokens: 16384  // High limit - users bring own API keys
+        temperature: 0.7
       })
     });
 
@@ -4685,8 +4671,7 @@ Provide a clear explanation with key concepts.${jsonRules}`;
         body: JSON.stringify({
           model: model,
           messages: [{ role: 'user', content: strictMessageContent }],
-          temperature: 0.7,
-          max_tokens: 16384
+          temperature: 0.7
         })
       });
 
@@ -4763,7 +4748,6 @@ Return JSON:
         { role: 'user', content: userPrompt }
       ],
       temperature: 0.7,
-      max_tokens: 16384,  // High limit - users bring own API keys
       response_format: { type: "json_object" }
     };
 
@@ -4871,8 +4855,7 @@ Provide a clear explanation with key concepts.${jsonRules}`;
       messages: [
         { role: 'user', content: prompt }
       ],
-      temperature: 0.7,
-      max_tokens: 16384
+      temperature: 0.7
     };
 
     // Build headers
@@ -6316,8 +6299,7 @@ async function testScrapingAccuracyOpenAI(problem, apiKey, testPrompt) {
             content: userContent
           }
         ],
-        temperature: 0.1,
-        max_tokens: 16384
+        temperature: 0.1
       })
     });
 
