@@ -23,13 +23,11 @@
   // Safe wrapper for chrome.storage.sync operations
   async function safeStorageGet(key) {
     if (!isExtensionContextValid()) {
-      console.log('CodeMentor: Extension context invalidated, using fallback');
       return {};
     }
     try {
       return await chrome.storage.sync.get(key);
     } catch (e) {
-      console.log('CodeMentor: Storage access failed:', e.message);
       return {};
     }
   }
@@ -37,13 +35,11 @@
   // Safe wrapper for chrome.runtime.sendMessage
   async function safeSendMessage(message) {
     if (!isExtensionContextValid()) {
-      console.log('CodeMentor: Extension context invalidated, cannot send message');
       return null;
     }
     try {
       return await chrome.runtime.sendMessage(message);
     } catch (e) {
-      console.log('CodeMentor: Message send failed:', e.message);
       return null;
     }
   }
@@ -613,7 +609,6 @@
 
     try {
       document.body.appendChild(fab);
-      console.log('CodeMentor: FAB created and appended to body');
     } catch (e) {
       console.error('CodeMentor: Failed to append FAB:', e);
       // Retry after a delay
@@ -929,7 +924,7 @@
         };
       }
     } catch (e) {
-      console.log('CodeMentor: Failed to parse Codeforces URL:', e.message);
+      // Failed to parse Codeforces URL
     }
     return null;
   }
@@ -1341,12 +1336,8 @@
       const examples = [];
       
       if (originalSampleTests) {
-        // Debug: log what we find
-        console.log('[CodeMentor] Found .sample-tests container');
-        
         // Method 1: Look for .sample-test divs (standard Codeforces structure)
         const sampleTestDivs = originalSampleTests.querySelectorAll('.sample-test');
-        console.log('[CodeMentor] Found .sample-test divs:', sampleTestDivs.length);
         
         if (sampleTestDivs.length > 0) {
           sampleTestDivs.forEach((sample, idx) => {
@@ -1354,21 +1345,18 @@
             const outputPre = sample.querySelector('.output pre');
             const input = inputPre?.textContent.trim() || '';
             const output = outputPre?.textContent.trim() || '';
-            console.log(`[CodeMentor] Example ${idx + 1}: Input=${input.substring(0, 30)}..., Output=${output.substring(0, 30)}...`);
             examples.push({ input, output });
           });
         } else {
           // Method 2: Fallback - pair up .input and .output divs
           const inputDivs = originalSampleTests.querySelectorAll('.input');
           const outputDivs = originalSampleTests.querySelectorAll('.output');
-          console.log('[CodeMentor] Fallback: Found .input divs:', inputDivs.length, '.output divs:', outputDivs.length);
           
           for (let i = 0; i < inputDivs.length; i++) {
             const inputPre = inputDivs[i].querySelector('pre');
             const outputPre = outputDivs[i]?.querySelector('pre');
             const input = inputPre?.textContent.trim() || '';
             const output = outputPre?.textContent.trim() || '';
-            console.log(`[CodeMentor] Example ${i + 1}: Input=${input.substring(0, 30)}..., Output=${output.substring(0, 30)}...`);
             examples.push({ input, output });
           }
         }
@@ -1376,7 +1364,6 @@
         // Method 3: If still no examples, try getting all pre tags
         if (examples.length === 0) {
           const allPres = originalSampleTests.querySelectorAll('pre');
-          console.log('[CodeMentor] Method 3: Found pre tags:', allPres.length);
           // Assume alternating input/output
           for (let i = 0; i < allPres.length; i += 2) {
             const input = allPres[i]?.textContent.trim() || '';
@@ -1387,15 +1374,11 @@
           }
         }
       } else {
-        console.log('[CodeMentor] WARNING: No .sample-tests container found!');
-        
         // Try alternative selector - some problems might have different structure
         const altExamples = problemStatementEl.querySelectorAll('.input pre, .output pre');
-        console.log('[CodeMentor] Alternative: Found input/output pre tags:', altExamples.length);
       }
       
       sections.examples = examples;
-      console.log('[CodeMentor] Total examples extracted:', examples.length);
       
       // Build compact text representation (markdown-like, no HTML tags)
       let compactText = '';
@@ -1433,27 +1416,6 @@
       
       // Clean up excessive whitespace while preserving structure
       compactText = compactText.replace(/\n{4,}/g, '\n\n\n').trim();
-      
-      const reduction = Math.round((1 - compactText.length / originalLength) * 100);
-      
-      // Detailed logging for verification
-      console.log('\n' + '='.repeat(80));
-      console.log('[CodeMentor] STRUCTURED TEXT EXTRACTION RESULTS');
-      console.log('='.repeat(80));
-      console.log(`📊 REDUCTION: ${originalLength} chars -> ${compactText.length} chars (-${reduction}%)`);
-      console.log('-'.repeat(80));
-      console.log('📌 TITLE:', sections.title || '(extracted separately)');
-      console.log('-'.repeat(80));
-      console.log('📝 DESCRIPTION LENGTH:', sections.description.length, 'chars');
-      console.log('📥 INPUT SPEC LENGTH:', sections.input.length, 'chars');
-      console.log('📤 OUTPUT SPEC LENGTH:', sections.output.length, 'chars');
-      console.log('📋 EXAMPLES COUNT:', sections.examples.length);
-      console.log('📎 NOTE LENGTH:', sections.note.length, 'chars');
-      console.log('-'.repeat(80));
-      console.log('🔍 FINAL EXTRACTED TEXT:');
-      console.log('-'.repeat(80));
-      console.log(compactText);
-      console.log('='.repeat(80) + '\n');
       
       return compactText;
     }
@@ -1513,18 +1475,6 @@
       text = text.replace(/\n{4,}/g, '\n\n\n');  // Limit consecutive newlines
       text = text.trim();
       
-      const reduction = Math.round((1 - text.length / originalLength) * 100);
-      
-      console.log('\n' + '='.repeat(80));
-      console.log('[CodeMentor] FALLBACK HTML EXTRACTION');
-      console.log('='.repeat(80));
-      console.log(`📊 REDUCTION: ${originalLength} chars -> ${text.length} chars (-${reduction}%)`);
-      console.log('-'.repeat(80));
-      console.log('🔍 EXTRACTED TEXT:');
-      console.log('-'.repeat(80));
-      console.log(text);
-      console.log('='.repeat(80) + '\n');
-      
       return text;
     }
 
@@ -1564,25 +1514,6 @@
       url: window.location.href,
       hasImages: hasImages
     };
-
-    // Log extracted data summary
-    console.log('\n' + '='.repeat(80));
-    console.log('CodeMentor - FINAL PROBLEM DATA SUMMARY');
-    console.log('='.repeat(80));
-    console.log('📡 Extraction Method: Structured Text (optimized for tokens)');
-    console.log('📌 Title:', baseData.title);
-    console.log('📊 Difficulty:', baseData.difficulty);
-    console.log('⭐ Rating:', problemRating || 'Unknown');
-    console.log('🏷️ Tags:', baseData.tags || 'None found');
-    console.log('📝 Description Length:', problemHTML.length, 'characters');
-    console.log('📋 Examples Count:', examples.length);
-    console.log('🖼️ Has Images:', hasImages);
-    console.log('🔗 URL:', baseData.url);
-    console.log('='.repeat(80));
-    console.log('📦 WHAT WILL BE SENT TO LLM:');
-    console.log('-'.repeat(80));
-    console.log(problemHTML);
-    console.log('='.repeat(80) + '\n');
 
     // Capture images if available
     if (hasImages && typeof html2canvas !== 'undefined') {
@@ -1694,7 +1625,7 @@
           };
         }
       } catch (e) {
-        console.log('CodeMentor: Could not extract problem data for favorites:', e.message);
+        // Could not extract problem data for favorites
       }
     }
 
@@ -1829,7 +1760,6 @@
             }
           } catch (e) {
             // If all parsing fails, use as is
-            console.log('[CodeMentor] Explanation is not JSON, using as markdown:', e.message);
           }
         }
       }
@@ -1884,17 +1814,17 @@
     if (explanationContent && window.MathJax && window.MathJax.typesetPromise) {
       try {
         window.MathJax.typesetPromise([explanationContent]).catch((err) => {
-          console.log('CodeMentor: MathJax rendering error:', err);
+          // MathJax rendering error
         });
       } catch (e) {
-        console.log('CodeMentor: MathJax not available or error:', e);
+        // MathJax not available or error
       }
     } else if (explanationContent && window.MathJax && window.MathJax.Hub) {
       // Fallback for older MathJax versions
       try {
         window.MathJax.Hub.Queue(['Typeset', window.MathJax.Hub, explanationContent]);
       } catch (e) {
-        console.log('CodeMentor: MathJax Hub error:', e);
+        // MathJax Hub error
       }
     }
 
@@ -2125,7 +2055,6 @@
           <div class="lch-feedback-thanks-text">✨ Thanks for your feedback!</div>
         </div>
       `;
-      console.log('Positive feedback:', hintData.topic);
     } else {
       feedbackSection.innerHTML = `
         <div class="lch-feedback-thanks">
@@ -2135,7 +2064,6 @@
           </div>
         </div>
       `;
-      console.log('Negative feedback:', hintData.topic);
 
       const regenerateBtn = feedbackSection.querySelector('.lch-feedback-regenerate-btn');
       if (regenerateBtn) {

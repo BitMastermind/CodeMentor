@@ -23,13 +23,11 @@
   // Safe wrapper for chrome.storage.sync operations
   async function safeStorageGet(key) {
     if (!isExtensionContextValid()) {
-      console.log('CodeMentor: Extension context invalidated, using fallback');
       return {};
     }
     try {
       return await chrome.storage.sync.get(key);
     } catch (e) {
-      console.log('CodeMentor: Storage access failed:', e.message);
       return {};
     }
   }
@@ -37,13 +35,11 @@
   // Safe wrapper for chrome.runtime.sendMessage
   async function safeSendMessage(message) {
     if (!isExtensionContextValid()) {
-      console.log('CodeMentor: Extension context invalidated, cannot send message');
       return null;
     }
     try {
       return await chrome.runtime.sendMessage(message);
     } catch (e) {
-      console.log('CodeMentor: Message send failed:', e.message);
       return null;
     }
   }
@@ -190,7 +186,7 @@
         }
       }
     } catch (e) {
-      console.log('CodeMentor: Timer init failed:', e.message);
+      // Timer init failed silently
     }
   }
 
@@ -330,7 +326,6 @@
 
     try {
       document.body.appendChild(fab);
-      console.log('CodeMentor: FAB created and appended to body');
     } catch (e) {
       console.error('CodeMentor: Failed to append FAB:', e);
       // Retry after a delay
@@ -706,11 +701,8 @@
 
   // Extract problem data using raw HTML approach (future-proof, LLM handles parsing)
   async function extractProblemData() {
-    // Extract problem code from URL (for logging)
+    // Extract problem code from URL
     const problemCode = parseProblemCodeFromUrl(window.location.href);
-    if (problemCode) {
-      console.log('CodeMentor: CodeChef problem code:', problemCode);
-    }
 
     // Note: CodeChef does not have an official API for problem statements
     // We send raw HTML to LLM which intelligently parses it
@@ -893,14 +885,11 @@
       // Apply final compression
       const cleanHtml = getCleanTextContent(clone);
 
-      console.log(`[CodeMentor] HTML Reduction: ${originalLength} chars -> ${cleanHtml.length} chars (-${Math.round((1 - cleanHtml.length / originalLength) * 100)}%)`);
-
       return cleanHtml;
     }
 
     // Get HTML with MathJax converted to LaTeX
-    const originalLength = problemDiv.innerHTML.length;
-    const problemHTML = convertMathJaxToLaTeX(problemDiv, originalLength);
+    const problemHTML = convertMathJaxToLaTeX(problemDiv);
 
     // Check if problem has images/graphs
     const hasImages = problemDiv.querySelectorAll('img, svg, canvas').length > 0;
@@ -914,22 +903,6 @@
       url: window.location.href,
       hasImages: hasImages
     };
-
-    // Log extracted data
-    console.log('='.repeat(80));
-    console.log('CodeMentor - CodeChef Problem Data (HTML-based extraction)');
-    console.log('='.repeat(80));
-    console.log('📡 Data Source: Raw HTML (LLM will parse intelligently)');
-    if (problemCode) {
-      console.log('📋 Problem Code:', problemCode);
-    }
-    console.log('📌 Title:', baseData.title);
-    console.log('📊 Difficulty:', baseData.difficulty);
-    console.log('🏷️ Tags:', baseData.tags || 'None found');
-    console.log('📝 HTML Length:', problemHTML.length, 'characters');
-    console.log('🖼️ Has Images:', hasImages);
-    console.log('🔗 URL:', baseData.url);
-    console.log('='.repeat(80));
 
     // Capture images if available
     if (hasImages && typeof html2canvas !== 'undefined') {
@@ -1038,7 +1011,7 @@
           };
         }
       } catch (e) {
-        console.log('CodeMentor: Could not extract problem data for favorites:', e.message);
+        // Could not extract problem data for favorites
       }
     }
 
@@ -1173,7 +1146,6 @@
             }
           } catch (e) {
             // If all parsing fails, use as is
-            console.log('[CodeMentor] Explanation is not JSON, using as markdown:', e.message);
           }
         }
       }
@@ -1228,17 +1200,17 @@
     if (explanationContent && window.MathJax && window.MathJax.typesetPromise) {
       try {
         window.MathJax.typesetPromise([explanationContent]).catch((err) => {
-          console.log('CodeMentor: MathJax rendering error:', err);
+          // MathJax rendering error
         });
       } catch (e) {
-        console.log('CodeMentor: MathJax not available or error:', e);
+        // MathJax not available or error
       }
     } else if (explanationContent && window.MathJax && window.MathJax.Hub) {
       // Fallback for older MathJax versions
       try {
         window.MathJax.Hub.Queue(['Typeset', window.MathJax.Hub, explanationContent]);
       } catch (e) {
-        console.log('CodeMentor: MathJax Hub error:', e);
+        // MathJax Hub error
       }
     }
 
@@ -1464,7 +1436,6 @@
           <div class="lch-feedback-thanks-text">✨ Thanks for your feedback!</div>
         </div>
       `;
-      console.log('Positive feedback:', hintData.topic);
     } else {
       feedbackSection.innerHTML = `
         <div class="lch-feedback-thanks">
@@ -1474,7 +1445,6 @@
           </div>
         </div>
       `;
-      console.log('Negative feedback:', hintData.topic);
 
       feedbackSection.querySelector('.lch-feedback-regenerate-btn').addEventListener('click', () => {
         loadHints(true);
