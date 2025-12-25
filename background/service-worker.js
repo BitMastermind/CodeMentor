@@ -1494,7 +1494,6 @@ Now return ONLY the JSON object (no other text):`;
       contents: [{ parts }],
       generationConfig: {
         temperature: 0.3,
-        maxOutputTokens: 16384,  // High limit - users bring own API keys
         response_mime_type: "application/json",
         response_schema: {
           type: "object",
@@ -2981,7 +2980,6 @@ Now generate the hints as JSON.`;
         }],
         generationConfig: {
           temperature: 0.5,  // Lowered from 0.7 for more consistent hints
-          maxOutputTokens: 16384,  // High limit - users bring own API keys
           topP: 0.9,
           topK: 40,
           response_mime_type: "application/json"  // Force JSON output - prevents markdown wrapping
@@ -6192,8 +6190,7 @@ async function testScrapingAccuracyGemini(problem, apiKey, testPrompt) {
         generationConfig: {
           temperature: 0.1,
           topK: 1,
-          topP: 0.8,
-          maxOutputTokens: 16384
+          topP: 0.8
         }
       })
     });
